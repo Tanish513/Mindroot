@@ -222,8 +222,18 @@ const requireAdmin = (req: any, res: any, next: any) => {
 let prisma: any = null;
 try {
   const { PrismaClient } = require('@prisma/client');
-  prisma = new PrismaClient();
-} catch {
+  const { Pool } = require('pg');
+  const { PrismaPg } = require('@prisma/adapter-pg');
+  const dbUrl = process.env.DATABASE_URL || process.env.DIRECT_URL;
+  if (dbUrl) {
+    const pool = new Pool({ connectionString: dbUrl });
+    const adapter = new PrismaPg(pool);
+    prisma = new PrismaClient({ adapter });
+  } else {
+    prisma = new PrismaClient();
+  }
+} catch (e) {
+  logger.warn({ err: e }, 'PrismaClient initialization caught error');
   prisma = null;
 }
 

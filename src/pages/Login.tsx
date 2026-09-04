@@ -41,8 +41,8 @@ export function Login() {
   const setCurrentUser = useAppStore(state => state.setCurrentUser);
   const navigate = useNavigate();
 
-  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  const enableGoogleAuth = Boolean(googleClientId) || import.meta.env.DEV || import.meta.env.VITE_ENABLE_DEMO_GOOGLE === 'true';
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '832106431414-q2afhkunmhn52p29merodho4u9ij5uvh.apps.googleusercontent.com';
+  const enableGoogleAuth = true;
 
   // Shared Google OAuth Success/Error handlers
   const handleGoogleSuccess = async (credentialResponse: any) => {
