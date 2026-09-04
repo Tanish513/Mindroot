@@ -1,0 +1,146 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id               String                   @id @default(uuid())
+  name             String
+  email            String?                  @unique
+  password         String?
+  emailVerified    Boolean                  @default(false)
+  role             String                   @default("student") // 'student' or 'teacher'
+  tokenBalance     Int                      @default(4)
+  trustScore       Float                    @default(5.0)
+  rewardPoints     Int                      @default(0)
+  deletedAt        DateTime?
+  taughtSessions   Session[]                @relation("TeacherSessions")
+  learnedSessions  Session[]                @relation("StudentSessions")
+  userSkills       UserSkill[]
+  transactions     Transaction[]
+  sentMessages     Message[]                @relation("SentMessages")
+  receivedMessages Message[]                @relation("ReceivedMessages")
+  writtenReviews   Review[]                 @relation("WrittenReviews")
+  receivedReviews  Review[]                 @relation("ReceivedReviews")
+  verificationTokens EmailVerificationToken[]
+  resetTokens      PasswordResetToken[]
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  usedAt    DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Skill {
+  id         String      @id @default(uuid())
+  name       String
+  category   String
+  userSkills UserSkill[]
+}
+
+model UserSkill {
+  id      String @id @default(uuid())
+  userId  String
+  skillId String
+  type    String // 'teaches' or 'wants_to_learn'
+  user    User   @relation(fields: [userId], references: [id])
+  skill   Skill  @relation(fields: [skillId], references: [id])
+
+  @@index([skillId])
+  @@index([userId])
+}
+
+model Session {
+  id              String   @id @default(uuid())
+  title           String
+  teacherId       String
+  studentId       String
+  skillId         String?
+  status          String   @default("pending") // 'pending', 'confirmed', 'completed', 'live'
+  paymentStatus   String   @default("pending") // 'pending', 'paid', 'partially_paid'
+  paymentId       String?
+  orderId         String?
+  pricePerStudent Int      @default(499)
+  amount          Int      @default(499)
+  maxCapacity     Int      @default(1)
+  students        Json?
+  scheduledAt     DateTime
+  durationMin     Int      @default(60)
+
+  teacher User @relation("TeacherSessions", fields: [teacherId], references: [id])
+  student User @relation("StudentSessions", fields: [studentId], references: [id])
+
+  @@index([teacherId, studentId])
+}
+
+model Transaction {
+  id          String    @id @default(uuid())
+  userId      String
+  sessionId   String?
+  amount      Int
+  description String?
+  title       String?
+  peerName    String?
+  type        String // 'EARNED' or 'SPENT'
+  paymentId   String?
+  orderId     String?
+  currency    String    @default("INR")
+  status      String    @default("paid")
+  createdAt   DateTime  @default(now())
+  deletedAt   DateTime?
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  receiverId String
+  text       String
+  createdAt  DateTime @default(now())
+
+  sender   User @relation("SentMessages", fields: [senderId], references: [id])
+  receiver User @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  @@index([senderId, receiverId])
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  authorId  String
+  targetId  String
+  topic     String
+  rating    Int
+  quote     String
+  chips     String[]
+  createdAt DateTime @default(now())
+
+  author User @relation("WrittenReviews", fields: [authorId], references: [id])
+  target User @relation("ReceivedReviews", fields: [targetId], references: [id])
+}

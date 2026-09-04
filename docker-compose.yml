@@ -1,0 +1,66 @@
+services:
+  # 1. PostgreSQL Database Service
+  db:
+    image: postgres:16-alpine
+    container_name: mindroot-db
+    restart: always
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-mindroot}
+    # Optional local host exposure for database debugging:
+    # ports:
+    #   - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-mindroot}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Express Backend & Socket.io Signaling Service
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: mindroot-backend
+    restart: always
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-mindroot}?schema=public"
+      PORT: 3000
+      JWT_SECRET: ${JWT_SECRET:-mindroot-docker-dev-secret-key-2026}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # 3. React + Vite Frontend Service
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3000}
+        VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    container_name: mindroot-frontend
+    restart: always
+    ports:
+      - "5173:80"
+    env_file:
+      - .env
+    environment:
+      VITE_BACKEND_URL: ${VITE_BACKEND_URL:-http://localhost:3000}
+      VITE_GOOGLE_CLIENT_ID: ${VITE_GOOGLE_CLIENT_ID:-}
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

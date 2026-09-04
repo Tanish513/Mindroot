@@ -1,0 +1,213 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Primary Brand Color - Teal */
+    --color-primary: 13 148 136;             /* #0D9488 teal-600 */
+    --color-primary-hover: 15 118 110;       /* #0F766E teal-700 */
+    --color-primary-active: 17 94 89;        /* #115E59 teal-800 */
+    --color-primary-container: 240 253 250;  /* #F0FDFA teal-50 */
+    --color-on-primary: 255 255 255;
+    --color-on-primary-container: 17 94 89;
+
+    /* Secondary - Neutral Slate */
+    --color-secondary: 71 85 105;            /* #475569 slate-600 */
+    --color-secondary-hover: 51 65 85;       /* #334155 slate-700 */
+    --color-secondary-container: 241 245 249; /* #F1F5F9 slate-100 */
+    --color-on-secondary: 255 255 255;
+    --color-on-secondary-container: 30 41 59;
+
+    /* Neutrals & Surface Hierarchy (Light Mode) */
+    --color-background: 248 250 252;
+    --color-surface: 255 255 255;
+    --color-surface-bright: 255 255 255;
+    --color-surface-container-lowest: 255 255 255;
+    --color-surface-container-low: 248 250 252;
+    --color-surface-container: 241 245 249;
+    --color-surface-container-high: 226 232 240;
+    --color-surface-container-highest: 203 213 225;
+    --color-on-background: 15 23 42;
+    --color-on-surface: 15 23 42;
+    --color-on-surface-variant: 71 85 105;
+    --color-outline: 148 163 184;
+    --color-outline-variant: 226 232 240;
+    --color-neutral-subtle: 148 163 184;
+    --color-neutral-muted: 100 116 139;
+    --color-neutral-dark: 30 41 59;
+
+    /* Semantic Accents */
+    --color-teaching-emerald: 5 150 105;
+    --color-teaching-emerald-hover: 4 120 87;
+    --color-teaching-emerald-container: 236 253 245;
+    --color-on-teaching-emerald: 255 255 255;
+    --color-on-teaching-emerald-container: 6 95 70;
+
+    --color-learning-amber: 217 119 6;
+    --color-learning-amber-hover: 180 83 9;
+    --color-learning-amber-container: 255 251 235;
+    --color-on-learning-amber: 255 255 255;
+    --color-on-learning-amber-container: 120 53 15;
+
+    --color-electric-cyan: 14 116 144;
+    --color-electric-cyan-container: 240 253 250;
+    --color-on-electric-cyan-container: 21 94 117;
+
+    --color-trust-purple: 109 40 217;
+    --color-trust-purple-container: 250 245 255;
+    --color-on-trust-purple-container: 88 28 135;
+
+    --color-sky-blue: 2 132 199;
+    --color-sky-blue-container: 240 249 255;
+    --color-on-sky-blue-container: 7 89 133;
+
+    --color-alert-rose: 225 29 72;
+    --color-alert-rose-hover: 190 18 60;
+    --color-alert-rose-container: 255 241 242;
+    --color-on-alert-rose: 255 255 255;
+    --color-on-alert-rose-container: 159 18 57;
+
+    --color-error: 220 38 38;
+    --color-error-hover: 185 28 28;
+    --color-error-container: 254 242 242;
+    --color-on-error: 255 255 255;
+    --color-on-error-container: 153 27 27;
+
+    /* Light Mode Shadows */
+    --shadow-elevation-1: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+    --shadow-elevation-2: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
+    --shadow-elevation-3: 0 12px 24px rgba(15, 23, 42, 0.08), 0 4px 8px rgba(15, 23, 42, 0.04);
+    --shadow-lifted: 0 4px 12px rgba(15, 23, 42, 0.06);
+    --shadow-lifted-hover: 0 10px 20px rgba(15, 23, 42, 0.08);
+
+    /* Scrollbars */
+    --scrollbar-track: 241 245 249;
+    --scrollbar-thumb: 203 213 225;
+    --scrollbar-thumb-hover: 148 163 184;
+  }
+
+  .dark {
+    /* Primary Brand Color - Teal */
+    --color-primary: 45 212 191;             /* #2DD4BF teal-400 */
+    --color-primary-hover: 94 234 212;       /* #5EEAD4 teal-300 */
+    --color-primary-active: 153 246 228;     /* #99F6E4 teal-200 */
+    --color-primary-container: 19 78 74;     /* #134E4A teal-900 */
+    --color-on-primary: 15 23 42;
+    --color-on-primary-container: 153 246 228;
+
+    /* Secondary - Neutral Slate */
+    --color-secondary: 148 163 184;          /* #94A3B8 slate-400 */
+    --color-secondary-hover: 203 213 225;    /* #CBD5E1 slate-300 */
+    --color-secondary-container: 30 41 59;   /* #1E293B slate-800 */
+    --color-on-secondary: 15 23 42;
+    --color-on-secondary-container: 226 232 240;
+
+    /* Neutrals & Clean Surface Hierarchy (3-4 flat, solid surface steps) */
+    --color-background: 13 15 18;
+    --color-surface: 19 22 27;
+    --color-surface-bright: 28 32 40;
+    --color-surface-container-lowest: 13 15 18;
+    --color-surface-container-low: 16 19 23;
+    --color-surface-container: 26 30 38;
+    --color-surface-container-high: 34 39 49;
+    --color-surface-container-highest: 44 50 63;
+    --color-on-background: 241 245 249;
+    --color-on-surface: 241 245 249;
+    --color-on-surface-variant: 148 163 184;
+    --color-outline: 64 74 92;
+    --color-outline-variant: 35 41 53;
+    --color-neutral-subtle: 100 116 139;
+    --color-neutral-muted: 148 163 184;
+    --color-neutral-dark: 241 245 249;
+
+    /* Semantic Status ONLY (Real status meaning: Success / Verified) */
+    --color-teaching-emerald: 16 185 129;
+    --color-teaching-emerald-hover: 52 211 153;
+    --color-teaching-emerald-container: 20 35 28;
+    --color-on-teaching-emerald: 255 255 255;
+    --color-on-teaching-emerald-container: 52 211 153;
+
+    /* Semantic Status ONLY (Real status meaning: Warning / Pending) */
+    --color-learning-amber: 245 158 11;
+    --color-learning-amber-hover: 251 191 36;
+    --color-learning-amber-container: 36 28 16;
+    --color-on-learning-amber: 255 255 255;
+    --color-on-learning-amber-container: 251 191 36;
+
+    /* Semantic Category & Tag Tokens (Rich distinct hues for content-driven living color) */
+    --color-electric-cyan: 34 211 238;          /* cyan-400 */
+    --color-electric-cyan-container: 18 43 51;   /* dark cyan container */
+    --color-on-electric-cyan-container: 165 243 252;
+
+    --color-trust-purple: 168 85 247;           /* purple-500 / 400 */
+    --color-trust-purple-container: 42 24 64;    /* dark purple container */
+    --color-on-trust-purple-container: 233 213 255;
+
+    --color-sky-blue: 56 189 248;               /* sky-400 */
+    --color-sky-blue-container: 12 40 60;       /* dark sky container */
+    --color-on-sky-blue-container: 186 230 253;
+
+    /* Semantic Status ONLY (Real status meaning: Error / Danger) */
+    --color-alert-rose: 244 63 94;
+    --color-alert-rose-hover: 251 113 133;
+    --color-alert-rose-container: 45 20 25;
+    --color-on-alert-rose: 255 255 255;
+    --color-on-alert-rose-container: 251 113 133;
+
+    --color-error: 239 68 68;
+    --color-error-hover: 248 113 113;
+    --color-error-container: 45 20 20;
+    --color-on-error: 255 255 255;
+    --color-on-error-container: 248 113 113;
+
+    /* Flattened Dark Mode Shadows (Reduced blur/opacity, no inset highlights; depth from surface steps) */
+    --shadow-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.25);
+    --shadow-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.3);
+    --shadow-elevation-3: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-lifted: 0 2px 6px rgba(0, 0, 0, 0.3);
+    --shadow-lifted-hover: 0 4px 12px rgba(0, 0, 0, 0.35);
+
+    /* Clean Dark Mode Scrollbars */
+    --scrollbar-track: 19 22 27;
+    --scrollbar-thumb: 44 50 63;
+    --scrollbar-thumb-hover: 71 85 105;
+  }
+
+  body {
+    @apply bg-background text-on-background font-body-md transition-colors duration-200;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  .shadow-elevation-1 {
+    box-shadow: var(--shadow-elevation-1);
+  }
+  .shadow-elevation-2 {
+    box-shadow: var(--shadow-elevation-2);
+  }
+  .shadow-elevation-3 {
+    box-shadow: var(--shadow-elevation-3);
+  }
+
+  /* Custom clean scrollbars */
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: rgb(var(--scrollbar-track));
+    border-radius: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgb(var(--scrollbar-thumb));
+    border-radius: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: rgb(var(--scrollbar-thumb-hover));
+  }
+}
+
