@@ -3757,6 +3757,103 @@ app.get('/api/stats', async (_req, res) => {
   });
 });
 
+// GET /api/community-champions — dynamically rank top active mentors & peer scholars
+app.get('/api/community-champions', async (req: any, res: any) => {
+  try {
+    if (process.env.DATABASE_URL && prisma) {
+      const users = await prisma.user.findMany({
+        where: {
+          role: { not: 'admin' },
+          deletedAt: null
+        },
+        include: {
+          userSkills: { include: { skill: true } },
+          taughtSessions: { where: { status: { in: ['confirmed', 'completed', 'live'] } } },
+          learnedSessions: { where: { status: { in: ['confirmed', 'completed', 'live'] } } }
+        }
+      });
+
+      if (users && users.length > 0) {
+        const ranked = users.map((u: any) => {
+          const taughtCount = u.taughtSessions?.length || 0;
+          const learnedCount = u.learnedSessions?.length || 0;
+          const totalSessions = taughtCount + learnedCount;
+          const teaches = (u.userSkills || []).filter((us: any) => us.type === 'teaches').map((us: any) => us.skill?.name).filter(Boolean);
+          const primarySkill = teaches[0] || 'Peer';
+          const roleTitle = u.role === 'teacher'
+            ? `${primarySkill} Mentor`
+            : (u.role === 'both' ? `${primarySkill} & Peer Lead` : `${primarySkill} Scholar`);
+
+          const trustScore = typeof u.trustScore === 'number' ? u.trustScore : 5.0;
+          const rewardPoints = typeof u.rewardPoints === 'number' ? u.rewardPoints : 0;
+          const rawScore = (totalSessions * 100) + (trustScore * 10) + rewardPoints;
+
+          return {
+            id: u.id,
+            name: u.name,
+            role: roleTitle,
+            rating: trustScore.toFixed(2),
+            score: totalSessions > 0 ? `${totalSessions} Session${totalSessions !== 1 ? 's' : ''}` : (rewardPoints > 0 ? `${rewardPoints} Points` : 'Active Member'),
+            rawScore,
+            avatar: u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+            trustScore,
+            sessionsCount: totalSessions
+          };
+        });
+
+        ranked.sort((a: any, b: any) => b.rawScore - a.rawScore);
+        const badges = ['🥇 1st Place', '🥈 2nd Place', '🥉 3rd Place'];
+        const top3 = ranked.slice(0, 3).map((champ: any, idx: number) => ({
+          ...champ,
+          badge: badges[idx] || `#${idx + 1}`
+        }));
+
+        return res.json(top3);
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Error in /api/community-champions DB query');
+  }
+
+  // Fallback to in-memory store
+  const nonAdmins = inMemoryUsers.filter((u: any) => u.role !== 'admin');
+  const rankedMem = nonAdmins.map((u: any) => {
+    const totalSessions = inMemorySessions.filter((s: any) => 
+      (s.teacherId === u.id || s.studentId === u.id) && 
+      (s.status === 'confirmed' || s.status === 'completed' || s.status === 'live')
+    ).length;
+    const teaches = Array.isArray(u.skillsTaught) 
+      ? u.skillsTaught 
+      : (Array.isArray(u.userSkills) ? u.userSkills.filter((us: any) => us.type === 'teaches').map((us: any) => us.skill?.name || us.name) : []);
+    const primarySkill = teaches[0] || 'Peer';
+    const roleTitle = u.role === 'teacher' ? `${primarySkill} Mentor` : `${primarySkill} Scholar`;
+    const trustScore = typeof u.trustScore === 'number' ? u.trustScore : 5.0;
+    const rewardPoints = typeof u.rewardPoints === 'number' ? u.rewardPoints : 0;
+    const rawScore = (totalSessions * 100) + (trustScore * 10) + rewardPoints;
+
+    return {
+      id: u.id,
+      name: u.name,
+      role: roleTitle,
+      rating: trustScore.toFixed(2),
+      score: totalSessions > 0 ? `${totalSessions} Session${totalSessions !== 1 ? 's' : ''}` : (rewardPoints > 0 ? `${rewardPoints} Points` : 'Active Member'),
+      rawScore,
+      avatar: u.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+      trustScore,
+      sessionsCount: totalSessions
+    };
+  });
+
+  rankedMem.sort((a: any, b: any) => b.rawScore - a.rawScore);
+  const badges = ['🥇 1st Place', '🥈 2nd Place', '🥉 3rd Place'];
+  const top3 = rankedMem.slice(0, 3).map((champ: any, idx: number) => ({
+    ...champ,
+    badge: badges[idx] || `#${idx + 1}`
+  }));
+
+  res.json(top3);
+});
+
 // GET /api/auth/me — Alias for /api/users/me (authenticated user profile)
 app.get('/api/auth/me', async (req: any, res) => {
   const userId = req.userId;

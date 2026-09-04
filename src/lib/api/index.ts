@@ -517,6 +517,55 @@ export const api = {
     return Array.from(allMap.values());
   },
 
+  getCommunityChampions: async (): Promise<any[]> => {
+    try {
+      const r = await fetch(`${getBASE()}/api/community-champions`, { headers: getHeaders() });
+      if (r.ok) {
+        const data = await safeParse(r, []);
+        if (Array.isArray(data) && data.length > 0) return data;
+      }
+    } catch (err) {
+      console.warn('[Community Champions] Failed to fetch remote champions:', err);
+    }
+
+    // Dynamic fallback from available peers
+    try {
+      const peers = await api.getPeers();
+      if (!peers || peers.length === 0) return [];
+
+      const ranked = peers.map((p: any) => {
+        const teaches: string[] = Array.isArray(p.skillsTaught)
+          ? p.skillsTaught
+          : (Array.isArray(p.userSkills) ? p.userSkills.filter((us: any) => us.type === 'teaches').map((us: any) => us.skill?.name) : []);
+        const primarySkill = teaches[0] || 'Peer';
+        const roleTitle = p.role === 'teacher' ? `${primarySkill} Mentor` : `${primarySkill} Scholar`;
+        const trustScore = typeof p.trustScore === 'number' ? p.trustScore : 5.0;
+        const rewardPoints = typeof p.rewardPoints === 'number' ? p.rewardPoints : 0;
+        const rawScore = (trustScore * 10) + rewardPoints;
+
+        return {
+          id: p.id,
+          name: p.name,
+          role: roleTitle,
+          rating: trustScore.toFixed(2),
+          score: rewardPoints > 0 ? `${rewardPoints} Points` : 'Active Member',
+          rawScore,
+          avatar: p.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80',
+          trustScore
+        };
+      });
+
+      ranked.sort((a, b) => b.rawScore - a.rawScore);
+      const badges = ['🥇 1st Place', '🥈 2nd Place', '🥉 3rd Place'];
+      return ranked.slice(0, 3).map((c, i) => ({
+        ...c,
+        badge: badges[i] || `#${i + 1}`
+      }));
+    } catch {
+      return [];
+    }
+  },
+
   deleteUser: async (id: string) => {
     try {
       const r = await fetch(`${getBASE()}/api/users/${id}`, {

@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Button } from '../components/ui/Button';
 import { useAppStore } from '../store/useAppStore';
-import { api, onSessionsUpdated, onTransactionsUpdated } from '../lib/api';
+import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 export function Dashboard() {
@@ -9,6 +9,8 @@ export function Dashboard() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [peers, setPeers] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [champions, setChampions] = useState<any[]>([]);
+  const [loadingChampions, setLoadingChampions] = useState<boolean>(true);
   const navigate = useNavigate();
 
   const loadData = () => {
@@ -18,6 +20,10 @@ export function Dashboard() {
     api.getSessions().then(setSessions).catch(console.error);
     api.getPeers().then(setPeers).catch(console.error);
     api.getTransactions().then(setTransactions).catch(console.error);
+    api.getCommunityChampions().then(data => {
+      setChampions(data || []);
+      setLoadingChampions(false);
+    }).catch(() => setLoadingChampions(false));
   };
 
   useEffect(() => {
@@ -28,9 +34,16 @@ export function Dashboard() {
     const unsubTx = onTransactionsUpdated(() => {
       api.getTransactions().then(setTransactions).catch(console.error);
     });
+    const unsubPeers = onPeersUpdated(() => {
+      api.getPeers().then(setPeers).catch(console.error);
+      api.getCommunityChampions().then(data => {
+        if (data && data.length) setChampions(data);
+      }).catch(console.error);
+    });
     return () => {
       unsubSessions();
       unsubTx();
+      unsubPeers();
     };
   }, [currentUser, setCurrentUser]);
 
@@ -144,6 +157,87 @@ export function Dashboard() {
   const activeSkillsList = isTeacherRole ? teachSkills : (learnSkills.length ? learnSkills : teachSkills);
   const activeTopicsCount = activeSkillsList.length.toString();
   const activeTopicTags = activeSkillsList.slice(0, 2);
+
+  // Dynamically compute top recommended peer match from database peers
+  const recommendedPeerMatch = useMemo(() => {
+    if (!currentUser || !peers || peers.length === 0) return null;
+
+    const myId = currentUser.id;
+    const candidatePeers = peers.filter(p => p && p.id && p.id !== myId && p.role !== 'admin');
+    if (candidatePeers.length === 0) return null;
+
+    const myUserSkills = currentUser.userSkills || [
+      ...(currentUser.skillsTaught || []).map((t: string) => ({ type: 'teaches', skill: { id: 's-' + t, name: t } })),
+      ...(currentUser.skillsLearned || []).map((l: string) => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l } }))
+    ];
+
+    const myTeaches = myUserSkills.filter((us: any) => us.type === 'teaches');
+    const myLearns = myUserSkills.filter((us: any) => us.type === 'wants_to_learn');
+
+    const scoredPeers = candidatePeers.map(peer => {
+      const peerUserSkills = peer.userSkills || [
+        ...(peer.skillsTaught || []).map((t: string) => ({ type: 'teaches', skill: { id: 's-' + t, name: t } })),
+        ...(peer.skillsLearned || []).map((l: string) => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l } }))
+      ];
+
+      const peerTeaches = peerUserSkills.filter((us: any) => us.type === 'teaches');
+      const peerLearns = peerUserSkills.filter((us: any) => us.type === 'wants_to_learn');
+
+      const takeMatches = peerTeaches.filter((pt: any) =>
+        myLearns.some((al: any) =>
+          (pt.skill?.id && al.skill?.id && pt.skill.id === al.skill.id) ||
+          (pt.skill?.name && al.skill?.name && pt.skill.name.toLowerCase() === al.skill.name.toLowerCase())
+        )
+      ).length;
+
+      const giveMatches = myTeaches.filter((at: any) =>
+        peerLearns.some((pl: any) =>
+          (at.skill?.id && pl.skill?.id && at.skill.id === pl.skill.id) ||
+          (at.skill?.name && pl.skill?.name && at.skill.name.toLowerCase() === pl.skill.name.toLowerCase())
+        )
+      ).length;
+
+      const totalMatches = takeMatches + giveMatches;
+      let matchScore = 78;
+      if (myUserSkills.length > 0 && peerUserSkills.length > 0) {
+        if (totalMatches > 0) {
+          const maxPossible = Math.max(1, Math.min(myLearns.length + myTeaches.length, peerTeaches.length + peerLearns.length));
+          matchScore = Math.min(99, Math.max(70, Math.round(60 + (totalMatches / maxPossible) * 39)));
+        } else {
+          matchScore = Math.min(88, Math.max(65, Math.round((peer.trustScore || 4.8) * 16)));
+        }
+      }
+
+      const peerSessions = sessions.filter(s => (s.teacherId === peer.id || s.studentId === peer.id));
+      const sessionCount = peerSessions.length;
+
+      const teachesSkills = peerTeaches.map((us: any) => us.skill?.name).filter(Boolean);
+      const learnsSkills = peerLearns.map((us: any) => us.skill?.name).filter(Boolean);
+
+      const teachStr = teachesSkills.length > 0 
+        ? teachesSkills.slice(0, 2).join(' & ') 
+        : (Array.isArray(peer.skillsTaught) && peer.skillsTaught.length > 0 ? peer.skillsTaught.slice(0, 2).join(' & ') : 'Core Mentoring');
+      const learnStr = learnsSkills.length > 0 
+        ? learnsSkills.slice(0, 2).join(' & ') 
+        : (Array.isArray(peer.skillsLearned) && peer.skillsLearned.length > 0 ? peer.skillsLearned.slice(0, 2).join(' & ') : 'Advanced Concepts');
+
+      return {
+        peer,
+        matchScore,
+        totalMatches,
+        sessionCount,
+        teachStr,
+        learnStr
+      };
+    });
+
+    scoredPeers.sort((a, b) => {
+      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+      return (b.peer.trustScore || 0) - (a.peer.trustScore || 0);
+    });
+
+    return scoredPeers[0] || null;
+  }, [currentUser, peers, sessions]);
 
   // Contextual time greeting
   const getGreeting = () => {
@@ -452,54 +546,80 @@ export function Dashboard() {
               </Button>
             </div>
             
-            <div 
-              onClick={() => navigate('/match-finder')}
-              className="bg-surface-container-low rounded-xl p-5 flex flex-col md:flex-row gap-5 items-start md:items-center hover:bg-surface-container transition-colors cursor-pointer border border-outline-variant"
-            >
-              <div className="relative shrink-0">
-                <img className="w-12 h-12 rounded-full object-cover border border-outline-variant" src="https://i.pravatar.cc/150?img=12" alt="Maya S. profile avatar" />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-teaching-emerald rounded-full ring-2 ring-surface" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h4 className="text-sm font-bold text-on-surface">Maya S.</h4>
-                  <span className="px-2 py-0.5 bg-primary-container text-on-primary-container rounded-md text-[10px] font-bold">98% Match</span>
-                  <span className="text-[11px] text-on-surface-variant font-medium">• Available Today</span>
+            {recommendedPeerMatch ? (
+              <div 
+                onClick={() => navigate('/match-finder')}
+                className="bg-surface-container-low rounded-xl p-5 flex flex-col md:flex-row gap-5 items-start md:items-center hover:bg-surface-container transition-colors cursor-pointer border border-outline-variant"
+              >
+                <div className="relative shrink-0">
+                  <img 
+                    className="w-12 h-12 rounded-full object-cover border border-outline-variant" 
+                    src={recommendedPeerMatch.peer.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'} 
+                    alt={`${recommendedPeerMatch.peer.name || 'Peer'} profile avatar`} 
+                  />
+                  <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${recommendedPeerMatch.peer.isAvailableNow ? 'bg-teaching-emerald' : 'bg-primary'} rounded-full ring-2 ring-surface`} />
                 </div>
-                
-                <p className="text-xs text-on-surface-variant mb-2">
-                  Can teach <strong className="text-on-surface font-semibold">UI/UX & Figma</strong> • Wants to learn <strong className="text-on-surface font-semibold">Python</strong>
-                </p>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1 flex-wrap">
+                    <h4 className="text-sm font-bold text-on-surface">{recommendedPeerMatch.peer.name || 'Peer Scholar'}</h4>
+                    <span className="px-2 py-0.5 bg-primary-container text-on-primary-container rounded-md text-[10px] font-bold">
+                      {recommendedPeerMatch.matchScore}% Match
+                    </span>
+                    <span className="text-[11px] text-on-surface-variant font-medium">
+                      • {recommendedPeerMatch.peer.isAvailableNow ? 'Available Today' : 'Available for Booking'}
+                    </span>
+                  </div>
+                  
+                  <p className="text-xs text-on-surface-variant mb-2">
+                    Can teach <strong className="text-on-surface font-semibold">{recommendedPeerMatch.teachStr}</strong> • Wants to learn <strong className="text-on-surface font-semibold">{recommendedPeerMatch.learnStr}</strong>
+                  </p>
 
-                <div className="flex items-center gap-3 text-[11px] text-on-surface-variant font-medium">
-                  <span className="flex items-center gap-1"><span className="material-symbols-outlined text-[13px] text-learning-amber">star</span> 4.98 (24 sessions)</span>
-                  <span>•</span>
-                  <span>₹499/hr</span>
+                  <div className="flex items-center gap-3 text-[11px] text-on-surface-variant font-medium">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[13px] text-learning-amber">star</span> 
+                      {(recommendedPeerMatch.peer.trustScore || 5.0).toFixed(2)} ({recommendedPeerMatch.sessionCount} session{recommendedPeerMatch.sessionCount !== 1 ? 's' : ''})
+                    </span>
+                    <span>•</span>
+                    <span>₹{recommendedPeerMatch.peer.hourlyRate || 499}/hr</span>
+                  </div>
+                </div>
+                <div className="w-full md:w-auto mt-2 md:mt-0 flex gap-2 shrink-0">
+                  <Button 
+                    variant="secondary" 
+                    className="flex-1 md:flex-none py-1.5 px-3.5 text-xs font-semibold"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/messages?peerId=${recommendedPeerMatch.peer.id}`, { state: { peerId: recommendedPeerMatch.peer.id } });
+                    }}
+                  >
+                    Message
+                  </Button>
+                  <Button 
+                    variant="primary" 
+                    className="flex-1 md:flex-none py-1.5 px-3.5 text-xs font-semibold"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate('/match-finder');
+                    }}
+                  >
+                    Propose Exchange
+                  </Button>
                 </div>
               </div>
-              <div className="w-full md:w-auto mt-2 md:mt-0 flex gap-2 shrink-0">
-                <Button 
-                  variant="secondary" 
-                  className="flex-1 md:flex-none py-1.5 px-3.5 text-xs font-semibold"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate('/messages?peerId=user-maya', { state: { peerId: 'user-maya' } });
-                  }}
-                >
-                  Message
-                </Button>
-                <Button 
-                  variant="primary" 
-                  className="flex-1 md:flex-none py-1.5 px-3.5 text-xs font-semibold"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    navigate('/match-finder');
-                  }}
-                >
-                  Propose Exchange
-                </Button>
+            ) : (
+              <div className="p-6 text-center bg-surface-container-low rounded-xl border border-outline-variant space-y-2">
+                <span className="material-symbols-outlined text-3xl text-on-surface-variant">person_search</span>
+                <p className="text-xs font-bold text-on-surface">No Peer Recommendations Available Yet</p>
+                <p className="text-[11px] text-on-surface-variant max-w-sm mx-auto">
+                  As peers join the platform and register their skill interests, your top matching study partners will automatically appear here.
+                </p>
+                <div className="pt-2">
+                  <Button variant="secondary" onClick={() => navigate('/match-finder')} className="text-xs py-1 px-3">
+                    Explore Match Finder
+                  </Button>
+                </div>
               </div>
-            </div>
+            )}
           </section>
 
           {/* Community Champions Leaderboard */}
@@ -523,29 +643,43 @@ export function Dashboard() {
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {[
-                { name: 'Aarav Sharma', role: 'Python & AI Mentor', rating: '5.0', badge: '🥇 1st Place', score: '38 Sessions', avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=256&q=80' },
-                { name: 'Priya Patel', role: 'React & UI Lead', rating: '4.98', badge: '🥈 2nd Place', score: '29 Sessions', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=256&q=80' },
-                { name: 'Tanishq S.', role: 'Dedicated Scholar', rating: '4.95', badge: '🥉 3rd Place', score: '340 Points', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80' }
-              ].map((champion, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl border border-outline-variant bg-surface-container-low flex items-center gap-3">
-                  <img src={champion.avatar} alt={champion.name} className="w-10 h-10 rounded-full object-cover border border-outline-variant shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-on-surface truncate">{champion.name}</span>
-                      <span className="text-[10px] font-extrabold text-learning-amber">{champion.badge}</span>
-                    </div>
-                    <p className="text-[10px] text-on-surface-variant truncate">{champion.role}</p>
-                    <div className="flex items-center gap-2 text-[10px] font-bold text-teaching-emerald mt-0.5">
-                      <span>★ {champion.rating}</span>
-                      <span>•</span>
-                      <span>{champion.score}</span>
+            {loadingChampions ? (
+              <div className="p-4 text-center text-xs text-on-surface-variant font-medium animate-pulse">
+                Loading community rankings...
+              </div>
+            ) : champions.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {champions.map((champion, idx) => (
+                  <div key={champion.id || idx} className="p-3.5 rounded-xl border border-outline-variant bg-surface-container-low flex items-center gap-3">
+                    <img 
+                      src={champion.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'} 
+                      alt={champion.name} 
+                      className="w-10 h-10 rounded-full object-cover border border-outline-variant shrink-0" 
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-on-surface truncate">{champion.name}</span>
+                        <span className="text-[10px] font-extrabold text-learning-amber shrink-0">{champion.badge}</span>
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant truncate">{champion.role}</p>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-teaching-emerald mt-0.5">
+                        <span>★ {champion.rating}</span>
+                        <span>•</span>
+                        <span>{champion.score}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <div className="p-5 text-center bg-surface-container-low rounded-xl border border-outline-variant space-y-1">
+                <span className="material-symbols-outlined text-2xl text-learning-amber">emoji_events</span>
+                <p className="text-xs font-bold text-on-surface">Leaderboard Opening Soon</p>
+                <p className="text-[11px] text-on-surface-variant">
+                  Participate in sessions and community discussions to claim your place on the podium!
+                </p>
+              </div>
+            )}
           </section>
         </div>
 

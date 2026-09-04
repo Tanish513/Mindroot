@@ -4,8 +4,11 @@ echo ======================================================
 echo Staging and Pushing updates to GitHub...
 echo ======================================================
 echo.
+set "COMMIT_MSG=%~1"
+if "%COMMIT_MSG%"=="" set "COMMIT_MSG=feat: make recommended peer match and community champions dynamic"
+
 git add .
-git commit -m "Configure production Google OAuth, Supabase database, and cloud deployment"
+git commit -m "%COMMIT_MSG%"
 git push origin main
 echo.
 if %ERRORLEVEL% equ 0 (
