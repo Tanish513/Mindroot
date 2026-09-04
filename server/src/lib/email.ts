@@ -250,3 +250,47 @@ export async function sendPayoutConfirmationEmail({
     return { success: false, error: err };
   }
 }
+
+export async function sendTestEmail({ to }: { to: string }) {
+  const resend = getResendClient();
+  if (!resend) {
+    return { success: false, error: 'RESEND_API_KEY is not configured in server environment variables.' };
+  }
+
+  try {
+    const { data, error } = await resend.emails.send({
+      from: getFromEmail(),
+      to: [to],
+      subject: 'Mindroot - Resend Email Integration Test',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 16px; background-color: #ffffff;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <h1 style="color: #2563eb; margin: 0;">Mindroot</h1>
+            <p style="color: #64748b; font-size: 13px; margin: 4px 0 0 0;">Peer-to-Peer Learning & Mentorship</p>
+          </div>
+          <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
+            <h3 style="color: #065f46; margin: 0 0 6px 0;">🎉 Resend Email Connected Successfully!</h3>
+            <p style="color: #047857; font-size: 13px; margin: 0;">
+              Your Mindroot server can now reliably deliver verification emails, session booking notices, Razorpay receipts, and password reset links.
+            </p>
+          </div>
+          <p style="color: #475569; font-size: 12px; line-height: 1.6;">
+            <strong>Sender:</strong> ${getFromEmail()}<br/>
+            <strong>Recipient:</strong> ${to}<br/>
+            <strong>Timestamp:</strong> ${new Date().toISOString()}
+          </p>
+        </div>
+      `
+    });
+
+    if (error) {
+      console.error('[Resend Error] Test email failed:', error);
+      return { success: false, error };
+    }
+    return { success: true, data };
+  } catch (err: any) {
+    console.error('[Email Error] Test email exception:', err);
+    return { success: false, error: err?.message || String(err) };
+  }
+}
+

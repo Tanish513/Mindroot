@@ -18,7 +18,8 @@ import {
   sendPasswordResetEmail,
   sendPaymentReceiptEmail,
   sendBookingNotificationEmail,
-  sendPayoutConfirmationEmail
+  sendPayoutConfirmationEmail,
+  sendTestEmail
 } from './lib/email';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -1596,6 +1597,38 @@ app.post('/api/auth/resend-verification', requireAuth, async (req: any, res: any
   sendVerificationEmail({ to: user.email, name: user.name, token: rawToken }).catch(err => logger.error({ err }, 'Error sending resend verification email'));
 
   res.json({ success: true, message: 'Verification email sent successfully.' });
+});
+
+// POST & GET /api/email/test — Test Resend integration directly
+app.all('/api/email/test', async (req: any, res: any) => {
+  const targetEmail = req.body?.to || req.query?.to;
+  if (!targetEmail) {
+    return res.status(400).json({ 
+      success: false,
+      error: 'Recipient email "to" is required (provide ?to=your_email@example.com or JSON body { "to": "..." })' 
+    });
+  }
+
+  const result = await sendTestEmail({ to: String(targetEmail).trim() });
+  if (!result.success) {
+    const errorMsg = typeof result.error === 'object' ? JSON.stringify(result.error) : String(result.error);
+    const isTestingRestriction = errorMsg.includes('testing emails to your own email address');
+
+    return res.status(500).json({
+      success: false,
+      message: 'Resend API call failed',
+      details: result.error,
+      hint: isTestingRestriction
+        ? 'Resend free testing domain (onboarding@resend.dev) only delivers to the email address registered on your Resend account. To send to any recipient, add and verify your custom domain in Resend Dashboard.'
+        : 'Ensure your RESEND_API_KEY is correctly set in your environment variables and starts with "re_".'
+    });
+  }
+
+  return res.json({
+    success: true,
+    message: `Test email successfully dispatched to ${targetEmail} via Resend!`,
+    data: result.data
+  });
 });
 
 // POST /api/auth/forgot-password — Request password reset email (enumeration-safe + rate limited)
