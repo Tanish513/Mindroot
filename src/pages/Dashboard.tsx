@@ -65,8 +65,8 @@ export function Dashboard() {
     return startTime + durationMs <= Date.now();
   };
 
-  const isTeacherRole = role === 'teacher';
-  const isBothRole = loginRole === 'both';
+  const isBothRole = loginRole === 'both' || currentUser?.role === 'both';
+  const isTeacherRole = role === 'teacher' || (!isBothRole && (loginRole === 'teacher' || currentUser?.role === 'teacher'));
 
   const confirmedSessions = sessions.filter(s => {
     const isUserPart = s.teacherId === currentUser.id || s.studentId === currentUser.id || (Array.isArray(s.students) && s.students.some((st: any) => st.id === currentUser.id));

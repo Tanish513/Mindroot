@@ -19,6 +19,10 @@ model User {
   tokenBalance     Int                      @default(4)
   trustScore       Float                    @default(5.0)
   rewardPoints     Int                      @default(0)
+  hourlyRate       Int                      @default(499)
+  batchPricing     Json?
+  bio              String?
+  avatar           String?
   deletedAt        DateTime?
   taughtSessions   Session[]                @relation("TeacherSessions")
   learnedSessions  Session[]                @relation("StudentSessions")

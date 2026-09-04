@@ -471,7 +471,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           {currentUser && (
             <div className="hidden lg:flex flex-col text-left">
               <span className="text-xs font-semibold text-on-surface group-hover:text-primary transition-colors">{currentUser.name}</span>
-              <span className="text-[10px] text-on-surface-variant capitalize font-medium">{role}</span>
+              <span className="text-[10px] text-on-surface-variant capitalize font-medium">
+                {currentUser?.role === 'both' ? `${role} (Hybrid)` : (currentUser?.role || role)}
+              </span>
             </div>
           )}
         </Link>

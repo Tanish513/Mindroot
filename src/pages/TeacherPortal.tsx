@@ -37,6 +37,22 @@ export function TeacherPortal() {
   const [savingAvailability, setSavingAvailability] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
 
+  const [portalRates, setPortalRates] = useState<Record<number, number>>(() => {
+    if (currentUser?.batchPricing && typeof currentUser.batchPricing === 'object') {
+      return { ...currentUser.batchPricing };
+    }
+    const base = currentUser?.hourlyRate || 499;
+    return {
+      1: base,
+      2: Math.round(base * 0.8),
+      3: Math.round(base * 0.7),
+      4: Math.round(base * 0.6),
+      5: Math.round(base * 0.5)
+    };
+  });
+  const [savingRates, setSavingRates] = useState(false);
+  const [ratesSavedNotice, setRatesSavedNotice] = useState(false);
+
   const loadData = useCallback(() => {
     if (!currentUser) {
       api.getMe().then(user => {
@@ -47,6 +63,18 @@ export function TeacherPortal() {
         if (typeof user?.isAvailableNow === 'boolean') {
           setIsAvailableNow(user.isAvailableNow);
         }
+        if (user?.batchPricing && typeof user.batchPricing === 'object') {
+          setPortalRates({ ...user.batchPricing });
+        } else if (user?.hourlyRate) {
+          const base = user.hourlyRate;
+          setPortalRates({
+            1: base,
+            2: Math.round(base * 0.8),
+            3: Math.round(base * 0.7),
+            4: Math.round(base * 0.6),
+            5: Math.round(base * 0.5)
+          });
+        }
       }).catch(console.error);
     } else {
       if (currentUser.availability && typeof currentUser.availability === 'object') {
@@ -55,10 +83,50 @@ export function TeacherPortal() {
       if (typeof currentUser.isAvailableNow === 'boolean') {
         setIsAvailableNow(currentUser.isAvailableNow);
       }
+      if (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') {
+        setPortalRates({ ...currentUser.batchPricing });
+      } else if (currentUser.hourlyRate) {
+        const base = currentUser.hourlyRate;
+        setPortalRates({
+          1: base,
+          2: Math.round(base * 0.8),
+          3: Math.round(base * 0.7),
+          4: Math.round(base * 0.6),
+          5: Math.round(base * 0.5)
+        });
+      }
     }
     api.getSessions().then(setSessions).catch(console.error);
     api.getTransactions().then(setTransactions).catch(console.error);
   }, [currentUser, setCurrentUser]);
+
+  const handleSaveRates = async () => {
+    if (!currentUser?.id) return;
+    setSavingRates(true);
+    try {
+      const base1on1 = portalRates[1] || currentUser.hourlyRate || 499;
+      await api.updateUser(currentUser.id, {
+        hourlyRate: base1on1,
+        batchPricing: portalRates
+      });
+      setCurrentUser({
+        ...currentUser,
+        hourlyRate: base1on1,
+        batchPricing: portalRates
+      });
+      api.syncNetworkUser({
+        ...currentUser,
+        hourlyRate: base1on1,
+        batchPricing: portalRates
+      });
+      setRatesSavedNotice(true);
+      setTimeout(() => setRatesSavedNotice(false), 2500);
+    } catch (err) {
+      console.error('Failed to save rates:', err);
+    } finally {
+      setSavingRates(false);
+    }
+  };
 
   useEffect(() => {
     loadData();
@@ -191,6 +259,94 @@ export function TeacherPortal() {
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Batch & Lecture Pricing Card */}
+      <div className="bg-surface border border-outline-variant rounded-xl p-5 shadow-elevation-1 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-outline-variant pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm sm:text-base font-bold text-on-surface flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-primary text-xl">payments</span>
+                <span>Your Mentoring Pricing & Batch Rates</span>
+              </h3>
+              {ratesSavedNotice && (
+                <span className="text-xs font-bold text-teaching-emerald flex items-center gap-1 bg-teaching-emerald-container px-2 py-0.5 rounded-md border border-teaching-emerald/20">
+                  <span className="material-symbols-outlined text-sm">check_circle</span>
+                  Rates Updated!
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-on-surface-variant mt-0.5">
+              Set the price students pay per seat for each lecture format. These prices are used directly across the marketplace.
+            </p>
+          </div>
+
+          <Button
+            variant="primary"
+            onClick={handleSaveRates}
+            disabled={savingRates}
+            className="text-xs font-bold px-4 py-2 shrink-0 flex items-center gap-1.5"
+          >
+            {savingRates ? (
+              <>
+                <span className="w-3 h-3 border border-on-primary border-t-transparent rounded-full animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <span className="material-symbols-outlined text-sm">save</span>
+                <span>Save All Rates</span>
+              </>
+            )}
+          </Button>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+          {[
+            { cap: 1, label: '1-on-1 Lecture', icon: 'person', desc: '1 Student (Base Rate)' },
+            { cap: 2, label: 'Duo Study', icon: 'group', desc: '2 Students' },
+            { cap: 3, label: 'Trio Batch', icon: 'groups', desc: '3 Students' },
+            { cap: 4, label: 'Small Cohort', icon: 'diversity_3', desc: '4 Students' },
+            { cap: 5, label: 'Masterclass Batch', icon: 'school', desc: '5 Students (Max)' },
+          ].map(tier => {
+            const price = portalRates[tier.cap] ?? (tier.cap === 1 ? (currentUser?.hourlyRate || 499) : Math.round((currentUser?.hourlyRate || 499) * (1 - tier.cap * 0.1)));
+            const totalHour = price * tier.cap;
+            return (
+              <div key={tier.cap} className="p-3 bg-surface-container-low rounded-xl border border-outline-variant flex flex-col justify-between space-y-2 hover:border-primary/40 transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-on-surface flex items-center gap-1">
+                    <span className="material-symbols-outlined text-sm text-primary">{tier.icon}</span>
+                    {tier.label}
+                  </span>
+                  <span className="text-[10px] text-on-surface-variant font-medium">{tier.cap} Seat{tier.cap > 1 ? 's' : ''}</span>
+                </div>
+                <div>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1.5 text-xs font-bold text-on-surface-variant">₹</span>
+                    <input 
+                      type="number"
+                      min={25}
+                      max={10000}
+                      step={25}
+                      value={price}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        setPortalRates(prev => ({ ...prev, [tier.cap]: val }));
+                      }}
+                      className="w-full pl-6 pr-2 py-1.5 text-xs font-bold rounded-lg border border-outline-variant bg-surface text-on-surface outline-none focus:border-primary"
+                    />
+                  </div>
+                  <span className="text-[10px] text-on-surface-variant block mt-0.5 text-right font-medium">per student</span>
+                </div>
+                <div className="pt-1.5 border-t border-outline-variant flex items-center justify-between text-[11px] font-extrabold">
+                  <span className="text-on-surface-variant font-semibold">Cohort Earnings:</span>
+                  <span className="text-teaching-emerald font-black">₹{totalHour}/hr</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6">

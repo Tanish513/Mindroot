@@ -14,11 +14,28 @@ const PRESET_AVATARS = [
 
 export function Profile() {
   const { currentUser, setCurrentUser, role, loginRole, toggleRole } = useAppStore();
+  const loginAction = useAppStore(state => state.login);
 
+  const [accountRole, setAccountRole] = useState<'student' | 'teacher' | 'both'>(
+    (currentUser?.role as any) || (loginRole as any) || 'student'
+  );
   const [name, setName] = useState(currentUser?.name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [bio, setBio] = useState(currentUser?.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
   const [hourlyRate, setHourlyRate] = useState(currentUser?.hourlyRate || 499);
+  const [batchPricing, setBatchPricing] = useState<Record<number, number>>(() => {
+    if (currentUser?.batchPricing && typeof currentUser.batchPricing === 'object') {
+      return { ...currentUser.batchPricing };
+    }
+    const base = currentUser?.hourlyRate || 499;
+    return {
+      1: base,
+      2: Math.round(base * 0.8),
+      3: Math.round(base * 0.7),
+      4: Math.round(base * 0.6),
+      5: Math.round(base * 0.5)
+    };
+  });
   const [avatar, setAvatar] = useState(currentUser?.avatar || 'https://i.pravatar.cc/150?img=11');
   
   const [skillsTaught, setSkillsTaught] = useState<string[]>(
@@ -38,12 +55,40 @@ export function Profile() {
       setName(currentUser.name || '');
       setEmail(currentUser.email || '');
       setBio(currentUser.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
-      setHourlyRate(currentUser.hourlyRate || 499);
+      if (currentUser.role === 'student' || currentUser.role === 'teacher' || currentUser.role === 'both') {
+        setAccountRole(currentUser.role);
+      }
+      const base = currentUser.hourlyRate || 499;
+      setHourlyRate(base);
+      if (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') {
+        setBatchPricing({ ...currentUser.batchPricing });
+      } else {
+        setBatchPricing({
+          1: base,
+          2: Math.round(base * 0.8),
+          3: Math.round(base * 0.7),
+          4: Math.round(base * 0.6),
+          5: Math.round(base * 0.5)
+        });
+      }
       setAvatar(currentUser.avatar || 'https://i.pravatar.cc/150?img=11');
       if (currentUser.skillsTaught) setSkillsTaught(currentUser.skillsTaught);
       if (currentUser.skillsLearned) setSkillsLearned(currentUser.skillsLearned);
     }
   }, [currentUser]);
+
+  const handleHourlyRateChange = (val: number) => {
+    const safeVal = Math.max(50, val || 50);
+    setHourlyRate(safeVal);
+    setBatchPricing(prev => ({
+      ...prev,
+      1: safeVal,
+      2: prev[2] ? prev[2] : Math.round(safeVal * 0.8),
+      3: prev[3] ? prev[3] : Math.round(safeVal * 0.7),
+      4: prev[4] ? prev[4] : Math.round(safeVal * 0.6),
+      5: prev[5] ? prev[5] : Math.round(safeVal * 0.5),
+    }));
+  };
 
   // Handle local image file uploads (JPEG, PNG, WebP)
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -85,33 +130,57 @@ export function Profile() {
     setSkillsLearned(skillsLearned.filter(s => s !== skill));
   };
 
-  const handleSaveProfile = () => {
-    const updatedUser = {
+  const handleSaveProfile = async () => {
+    const isTeacherOrBoth = accountRole === 'teacher' || accountRole === 'both';
+    const isStudentOrBoth = accountRole === 'student' || accountRole === 'both';
+
+    const updatedUser: any = {
       ...(currentUser || {}),
       id: currentUser?.id || 'user-' + Date.now(),
       name,
       email,
       bio,
-      hourlyRate: Number(hourlyRate),
+      role: accountRole,
+      hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
+      batchPricing: isTeacherOrBoth ? batchPricing : undefined,
       avatar,
-      skillsTaught,
-      skillsLearned,
+      skillsTaught: isTeacherOrBoth ? skillsTaught : [],
+      skillsLearned: isStudentOrBoth ? skillsLearned : [],
       userSkills: [
-        ...skillsTaught.map(t => ({ type: 'teaches', skill: { id: 's-' + t, name: t, category: 'Software & AI' } })),
-        ...skillsLearned.map(l => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l, category: 'Software & AI' } }))
+        ...(isTeacherOrBoth ? skillsTaught.map(t => ({ type: 'teaches', skill: { id: 's-' + t, name: t, category: 'Software & AI' } })) : []),
+        ...(isStudentOrBoth ? skillsLearned.map(l => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l, category: 'Software & AI' } })) : [])
       ]
     };
 
     setCurrentUser(updatedUser);
+    loginAction(updatedUser, accountRole);
     api.syncNetworkUser(updatedUser);
+
+    if (currentUser?.id && !currentUser.id.startsWith('peer-')) {
+      try {
+        await api.updateUser(currentUser.id, {
+          name,
+          email,
+          bio,
+          role: accountRole,
+          hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
+          batchPricing: isTeacherOrBoth ? batchPricing : undefined,
+          avatar,
+          skillsTaught: isTeacherOrBoth ? skillsTaught : [],
+          skillsLearned: isStudentOrBoth ? skillsLearned : []
+        });
+      } catch (err) {
+        console.warn('API update in handleSaveProfile had non-blocking error:', err);
+      }
+    }
 
     setSavedSuccess(true);
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   // Only allow mode switching if user registered with 'both' mode
-  const canSwitchMode = loginRole === 'both' || currentUser?.role === 'both';
-  const userRole = currentUser?.role || role || 'student';
+  const canSwitchMode = accountRole === 'both';
+  const userRole = accountRole.toUpperCase();
   const trustScore = currentUser?.trustScore || 4.95;
 
   return (
@@ -163,10 +232,18 @@ export function Profile() {
                 <span className="material-symbols-outlined text-teaching-emerald text-base">shield_lock</span>
                 <span>Razorpay Active</span>
               </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
-                <span className="material-symbols-outlined text-teaching-emerald text-base">payments</span>
-                <span>₹{hourlyRate || 499}/hr Teaching Rate</span>
-              </div>
+              {(accountRole === 'teacher' || accountRole === 'both') && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
+                  <span className="material-symbols-outlined text-teaching-emerald text-base">payments</span>
+                  <span>₹{hourlyRate || 499}/hr Teaching Rate</span>
+                </div>
+              )}
+              {accountRole === 'student' && (
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
+                  <span className="material-symbols-outlined text-primary text-base">school</span>
+                  <span>Student Learner Account</span>
+                </div>
+              )}
               <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
                 <span className="material-symbols-outlined text-primary text-base">mail</span>
                 <span>{email || 'user@mindroot.com'}</span>
@@ -204,6 +281,72 @@ export function Profile() {
             <div className="flex items-center gap-3 border-b border-outline-variant pb-4">
               <span className="material-symbols-outlined text-primary text-2xl">person_edit</span>
               <h2 className="text-lg font-black text-on-surface">Personal Profile Details</h2>
+            </div>
+
+            {/* Account Role Selector Card */}
+            <div className="p-4 bg-surface-container-low border border-outline-variant rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-base">badge</span>
+                  <span>Account Role & Mode</span>
+                </label>
+                <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-primary-container text-on-primary-container border border-primary/20 uppercase tracking-wider">
+                  Active: {accountRole}
+                </span>
+              </div>
+              <p className="text-[11px] text-on-surface-variant">
+                Select your primary role. This customizes your navigation, profile rates, and dashboard:
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {[
+                  {
+                    id: 'student',
+                    title: 'Student Only',
+                    desc: 'Book classes, join peer study batches, and learn skills',
+                    icon: 'school',
+                    color: 'text-primary'
+                  },
+                  {
+                    id: 'teacher',
+                    title: 'Teacher Only',
+                    desc: 'Set 1-on-1 & batch teaching rates and host live lectures',
+                    icon: 'workspace_premium',
+                    color: 'text-teaching-emerald'
+                  },
+                  {
+                    id: 'both',
+                    title: 'Both (Hybrid)',
+                    desc: 'Learn and teach with seamless mode switching',
+                    icon: 'swap_horiz',
+                    color: 'text-learning-amber'
+                  }
+                ].map(item => {
+                  const isSelected = accountRole === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setAccountRole(item.id as any)}
+                      className={`p-3 rounded-xl border text-left transition-all flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-primary-container/40 border-primary ring-2 ring-primary/40 shadow-elevation-1'
+                          : 'bg-surface hover:bg-surface-container border-outline-variant text-on-surface'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className={`material-symbols-outlined text-lg ${item.color}`}>{item.icon}</span>
+                        <span className={`text-xs font-black ${isSelected ? 'text-on-primary-container' : 'text-on-surface'}`}>
+                          {item.title}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-on-surface-variant leading-tight">
+                        {item.desc}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Profile Picture Uploader & Selector */}
@@ -294,18 +437,20 @@ export function Profile() {
                 />
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-on-surface mb-1">Teaching Rate (₹ INR / Hour)</label>
-                <input 
-                  type="number" 
-                  min={50}
-                  max={10000}
-                  step={50}
-                  value={hourlyRate} 
-                  onChange={(e) => setHourlyRate(Number(e.target.value))}
-                  className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
-                />
-              </div>
+              {(accountRole === 'teacher' || accountRole === 'both') && (
+                <div>
+                  <label className="block text-xs font-bold text-on-surface mb-1">Teaching Base Rate (1-on-1 ₹/Hour)</label>
+                  <input 
+                    type="number" 
+                    min={50}
+                    max={10000}
+                    step={50}
+                    value={hourlyRate} 
+                    onChange={(e) => handleHourlyRateChange(Number(e.target.value))}
+                    className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
+                  />
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-bold text-on-surface mb-1">Avatar Image URL (Optional)</label>
@@ -317,6 +462,69 @@ export function Profile() {
                   placeholder="https://..."
                 />
               </div>
+
+              {/* Batch Pricing Configuration - Only for Teachers and Hybrid roles */}
+              {(accountRole === 'teacher' || accountRole === 'both') && (
+                <div className="sm:col-span-2 pt-3 border-t border-outline-variant">
+                  <div className="flex items-center justify-between mb-2">
+                    <div>
+                      <h3 className="text-xs font-bold text-on-surface flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-sm text-teaching-emerald">groups</span>
+                        <span>Batch Pricing (Rate per Student / Hour)</span>
+                      </h3>
+                      <p className="text-[11px] text-on-surface-variant mt-0.5">Customize how much each student pays per seat across all 5 batch capacities:</p>
+                    </div>
+                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded bg-primary-container text-on-primary-container border border-primary/20">
+                      Live in Marketplace
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1">
+                    {[
+                      { cap: 1, label: '1-on-1', icon: 'person', desc: '1 Student' },
+                      { cap: 2, label: 'Duo', icon: 'group', desc: '2 Students' },
+                      { cap: 3, label: 'Trio', icon: 'groups', desc: '3 Students' },
+                      { cap: 4, label: 'Cohort', icon: 'diversity_3', desc: '4 Students' },
+                      { cap: 5, label: 'Masterclass', icon: 'school', desc: '5 Students' },
+                    ].map(tier => {
+                      const price = batchPricing[tier.cap] ?? (tier.cap === 1 ? hourlyRate : Math.round(hourlyRate * (1 - tier.cap * 0.1)));
+                      const totalPerHour = price * tier.cap;
+                      return (
+                        <div key={tier.cap} className="p-2.5 bg-surface-container rounded-xl border border-outline-variant flex flex-col justify-between">
+                          <div>
+                            <div className="flex items-center gap-1 text-[11px] font-bold text-on-surface">
+                              <span className="material-symbols-outlined text-xs text-primary">{tier.icon}</span>
+                              <span>{tier.label}</span>
+                            </div>
+                            <span className="text-[10px] text-on-surface-variant block">{tier.desc}</span>
+                          </div>
+                          <div className="mt-2">
+                            <div className="relative">
+                              <span className="absolute left-2 top-1.5 text-xs font-bold text-on-surface-variant">₹</span>
+                              <input 
+                                type="number"
+                                min={25}
+                                max={10000}
+                                step={25}
+                                value={price}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  setBatchPricing(prev => ({ ...prev, [tier.cap]: val }));
+                                  if (tier.cap === 1) setHourlyRate(val);
+                                }}
+                                className="w-full pl-5 pr-1 py-1 text-xs font-bold rounded-lg border border-outline-variant bg-surface text-on-surface outline-none focus:border-primary"
+                              />
+                            </div>
+                            <div className="text-[10px] font-extrabold text-teaching-emerald mt-1 text-center">
+                              Earns ₹{totalPerHour}/hr
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -327,115 +535,119 @@ export function Profile() {
               <h2 className="text-lg font-black text-on-surface">Skills Portfolio</h2>
             </div>
 
-            {/* Skills Taught */}
-            <div className="space-y-3">
-              <label className="block text-xs font-extrabold text-teaching-emerald uppercase tracking-wider">
-                🎓 Skills You Teach (Teacher Profile)
-              </label>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newTeachSkill}
-                  onChange={(e) => setNewTeachSkill(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTeachSkill())}
-                  placeholder="e.g. React, Python, UI Design..."
-                  className="flex-1 px-3.5 py-2 bg-surface-container border border-outline-variant rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-teaching-emerald/20 focus:border-teaching-emerald"
-                />
-                <button 
-                  onClick={handleAddTeachSkill}
-                  className="px-4 py-2 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-extrabold transition-colors flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">add</span> Add
-                </button>
-              </div>
+            {/* Skills Taught - For Teacher and Both Roles */}
+            {(accountRole === 'teacher' || accountRole === 'both') && (
+              <div className="space-y-3">
+                <label className="block text-xs font-extrabold text-teaching-emerald uppercase tracking-wider">
+                  🎓 Skills You Teach (Teacher Profile)
+                </label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={newTeachSkill}
+                    onChange={(e) => setNewTeachSkill(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTeachSkill())}
+                    placeholder="e.g. React, Python, UI Design..."
+                    className="flex-1 px-3.5 py-2 bg-surface-container border border-outline-variant rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-teaching-emerald/20 focus:border-teaching-emerald"
+                  />
+                  <button 
+                    onClick={handleAddTeachSkill}
+                    className="px-4 py-2 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-extrabold transition-colors flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">add</span> Add
+                  </button>
+                </div>
 
-              {/* Quick skill add suggestions */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-[10px] font-bold text-on-surface-variant">Quick Add:</span>
-                {['React', 'TypeScript', 'Python', 'UI Design', 'Figma', 'Node.js', 'Machine Learning'].map(s => (
-                  !skillsTaught.includes(s) && (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setSkillsTaught([...skillsTaught, s])}
-                      className="px-2 py-0.5 bg-surface-container hover:bg-teaching-emerald-container text-on-surface-variant hover:text-on-teaching-emerald-container rounded-md text-[10px] font-bold border border-outline-variant hover:border-teaching-emerald/20 transition-colors flex items-center gap-0.5"
-                    >
-                      <span className="material-symbols-outlined text-[11px]">add</span> {s}
-                    </button>
-                  )
-                ))}
-              </div>
+                {/* Quick skill add suggestions */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-on-surface-variant">Quick Add:</span>
+                  {['React', 'TypeScript', 'Python', 'UI Design', 'Figma', 'Node.js', 'Machine Learning'].map(s => (
+                    !skillsTaught.includes(s) && (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSkillsTaught([...skillsTaught, s])}
+                        className="px-2 py-0.5 bg-surface-container hover:bg-teaching-emerald-container text-on-surface-variant hover:text-on-teaching-emerald-container rounded-md text-[10px] font-bold border border-outline-variant hover:border-teaching-emerald/20 transition-colors flex items-center gap-0.5"
+                      >
+                        <span className="material-symbols-outlined text-[11px]">add</span> {s}
+                      </button>
+                    )
+                  ))}
+                </div>
 
-              <div className="flex flex-wrap gap-2 pt-1">
-                {skillsTaught.map((skill) => (
-                  <span key={skill} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded-full text-xs font-bold shadow-elevation-1">
-                    <span>{skill}</span>
-                    <button onClick={() => handleRemoveTeachSkill(skill)} className="hover:text-alert-rose p-0.5">
-                      <span className="material-symbols-outlined text-xs">close</span>
-                    </button>
-                  </span>
-                ))}
-                {skillsTaught.length === 0 && (
-                  <p className="text-xs text-on-surface-variant italic">No teaching skills listed yet. Add skills above!</p>
-                )}
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {skillsTaught.map((skill) => (
+                    <span key={skill} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded-full text-xs font-bold shadow-elevation-1">
+                      <span>{skill}</span>
+                      <button onClick={() => handleRemoveTeachSkill(skill)} className="hover:text-alert-rose p-0.5">
+                        <span className="material-symbols-outlined text-xs">close</span>
+                      </button>
+                    </span>
+                  ))}
+                  {skillsTaught.length === 0 && (
+                    <p className="text-xs text-on-surface-variant italic">No teaching skills listed yet. Add skills above!</p>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
-            <hr className="border-outline-variant" />
+            {accountRole === 'both' && <hr className="border-outline-variant" />}
 
-            {/* Skills Desired */}
-            <div className="space-y-3">
-              <label className="block text-xs font-extrabold text-primary uppercase tracking-wider">
-                🚀 Skills You Want to Learn (Student Profile)
-              </label>
-              <div className="flex gap-2">
-                <input 
-                  type="text" 
-                  value={newLearnSkill}
-                  onChange={(e) => setNewLearnSkill(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddLearnSkill())}
-                  placeholder="e.g. Java, Data Structures, Figma..."
-                  className="flex-1 px-3.5 py-2 bg-surface-container border border-outline-variant rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
-                />
-                <button 
-                  onClick={handleAddLearnSkill}
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold transition-colors flex items-center gap-1"
-                >
-                  <span className="material-symbols-outlined text-sm">add</span> Add
-                </button>
+            {/* Skills Desired - For Student and Both Roles */}
+            {(accountRole === 'student' || accountRole === 'both') && (
+              <div className="space-y-3">
+                <label className="block text-xs font-extrabold text-primary uppercase tracking-wider">
+                  🚀 Skills You Want to Learn (Student Profile)
+                </label>
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    value={newLearnSkill}
+                    onChange={(e) => setNewLearnSkill(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddLearnSkill())}
+                    placeholder="e.g. Java, Data Structures, Figma..."
+                    className="flex-1 px-3.5 py-2 bg-surface-container border border-outline-variant rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary"
+                  />
+                  <button 
+                    onClick={handleAddLearnSkill}
+                    className="px-4 py-2 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold transition-colors flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-sm">add</span> Add
+                  </button>
+                </div>
+
+                {/* Quick skill add suggestions */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] font-bold text-on-surface-variant">Quick Add:</span>
+                  {['Java', 'Spring Boot', 'Data Structures', 'Docker', 'AWS', 'Python', 'Solidity'].map(s => (
+                    !skillsLearned.includes(s) && (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setSkillsLearned([...skillsLearned, s])}
+                        className="px-2 py-0.5 bg-surface-container hover:bg-primary-container text-on-surface-variant hover:text-on-primary-container rounded-md text-[10px] font-bold border border-outline-variant hover:border-primary/20 transition-colors flex items-center gap-0.5"
+                      >
+                        <span className="material-symbols-outlined text-[11px]">add</span> {s}
+                      </button>
+                    )
+                  ))}
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {skillsLearned.map((skill) => (
+                    <span key={skill} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-container border border-primary/20 text-on-primary-container rounded-full text-xs font-bold shadow-elevation-1">
+                      <span>{skill}</span>
+                      <button onClick={() => handleRemoveLearnSkill(skill)} className="hover:text-alert-rose p-0.5">
+                        <span className="material-symbols-outlined text-xs">close</span>
+                      </button>
+                    </span>
+                  ))}
+                  {skillsLearned.length === 0 && (
+                    <p className="text-xs text-on-surface-variant italic">No learning goals listed yet. Add skills above!</p>
+                  )}
+                </div>
               </div>
-
-              {/* Quick skill add suggestions */}
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                <span className="text-[10px] font-bold text-on-surface-variant">Quick Add:</span>
-                {['Java', 'Spring Boot', 'Data Structures', 'Docker', 'AWS', 'Python', 'Solidity'].map(s => (
-                  !skillsLearned.includes(s) && (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => setSkillsLearned([...skillsLearned, s])}
-                      className="px-2 py-0.5 bg-surface-container hover:bg-primary-container text-on-surface-variant hover:text-on-primary-container rounded-md text-[10px] font-bold border border-outline-variant hover:border-primary/20 transition-colors flex items-center gap-0.5"
-                    >
-                      <span className="material-symbols-outlined text-[11px]">add</span> {s}
-                    </button>
-                  )
-                ))}
-              </div>
-
-              <div className="flex flex-wrap gap-2 pt-1">
-                {skillsLearned.map((skill) => (
-                  <span key={skill} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-primary-container border border-primary/20 text-on-primary-container rounded-full text-xs font-bold shadow-elevation-1">
-                    <span>{skill}</span>
-                    <button onClick={() => handleRemoveLearnSkill(skill)} className="hover:text-alert-rose p-0.5">
-                      <span className="material-symbols-outlined text-xs">close</span>
-                    </button>
-                  </span>
-                ))}
-                {skillsLearned.length === 0 && (
-                  <p className="text-xs text-on-surface-variant italic">No learning goals listed yet. Add skills above!</p>
-                )}
-              </div>
-            </div>
+            )}
           </div>
 
           <div className="flex justify-end">

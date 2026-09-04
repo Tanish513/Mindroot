@@ -95,7 +95,8 @@ const registerSchema = z.object({
   role: z.string().optional(),
   teaches: z.any().optional(),
   learns: z.any().optional(),
-  hourlyRate: z.any().optional()
+  hourlyRate: z.any().optional(),
+  batchPricing: z.any().optional()
 });
 
 const loginSchema = z.object({
@@ -231,6 +232,17 @@ try {
     prisma = new PrismaClient({ adapter });
   } else {
     prisma = new PrismaClient();
+  }
+
+  if (prisma && process.env.DATABASE_URL) {
+    prisma.$executeRawUnsafe(`
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "hourlyRate" INTEGER NOT NULL DEFAULT 499;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "batchPricing" JSONB DEFAULT NULL;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bio" TEXT DEFAULT 'Passionate about peer-to-peer knowledge sharing and skill exchanges.';
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" TEXT DEFAULT '';
+    `).catch((err: any) => {
+      logger.warn({ err }, 'Auto-migration for teacher pricing skipped or encountered error');
+    });
   }
 } catch (e) {
   logger.warn({ err: e }, 'PrismaClient initialization caught error');
@@ -570,6 +582,16 @@ function loadDb() {
           inMemoryUsers.length = 0;
           data.users.forEach((u: any) => {
             if (u && u.id) {
+              if (!u.batchPricing && u.hourlyRate) {
+                const base = Number(u.hourlyRate) || 499;
+                u.batchPricing = {
+                  1: base,
+                  2: Math.round(base * 0.8),
+                  3: Math.round(base * 0.7),
+                  4: Math.round(base * 0.6),
+                  5: Math.round(base * 0.5)
+                };
+              }
               inMemoryUsers.push(u);
             }
           });
@@ -1002,6 +1024,20 @@ io.on('connection', (socket) => {
       } else {
         inMemoryUsers.push(user);
       }
+
+      if (process.env.DATABASE_URL && prisma) {
+        const prismaUpdate: any = {};
+        if (user.hourlyRate !== undefined) prismaUpdate.hourlyRate = Number(user.hourlyRate);
+        if (user.batchPricing !== undefined) prismaUpdate.batchPricing = user.batchPricing;
+        if (user.bio !== undefined) prismaUpdate.bio = user.bio;
+        if (user.avatar !== undefined) prismaUpdate.avatar = user.avatar;
+        if (user.role !== undefined) prismaUpdate.role = user.role;
+        if (user.name !== undefined) prismaUpdate.name = user.name;
+        if (Object.keys(prismaUpdate).length > 0) {
+          prisma.user.update({ where: { id: user.id }, data: prismaUpdate }).catch(() => {});
+        }
+      }
+
       saveDb();
       sendSessionsToUser(user.id);
     }
@@ -1262,11 +1298,33 @@ app.post('/api/auth/register', async (req, res) => {
   }
 
   try {
-    const { name, email, password, role, teaches, learns, hourlyRate } = req.body;
+    const { name, email, password, role, teaches, learns, hourlyRate, batchPricing } = req.body;
     const teachesArr = Array.isArray(teaches) ? teaches : (teaches ? [teaches] : []);
     const learnsArr = Array.isArray(learns) ? learns : (learns ? [learns] : []);
     const cleanRole = ['student', 'teacher', 'both'].includes(role) ? role : 'both';
     const cleanEmail = String(email).toLowerCase().trim();
+    const cleanHourlyRate = (hourlyRate !== undefined && !isNaN(Number(hourlyRate)) && Number(hourlyRate) > 0) ? Number(hourlyRate) : 499;
+
+    let cleanBatchPricing: any = null;
+    if (cleanRole === 'teacher' || cleanRole === 'both') {
+      if (batchPricing && typeof batchPricing === 'object') {
+        cleanBatchPricing = {
+          1: Number(batchPricing[1] || batchPricing['1'] || cleanHourlyRate),
+          2: Number(batchPricing[2] || batchPricing['2'] || Math.round(cleanHourlyRate * 0.8)),
+          3: Number(batchPricing[3] || batchPricing['3'] || Math.round(cleanHourlyRate * 0.7)),
+          4: Number(batchPricing[4] || batchPricing['4'] || Math.round(cleanHourlyRate * 0.6)),
+          5: Number(batchPricing[5] || batchPricing['5'] || Math.round(cleanHourlyRate * 0.5))
+        };
+      } else {
+        cleanBatchPricing = {
+          1: cleanHourlyRate,
+          2: Math.round(cleanHourlyRate * 0.8),
+          3: Math.round(cleanHourlyRate * 0.7),
+          4: Math.round(cleanHourlyRate * 0.6),
+          5: Math.round(cleanHourlyRate * 0.5)
+        };
+      }
+    }
 
     let existingUser: any = null;
     if (process.env.DATABASE_URL && prisma) {
@@ -1297,7 +1355,8 @@ app.post('/api/auth/register', async (req, res) => {
       role: cleanRole,
       trustScore: 5.0,
       tokenBalance: 50,
-      hourlyRate: hourlyRate ? Number(hourlyRate) : 499,
+      hourlyRate: cleanHourlyRate,
+      batchPricing: cleanBatchPricing,
       skillsTaught: teachesArr,
       skillsLearned: learnsArr,
       userSkills: [
@@ -1316,11 +1375,32 @@ app.post('/api/auth/register', async (req, res) => {
             emailVerified: false,
             role: cleanRole,
             tokenBalance: 50,
-            trustScore: 5.0
+            trustScore: 5.0,
+            hourlyRate: cleanHourlyRate,
+            batchPricing: cleanBatchPricing || undefined
           }
         });
         if (dbUser) {
           newUser.id = dbUser.id;
+
+          if (teachesArr.length > 0) {
+            for (const t of teachesArr) {
+              try {
+                let sk = await prisma.skill.findFirst({ where: { name: t } });
+                if (!sk) sk = await prisma.skill.create({ data: { name: t, category: 'Software & AI' } });
+                await prisma.userSkill.create({ data: { userId: dbUser.id, skillId: sk.id, type: 'teaches' } });
+              } catch {}
+            }
+          }
+          if (learnsArr.length > 0) {
+            for (const l of learnsArr) {
+              try {
+                let sk = await prisma.skill.findFirst({ where: { name: l } });
+                if (!sk) sk = await prisma.skill.create({ data: { name: l, category: 'Software & AI' } });
+                await prisma.userSkill.create({ data: { userId: dbUser.id, skillId: sk.id, type: 'wants_to_learn' } });
+              } catch {}
+            }
+          }
         }
       } catch (dbErr: any) {
         logger.error({ dbErr, cleanEmail }, 'Prisma user creation error in register');
@@ -1738,6 +1818,7 @@ app.post('/api/auth/google', async (req, res) => {
     role: 'both',
     trustScore: 5.0,
     hourlyRate: 499,
+    batchPricing: { 1: 499, 2: 399, 3: 349, 4: 299, 5: 249 },
     skillsTaught: ['Web Development'],
     skillsLearned: ['Python'],
     userSkills: [
@@ -1755,7 +1836,9 @@ app.post('/api/auth/google', async (req, res) => {
           password: hashedPassword,
           role: 'both',
           tokenBalance: 50,
-          trustScore: 5.0
+          trustScore: 5.0,
+          hourlyRate: 499,
+          batchPricing: { 1: 499, 2: 399, 3: 349, 4: 299, 5: 249 }
         }
       });
       if (dbUser) {
@@ -2801,12 +2884,17 @@ app.patch('/api/sessions/:id', async (req, res) => {
 // PATCH /api/users/:id — Edit user details / profile / availability / streak
 app.patch('/api/users/:id', async (req: any, res: any) => {
   const { id } = req.params;
-  const { password, name, email, role, hourlyRate, trustScore, tokenBalance, rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio } = req.body;
+  const { password, name, email, role, hourlyRate, batchPricing, trustScore, tokenBalance, rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills } = req.body;
   if (!id) return res.status(400).json({ error: 'User ID is required' });
 
-  // Security check: Only admins can change user roles
-  if (role !== undefined && req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: Only administrators can modify user roles.' });
+  // Security check: Only admins can assign or modify the 'admin' role
+  if (role !== undefined) {
+    if (role === 'admin' && req.userRole !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Only administrators can assign the admin role.' });
+    }
+    if (!['student', 'teacher', 'both', 'admin'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role provided. Must be student, teacher, or both.' });
+    }
   }
 
   // Security check: Users can only modify their own profile unless they are an admin
@@ -2827,6 +2915,9 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
       if (email !== undefined) updateData.email = email;
       if (role !== undefined) updateData.role = role;
       if (hourlyRate !== undefined) updateData.hourlyRate = parseInt(hourlyRate, 10);
+      if (batchPricing !== undefined) updateData.batchPricing = batchPricing;
+      if (bio !== undefined) updateData.bio = bio;
+      if (avatar !== undefined) updateData.avatar = avatar;
       if (trustScore !== undefined) updateData.trustScore = parseFloat(trustScore);
       if (tokenBalance !== undefined) updateData.tokenBalance = parseInt(tokenBalance, 10);
       if (rewardPoints !== undefined) updateData.rewardPoints = parseInt(rewardPoints, 10);
@@ -2840,14 +2931,20 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
       if (user) {
         Object.assign(user, dbUser);
         if (hashedPassword) user.password = hashedPassword;
+        if (hourlyRate !== undefined) user.hourlyRate = parseInt(hourlyRate, 10);
+        if (batchPricing !== undefined) user.batchPricing = batchPricing;
         if (availability !== undefined) user.availability = availability;
         if (isAvailableNow !== undefined) user.isAvailableNow = Boolean(isAvailableNow);
         if (streak !== undefined) user.streak = parseInt(streak, 10);
         if (lastActiveDate !== undefined) user.lastActiveDate = lastActiveDate;
         if (badges !== undefined) user.badges = badges;
         if (bio !== undefined) user.bio = bio;
+        if (avatar !== undefined) user.avatar = avatar;
+        if (skillsTaught !== undefined) user.skillsTaught = skillsTaught;
+        if (skillsLearned !== undefined) user.skillsLearned = skillsLearned;
+        if (userSkills !== undefined) user.userSkills = userSkills;
       } else {
-        const copy = { ...dbUser, availability, isAvailableNow, streak, lastActiveDate, badges, bio };
+        const copy = { ...dbUser, hourlyRate: hourlyRate !== undefined ? parseInt(hourlyRate, 10) : dbUser.hourlyRate, batchPricing, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills };
         if (hashedPassword) copy.password = hashedPassword;
         inMemoryUsers.push(copy);
       }
@@ -2855,7 +2952,7 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
       io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
       return res.json({ success: true, message: `User ${id} updated successfully`, user: toPublicUser(user || dbUser) });
     } catch (err: any) {
-      logger.error({ err, id }, 'Database error during admin user patch');
+      logger.error({ err, id }, 'Database error during user patch');
       return res.status(500).json({ error: `Database failed to update user ${id}: ${err.message}` });
     }
   }
@@ -2868,6 +2965,7 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
   if (email !== undefined) user.email = email;
   if (role !== undefined) user.role = role;
   if (hourlyRate !== undefined) user.hourlyRate = parseInt(hourlyRate, 10);
+  if (batchPricing !== undefined) user.batchPricing = batchPricing;
   if (trustScore !== undefined) user.trustScore = parseFloat(trustScore);
   if (tokenBalance !== undefined) user.tokenBalance = parseInt(tokenBalance, 10);
   if (rewardPoints !== undefined) user.rewardPoints = parseInt(rewardPoints, 10);
@@ -2877,6 +2975,10 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
   if (lastActiveDate !== undefined) user.lastActiveDate = lastActiveDate;
   if (badges !== undefined) user.badges = badges;
   if (bio !== undefined) user.bio = bio;
+  if (avatar !== undefined) user.avatar = avatar;
+  if (skillsTaught !== undefined) user.skillsTaught = skillsTaught;
+  if (skillsLearned !== undefined) user.skillsLearned = skillsLearned;
+  if (userSkills !== undefined) user.userSkills = userSkills;
 
   saveDb();
   io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
@@ -3648,51 +3750,6 @@ app.get('/api/auth/me', async (req: any, res) => {
     return res.status(404).json({ error: 'User not found' });
   }
   res.json({ user: toPublicUser(memUser) });
-});
-
-// PATCH /api/users/:id — Update user profile (streak, availability, isAvailableNow, loyalty points, etc.)
-app.patch('/api/users/:id', async (req: any, res) => {
-  const { id } = req.params;
-  const updates = req.body;
-
-  let targetUser = inMemoryUsers.find(u => u.id === id);
-  if (!targetUser) {
-    return res.status(404).json({ error: 'User not found' });
-  }
-
-  const allowedFields = [
-    'name', 'bio', 'avatar', 'hourlyRate', 'skillsTaught', 'skillsLearned',
-    'availability', 'isAvailableNow', 'streak', 'lastActiveDate', 'rewardPoints', 'tokenBalance'
-  ];
-
-  for (const key of allowedFields) {
-    if (updates[key] !== undefined) {
-      targetUser[key] = updates[key];
-    }
-  }
-
-  if (process.env.DATABASE_URL && prisma) {
-    try {
-      const prismaUpdateData: any = {};
-      if (updates.name !== undefined) prismaUpdateData.name = updates.name;
-      if (updates.avatar !== undefined) prismaUpdateData.avatar = updates.avatar;
-      if (updates.hourlyRate !== undefined) prismaUpdateData.hourlyRate = Number(updates.hourlyRate);
-      if (updates.tokenBalance !== undefined) prismaUpdateData.tokenBalance = Number(updates.tokenBalance);
-      if (updates.rewardPoints !== undefined) prismaUpdateData.rewardPoints = Number(updates.rewardPoints);
-      if (Object.keys(prismaUpdateData).length > 0) {
-        await prisma.user.update({
-          where: { id },
-          data: prismaUpdateData
-        });
-      }
-    } catch (err) {
-      logger.warn({ err, id }, 'Prisma update failed for /api/users/:id');
-    }
-  }
-
-  saveDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
-  res.json({ success: true, user: toPublicUser(targetUser) });
 });
 
 // Global Error-Handling Middleware (Must be the last app.use() call)

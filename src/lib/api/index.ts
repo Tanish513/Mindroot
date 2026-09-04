@@ -258,12 +258,26 @@ export function calcSessionRewardPoints(durationMin: number = 60): number {
 }
 
 // Dynamic Tiered Pricing for Multi-Student Lectures (Capacity 1 to 5)
-export function calculateSeatPrice(baseHourlyRate: number, capacity: number = 1): number {
-  const base = baseHourlyRate && baseHourlyRate > 0 ? baseHourlyRate : 499;
-  if (capacity <= 1) return base;
-  if (capacity === 2) return Math.round(base * 0.8); // 20% discount (e.g. ₹399)
-  if (capacity === 3) return Math.round(base * 0.7); // 30% discount (e.g. ₹349)
-  if (capacity === 4) return Math.round(base * 0.6); // 40% discount (e.g. ₹299)
+export function calculateSeatPrice(peerOrBaseRate: any, capacity: number = 1): number {
+  const cap = Math.min(Math.max(capacity || 1, 1), 5);
+
+  if (peerOrBaseRate && typeof peerOrBaseRate === 'object') {
+    const bp = peerOrBaseRate.batchPricing;
+    if (bp && typeof bp === 'object') {
+      const customPrice = bp[cap] ?? bp[String(cap)];
+      if (typeof customPrice === 'number' && !isNaN(customPrice) && customPrice > 0) {
+        return customPrice;
+      }
+    }
+    const base = Number(peerOrBaseRate.hourlyRate) || 499;
+    return calculateSeatPrice(base, cap);
+  }
+
+  const base = typeof peerOrBaseRate === 'number' && !isNaN(peerOrBaseRate) && peerOrBaseRate > 0 ? peerOrBaseRate : 499;
+  if (cap <= 1) return base;
+  if (cap === 2) return Math.round(base * 0.8); // 20% discount (e.g. ₹399)
+  if (cap === 3) return Math.round(base * 0.7); // 30% discount (e.g. ₹349)
+  if (cap === 4) return Math.round(base * 0.6); // 40% discount (e.g. ₹299)
   return Math.round(base * 0.5); // 50% discount (e.g. ₹249 for max capacity 5)
 }
 
@@ -381,12 +395,31 @@ export const api = {
     try {
       const stored = localStorage.getItem('mindroot_known_peers');
       const list = stored ? JSON.parse(stored) : [];
-      if (!list.some((p: any) => p.id === user.id)) {
+      const idx = list.findIndex((p: any) => p.id === user.id);
+      if (idx >= 0) {
+        list[idx] = { ...list[idx], ...user };
+      } else {
         list.push(user);
-        safeSetStorage('mindroot_known_peers', list);
       }
+      safeSetStorage('mindroot_known_peers', list);
       globalSocket.emit('register-user-sync', user);
       globalBc.postMessage({ type: 'sync-peers', peers: list });
+
+      // Automatically persist to API server so database stays synced
+      if (user.id && !user.id.startsWith('peer-')) {
+        api.updateUser(user.id, {
+          name: user.name,
+          role: user.role,
+          hourlyRate: user.hourlyRate,
+          batchPricing: user.batchPricing,
+          bio: user.bio,
+          avatar: user.avatar,
+          skillsTaught: user.skillsTaught,
+          skillsLearned: user.skillsLearned,
+          availability: user.availability,
+          isAvailableNow: user.isAvailableNow
+        }).catch(() => {});
+      }
     } catch {}
   },
 
@@ -431,12 +464,30 @@ export const api = {
             ...learns.filter(Boolean).map((lName: string) => ({ id: 's-' + lName, type: 'wants_to_learn', skill: { id: 's-' + lName, name: lName, category: 'Software & AI' } }))
           ];
 
+      const baseRate = typeof p.hourlyRate === 'number' && !isNaN(p.hourlyRate) && p.hourlyRate > 0 ? p.hourlyRate : 499;
+      const batchPricing = p.batchPricing && typeof p.batchPricing === 'object'
+        ? {
+            1: Number(p.batchPricing[1] || p.batchPricing['1'] || baseRate),
+            2: Number(p.batchPricing[2] || p.batchPricing['2'] || Math.round(baseRate * 0.8)),
+            3: Number(p.batchPricing[3] || p.batchPricing['3'] || Math.round(baseRate * 0.7)),
+            4: Number(p.batchPricing[4] || p.batchPricing['4'] || Math.round(baseRate * 0.6)),
+            5: Number(p.batchPricing[5] || p.batchPricing['5'] || Math.round(baseRate * 0.5)),
+          }
+        : {
+            1: baseRate,
+            2: Math.round(baseRate * 0.8),
+            3: Math.round(baseRate * 0.7),
+            4: Math.round(baseRate * 0.6),
+            5: Math.round(baseRate * 0.5),
+          };
+
       return {
         ...p,
         role: p.role || (teaches.length && learns.length ? 'both' : (teaches.length ? 'teacher' : 'student')),
         trustScore: typeof p.trustScore === 'number' ? p.trustScore : 5.0,
         tokenBalance: typeof p.tokenBalance === 'number' ? p.tokenBalance : 50,
-        hourlyRate: typeof p.hourlyRate === 'number' ? p.hourlyRate : 499,
+        hourlyRate: baseRate,
+        batchPricing,
         skillsTaught: teaches,
         skillsLearned: learns,
         userSkills: formattedUserSkills
@@ -911,7 +962,7 @@ export const api = {
     throw new Error('Invalid User ID/Email or Password. Please check credentials and try again.');
   },
 
-  registerAuthUser: async (data: { name: string; email: string; password: string; role: string; teaches: string[]; learns: string[]; hourlyRate?: number }) => {
+  registerAuthUser: async (data: { name: string; email: string; password: string; role: string; teaches: string[]; learns: string[]; hourlyRate?: number; batchPricing?: Record<number, number> }) => {
     let createdUser: any = null;
     try {
       const r = await fetch(`${getBASE()}/api/auth/register`, {
@@ -934,6 +985,7 @@ export const api = {
     }
 
     if (!createdUser) {
+      const rate = data.hourlyRate || 499;
       createdUser = {
         id: 'user-' + Date.now(),
         name: data.name,
@@ -941,7 +993,14 @@ export const api = {
         password: data.password,
         role: data.role || 'both',
         trustScore: 5.0,
-        hourlyRate: data.hourlyRate || 499,
+        hourlyRate: rate,
+        batchPricing: data.batchPricing || {
+          1: rate,
+          2: Math.round(rate * 0.8),
+          3: Math.round(rate * 0.7),
+          4: Math.round(rate * 0.6),
+          5: Math.round(rate * 0.5)
+        },
         skillsTaught: data.teaches || [],
         skillsLearned: data.learns || []
       };

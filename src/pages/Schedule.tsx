@@ -365,8 +365,7 @@ export function Schedule() {
     try {
       setBookingError('');
       setConflictData(null);
-      const baseRate = selectedPeer?.hourlyRate || 499;
-      const seatPrice = calculateSeatPrice(baseRate, bookingCapacity);
+      const seatPrice = calculateSeatPrice(selectedPeer, bookingCapacity);
 
       await api.postSession({
         title: bookingTitle,
@@ -902,7 +901,7 @@ export function Schedule() {
                     { cap: 4, label: 'Quad (4)', icon: 'diversity_3' },
                     { cap: 5, label: 'Batch (5)', icon: 'school' }
                   ].map(item => {
-                    const price = calculateSeatPrice(selectedPeer?.hourlyRate || 499, item.cap);
+                    const price = calculateSeatPrice(selectedPeer, item.cap);
                     const isSel = bookingCapacity === item.cap;
                     return (
                       <button
@@ -949,7 +948,7 @@ export function Schedule() {
               <div>
                 <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider mb-2">Session Title</label>
                 <input 
-                  type="text"
+                  type="text" 
                   placeholder="e.g. Intro to React"
                   className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-medium text-on-surface p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   value={bookingTitle}
@@ -983,7 +982,7 @@ export function Schedule() {
             <div className="p-4 px-6 border-t border-outline-variant bg-surface-container-low flex items-center justify-end gap-3 shrink-0 rounded-b-3xl">
               <Button variant="ghost" onClick={() => setIsBookingOpen(false)}>Cancel</Button>
               <Button variant="primary" onClick={() => handleCreateBooking()}>
-                Book for ₹{calculateSeatPrice(selectedPeer?.hourlyRate || 499, bookingCapacity)}
+                Book for ₹{calculateSeatPrice(selectedPeer, bookingCapacity)}
               </Button>
             </div>
 

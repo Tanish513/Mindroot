@@ -181,7 +181,7 @@ const convert12to24 = (time12: string) => {
     setSelectedVoucherId(null);
   };
 
-  const currentSeatPrice = bookingPeer ? calculateSeatPrice(bookingPeer.hourlyRate || 499, bookingCapacity) : 499;
+  const currentSeatPrice = bookingPeer ? calculateSeatPrice(bookingPeer, bookingCapacity) : 499;
 
   const availableVouchers = (Array.isArray(currentUser?.vouchers) ? currentUser.vouchers : []).filter((v: any) => !v.isUsed);
   const selectedVoucher = availableVouchers.find((v: any) => v.id === selectedVoucherId);
@@ -212,8 +212,7 @@ const convert12to24 = (time12: string) => {
     try {
       const skillName = selectedSkill?.skill?.name || selectedSkill?.name || (bookingPeer.skillsTaught?.[0] || 'General Mentoring');
       const sessionTitle = `${skillName} Mentoring`;
-      const baseRate = bookingPeer.hourlyRate || 499;
-      const seatPrice = calculateSeatPrice(baseRate, bookingCapacity);
+      const seatPrice = calculateSeatPrice(bookingPeer, bookingCapacity);
       const discount = selectedVoucher
         ? (selectedVoucher.discountType === 'percent'
             ? Math.round(seatPrice * (selectedVoucher.discountValue / 100))
@@ -467,7 +466,7 @@ const convert12to24 = (time12: string) => {
                       <span className="material-symbols-outlined text-sm text-primary">groups</span>
                       Group Option:
                     </span>
-                    <span className="text-teaching-emerald font-bold">From ₹{calculateSeatPrice(peer.hourlyRate || 499, 5)}/seat (Pay later)</span>
+                    <span className="text-teaching-emerald font-bold">From ₹{calculateSeatPrice(peer, 5)}/seat (Pay later)</span>
                   </div>
                 </div>
 
@@ -731,13 +730,15 @@ const convert12to24 = (time12: string) => {
 
                     <div className="grid grid-cols-5 gap-1.5">
                       {[
-                        { cap: 1, label: '1-on-1', discount: '0%', icon: 'person' },
-                        { cap: 2, label: 'Duo (2)', discount: '-20%', icon: 'group' },
-                        { cap: 3, label: 'Trio (3)', discount: '-30%', icon: 'groups' },
-                        { cap: 4, label: 'Quad (4)', discount: '-40%', icon: 'diversity_3' },
-                        { cap: 5, label: 'Batch (5)', discount: '-50%', icon: 'school' }
+                        { cap: 1, label: '1-on-1', icon: 'person' },
+                        { cap: 2, label: 'Duo (2)', icon: 'group' },
+                        { cap: 3, label: 'Trio (3)', icon: 'groups' },
+                        { cap: 4, label: 'Quad (4)', icon: 'diversity_3' },
+                        { cap: 5, label: 'Batch (5)', icon: 'school' }
                       ].map(item => {
-                        const price = calculateSeatPrice(bookingPeer.hourlyRate || 499, item.cap);
+                        const price = calculateSeatPrice(bookingPeer, item.cap);
+                        const base1on1 = calculateSeatPrice(bookingPeer, 1);
+                        const disc = item.cap > 1 && base1on1 > price ? Math.round(((base1on1 - price) / base1on1) * 100) : 0;
                         const isSelected = bookingCapacity === item.cap;
 
                         return (
@@ -756,10 +757,12 @@ const convert12to24 = (time12: string) => {
                             <span className={`text-[11px] font-black mt-1 ${isSelected ? 'text-primary' : 'text-on-surface'}`}>
                               ₹{price}
                             </span>
-                            {item.discount !== '0%' && (
+                            {disc > 0 ? (
                               <span className="text-[9px] font-bold text-on-teaching-emerald-container bg-teaching-emerald-container px-1 rounded mt-0.5">
-                                {item.discount}
+                                -{disc}%
                               </span>
+                            ) : (
+                              <span className="text-[9px] text-transparent mt-0.5">.</span>
                             )}
                           </button>
                         );

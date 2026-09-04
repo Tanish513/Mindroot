@@ -75,7 +75,10 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
   const isExpanded = !isSidebarCollapsed || isHovered;
   const isFloatingOverlay = isSidebarCollapsed && isHovered;
 
-  const activeRole = role; // 'student' or 'teacher'
+  const canSwitchRole = loginRole === 'both' || currentUser?.role === 'both';
+  const activeRole = canSwitchRole
+    ? role
+    : (currentUser?.role === 'teacher' || loginRole === 'teacher' ? 'teacher' : 'student');
   const filteredItems = navItems.filter(item => item.roles.includes(activeRole));
 
   const handleLogout = () => {
@@ -230,8 +233,8 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
           </Link>
         )}
 
-        {/* Switch Role Button */}
-        {loginRole === 'both' && (
+        {/* Switch Role Button: Only available if account is both/hybrid */}
+        {canSwitchRole && (
           <button 
             onClick={() => {
               toggleRole();

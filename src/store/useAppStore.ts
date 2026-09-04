@@ -89,8 +89,8 @@ if (initialUser) {
   setTimeout(() => api.syncNetworkUser(initialUser), 500);
 }
 
-const initialRole = (localStorage.getItem('mindroot_current_role') as 'student' | 'teacher' | 'admin') || 'student';
-const initialLoginRole = (localStorage.getItem('mindroot_login_role') as 'student' | 'teacher' | 'both' | 'admin') || 'both';
+const initialRole = (localStorage.getItem('mindroot_current_role') as 'student' | 'teacher' | 'admin') || (initialUser?.role === 'teacher' ? 'teacher' : 'student');
+const initialLoginRole = (initialUser?.role as 'student' | 'teacher' | 'both' | 'admin') || (localStorage.getItem('mindroot_login_role') as 'student' | 'teacher' | 'both' | 'admin') || 'student';
 
 // Reactive multi-laptop listener: auto-update current user's token balance & trust score live
 onPeersUpdated((peers) => {
@@ -178,11 +178,36 @@ export const useAppStore = create<AppState>((set) => ({
   searchQuery: '',
   setSearchQuery: (query) => set({ searchQuery: query }),
   currentUser: initialUser,
-  setCurrentUser: (user) => set(() => {
+  setCurrentUser: (user) => set((state) => {
     if (user) {
       safeSetStorage('mindroot_current_user', user);
       api.syncNetworkUser(user);
-      return { currentUser: user, tokenBalance: user.tokenBalance };
+
+      // Dynamically synchronize loginRole and active role if role is defined on user
+      const userRole = user.role;
+      let newLoginRole = state.loginRole;
+      let newActiveRole = state.role;
+
+      if (userRole === 'student' || userRole === 'teacher' || userRole === 'both' || userRole === 'admin') {
+        newLoginRole = userRole;
+        safeSetStorage('mindroot_login_role', newLoginRole);
+
+        if (userRole === 'student') {
+          newActiveRole = 'student';
+        } else if (userRole === 'teacher') {
+          newActiveRole = 'teacher';
+        } else if (userRole === 'admin') {
+          newActiveRole = 'admin';
+        }
+        safeSetStorage('mindroot_current_role', newActiveRole);
+      }
+
+      return { 
+        currentUser: user, 
+        tokenBalance: user.tokenBalance,
+        loginRole: newLoginRole,
+        role: newActiveRole
+      };
     } else {
       localStorage.removeItem('mindroot_current_user');
       return { currentUser: null, tokenBalance: 50 };
@@ -191,7 +216,7 @@ export const useAppStore = create<AppState>((set) => ({
   login: (user, role) => {
     safeSetStorage('mindroot_current_user', user);
     safeSetStorage('mindroot_login_role', role);
-    const calculatedRole = role === 'admin' ? 'admin' : (role === 'both' ? 'student' : (role === 'teacher' ? 'teacher' : 'student'));
+    const calculatedRole = role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'student');
     safeSetStorage('mindroot_current_role', calculatedRole);
     api.syncNetworkUser(user);
     
@@ -212,7 +237,7 @@ export const useAppStore = create<AppState>((set) => ({
       isLoggedIn: false,
       currentUser: null,
       tokenBalance: 50,
-      loginRole: 'both',
+      loginRole: 'student',
       role: 'student'
     });
   },

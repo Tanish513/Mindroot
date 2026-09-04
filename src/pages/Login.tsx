@@ -25,17 +25,49 @@ export function Login() {
   const [signUpError, setSignUpError] = useState('');
   const [signUpSuccess, setSignUpSuccess] = useState(false);
   const [signUpLoading, setSignUpLoading] = useState(false);
-  const [signUpRole, setSignUpRole] = useState<'student' | 'teacher' | 'both'>('both');
+  const [signUpRole, setSignUpRole] = useState<'student' | 'teacher' | 'both'>('student');
   const [signUpHourlyRate, setSignUpHourlyRate] = useState(499);
+  const [signUpBatchPricing, setSignUpBatchPricing] = useState<Record<number, number>>({
+    1: 499,
+    2: 399,
+    3: 349,
+    4: 299,
+    5: 249
+  });
 
   // Google OAuth Onboarding states
   const [googleError, setGoogleError] = useState('');
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [pendingUser, setPendingUser] = useState<any>(null);
-  const [onboardRole, setOnboardRole] = useState<'student' | 'teacher' | 'both'>('both');
+  const [onboardRole, setOnboardRole] = useState<'student' | 'teacher' | 'both'>('student');
   const [onboardHourlyRate, setOnboardHourlyRate] = useState(499);
+  const [onboardBatchPricing, setOnboardBatchPricing] = useState<Record<number, number>>({
+    1: 499,
+    2: 399,
+    3: 349,
+    4: 299,
+    5: 249
+  });
   const [onboardTeaches, setOnboardTeaches] = useState('Web Development');
   const [onboardLearns, setOnboardLearns] = useState('Python');
+
+  const handleBaseRateChange = (rate: number, isOnboard = false) => {
+    const safeRate = Math.max(50, rate || 50);
+    const updated = {
+      1: safeRate,
+      2: Math.round(safeRate * 0.8),
+      3: Math.round(safeRate * 0.7),
+      4: Math.round(safeRate * 0.6),
+      5: Math.round(safeRate * 0.5)
+    };
+    if (isOnboard) {
+      setOnboardHourlyRate(safeRate);
+      setOnboardBatchPricing(updated);
+    } else {
+      setSignUpHourlyRate(safeRate);
+      setSignUpBatchPricing(updated);
+    }
+  };
 
   const loginAction = useAppStore(state => state.login);
   const setCurrentUser = useAppStore(state => state.setCurrentUser);
@@ -51,7 +83,8 @@ export function Login() {
         setGoogleError('');
         const res = await api.loginWithGoogleToken(credentialResponse.credential);
         if (res && res.user) {
-          loginAction(res.user, res.user.role || 'both');
+          const resolvedRole = res.user.role || 'student';
+          loginAction(res.user, resolvedRole);
           setCurrentUser(res.user);
 
           if (res.isNewUser) {
@@ -142,7 +175,7 @@ export function Login() {
 
       const userRole: 'student' | 'teacher' | 'both' | 'admin' = (user.role === 'student' || user.role === 'teacher' || user.role === 'both' || user.role === 'admin')
         ? user.role
-        : 'both';
+        : 'student';
 
       loginAction(user, userRole);
       setCurrentUser(user);
@@ -211,7 +244,8 @@ export function Login() {
         role: signUpRole,
         teaches: teachesArray,
         learns: learnsArray,
-        hourlyRate: signUpHourlyRate
+        hourlyRate: signUpHourlyRate,
+        batchPricing: signUpBatchPricing
       });
 
       setSignUpSuccess(true);
@@ -245,6 +279,7 @@ export function Login() {
       ...pendingUser,
       role: onboardRole,
       hourlyRate: onboardHourlyRate,
+      batchPricing: onboardBatchPricing,
       skillsTaught: teachesArray,
       skillsLearned: learnsArray,
       userSkills: [
@@ -506,10 +541,10 @@ export function Login() {
                         />
                       </div>
 
-                      <div className="space-y-1.5">
+                      <div className="space-y-2">
                         <div className="flex justify-between items-center">
-                          <label className="block text-xs font-bold text-on-surface">Mentoring Rate / Lecture Price (₹ INR / Hour)</label>
-                          <span className="text-[10px] text-primary font-bold bg-primary-container px-2 py-0.5 rounded">Editable later in Profile</span>
+                          <label className="block text-xs font-bold text-on-surface">Base Rate (1-on-1 Private Session)</label>
+                          <span className="text-[10px] text-primary font-bold bg-primary-container px-2 py-0.5 rounded">₹ / Hour</span>
                         </div>
                         <div className="relative">
                           <span className="absolute left-3.5 top-2.5 font-bold text-on-surface-variant text-sm">₹</span>
@@ -521,7 +556,7 @@ export function Login() {
                             placeholder="e.g. 499"
                             className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-outline-variant bg-surface text-sm font-bold text-on-surface placeholder:text-neutral-subtle outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-elevation-1 transition-all"
                             value={signUpHourlyRate}
-                            onChange={(e) => setSignUpHourlyRate(Number(e.target.value))}
+                            onChange={(e) => handleBaseRateChange(Number(e.target.value))}
                           />
                         </div>
                         <div className="flex gap-2 pt-0.5">
@@ -529,12 +564,69 @@ export function Login() {
                             <button
                               key={rate}
                               type="button"
-                              onClick={() => setSignUpHourlyRate(rate)}
+                              onClick={() => handleBaseRateChange(rate)}
                               className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all ${signUpHourlyRate === rate ? 'bg-primary text-on-primary border-primary' : 'bg-surface-container-low border-outline-variant text-on-surface-variant hover:bg-surface-container'}`}
                             >
                               ₹{rate}/hr
                             </button>
                           ))}
+                        </div>
+                      </div>
+
+                      {/* Custom Batch Pricing for All 5 Cohort Formats */}
+                      <div className="space-y-2 pt-2 border-t border-outline-variant/60">
+                        <div className="flex justify-between items-center">
+                          <label className="block text-xs font-bold text-on-surface flex items-center gap-1">
+                            <span className="material-symbols-outlined text-sm text-teaching-emerald">groups</span>
+                            <span>Batch Pricing (Price per Student / Hour)</span>
+                          </label>
+                          <span className="text-[10px] text-teaching-emerald font-bold bg-teaching-emerald-container px-2 py-0.5 rounded">Customizable</span>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant">Specify how much each student pays per seat. Your total earnings per hour are shown for each batch size:</p>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {[
+                            { cap: 1, label: '1-on-1 Lecture', icon: 'person', desc: '1 Student' },
+                            { cap: 2, label: 'Duo Study', icon: 'group', desc: '2 Students' },
+                            { cap: 3, label: 'Trio Batch', icon: 'groups', desc: '3 Students' },
+                            { cap: 4, label: 'Small Cohort', icon: 'diversity_3', desc: '4 Students' },
+                            { cap: 5, label: 'Masterclass Batch', icon: 'school', desc: '5 Students (Max)' },
+                          ].map(tier => {
+                            const seatPrice = signUpBatchPricing[tier.cap] ?? (tier.cap === 1 ? signUpHourlyRate : Math.round(signUpHourlyRate * (1 - tier.cap * 0.1)));
+                            const totalEarnings = seatPrice * tier.cap;
+                            return (
+                              <div key={tier.cap} className={`p-2.5 rounded-xl border bg-surface-container-low border-outline-variant ${tier.cap === 5 ? 'sm:col-span-2' : ''}`}>
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-xs font-bold text-on-surface flex items-center gap-1">
+                                    <span className="material-symbols-outlined text-sm text-primary">{tier.icon}</span>
+                                    {tier.label}
+                                  </span>
+                                  <span className="text-[10px] font-extrabold text-teaching-emerald">
+                                    Earns ₹{totalEarnings}/hr
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <div className="relative flex-1">
+                                    <span className="absolute left-2.5 top-1.5 font-bold text-on-surface-variant text-xs">₹</span>
+                                    <input 
+                                      type="number"
+                                      min={25}
+                                      max={10000}
+                                      step={25}
+                                      value={seatPrice}
+                                      onChange={(e) => {
+                                        const val = Number(e.target.value);
+                                        setSignUpBatchPricing(prev => ({ ...prev, [tier.cap]: val }));
+                                        if (tier.cap === 1) setSignUpHourlyRate(val);
+                                      }}
+                                      className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-outline-variant bg-surface text-xs font-bold text-on-surface outline-none focus:border-primary"
+                                    />
+                                  </div>
+                                  <span className="text-[10px] font-semibold text-on-surface-variant whitespace-nowrap">/ student</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </>
@@ -636,16 +728,61 @@ export function Login() {
                     />
                   </div>
                   <div className="space-y-1">
-                    <label className="block text-xs font-semibold text-on-surface">Mentoring Rate / Lecture Price (₹ INR / Hour)</label>
+                    <label className="block text-xs font-semibold text-on-surface">Base Mentoring Rate (1-on-1 ₹/Hour)</label>
                     <input
                       type="number"
                       min={50}
                       max={10000}
                       step={50}
                       value={onboardHourlyRate}
-                      onChange={(e) => setOnboardHourlyRate(Number(e.target.value))}
+                      onChange={(e) => handleBaseRateChange(Number(e.target.value), true)}
                       className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2.5 outline-none focus:border-primary"
                     />
+                  </div>
+
+                  <div className="space-y-1.5 pt-1">
+                    <label className="block text-[11px] font-bold text-on-surface flex items-center justify-between">
+                      <span>Batch Pricing (Per Student):</span>
+                      <span className="text-[10px] text-teaching-emerald font-extrabold">All 5 Batches</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { cap: 1, label: '1-on-1', icon: 'person' },
+                        { cap: 2, label: 'Duo (2)', icon: 'group' },
+                        { cap: 3, label: 'Trio (3)', icon: 'groups' },
+                        { cap: 4, label: 'Cohort (4)', icon: 'diversity_3' },
+                        { cap: 5, label: 'Masterclass (5)', icon: 'school' }
+                      ].map(tier => {
+                        const seatPrice = onboardBatchPricing[tier.cap] ?? (tier.cap === 1 ? onboardHourlyRate : Math.round(onboardHourlyRate * (1 - tier.cap * 0.1)));
+                        return (
+                          <div key={tier.cap} className={`p-1.5 rounded-lg border border-outline-variant bg-surface-container-low ${tier.cap === 5 ? 'col-span-2' : ''}`}>
+                            <div className="flex justify-between items-center text-[10px] font-bold mb-0.5">
+                              <span className="flex items-center gap-0.5 text-on-surface">
+                                <span className="material-symbols-outlined text-xs text-primary">{tier.icon}</span>
+                                {tier.label}
+                              </span>
+                              <span className="text-teaching-emerald font-black">₹{seatPrice * tier.cap}/hr total</span>
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-2 top-1 text-xs font-bold text-on-surface-variant">₹</span>
+                              <input 
+                                type="number"
+                                min={25}
+                                max={10000}
+                                step={25}
+                                value={seatPrice}
+                                onChange={(e) => {
+                                  const val = Number(e.target.value);
+                                  setOnboardBatchPricing(prev => ({ ...prev, [tier.cap]: val }));
+                                  if (tier.cap === 1) setOnboardHourlyRate(val);
+                                }}
+                                className="w-full pl-5 pr-1 py-1 text-xs font-bold rounded border border-outline-variant bg-surface outline-none"
+                              />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 </>
               )}

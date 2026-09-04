@@ -38,27 +38,35 @@ interface ProtectedRouteProps {
 }
 
 function ProtectedRoute({ children, allowedRoles }: ProtectedRouteProps) {
-  const { isLoggedIn, role } = useAppStore();
+  const { isLoggedIn, role, loginRole, currentUser } = useAppStore();
 
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
 
-  if (allowedRoles && !allowedRoles.includes(role)) {
-    if (role === 'admin') return <Navigate to="/admin" replace />;
-    return <Navigate to={role === 'teacher' ? '/teacher' : '/dashboard'} replace />;
+  const effectiveRole = (currentUser?.role === 'both' || loginRole === 'both')
+    ? role
+    : (currentUser?.role === 'teacher' || loginRole === 'teacher' ? 'teacher' : (currentUser?.role === 'admin' || loginRole === 'admin' ? 'admin' : 'student'));
+
+  if (allowedRoles && !allowedRoles.includes(effectiveRole)) {
+    if (effectiveRole === 'admin') return <Navigate to="/admin" replace />;
+    return <Navigate to={effectiveRole === 'teacher' ? '/teacher' : '/dashboard'} replace />;
   }
 
   return <>{children}</>;
 }
 
 function RootRedirect() {
-  const { isLoggedIn, role } = useAppStore();
+  const { isLoggedIn, role, loginRole, currentUser } = useAppStore();
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;
   }
-  if (role === 'admin') return <Navigate to="/admin" replace />;
-  return <Navigate to={role === 'teacher' ? '/teacher' : '/dashboard'} replace />;
+  const effectiveRole = (currentUser?.role === 'both' || loginRole === 'both')
+    ? role
+    : (currentUser?.role === 'teacher' || loginRole === 'teacher' ? 'teacher' : (currentUser?.role === 'admin' || loginRole === 'admin' ? 'admin' : 'student'));
+
+  if (effectiveRole === 'admin') return <Navigate to="/admin" replace />;
+  return <Navigate to={effectiveRole === 'teacher' ? '/teacher' : '/dashboard'} replace />;
 }
 
 function App() {
