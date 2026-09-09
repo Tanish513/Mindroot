@@ -7,7 +7,6 @@
     "dev": "npx tsx watch src/index.ts",
     "start": "npx tsx src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test:email": "npx tsx src/scripts/test-email.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [],

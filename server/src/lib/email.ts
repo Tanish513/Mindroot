@@ -115,62 +115,18 @@ export interface SendMailOptions {
   text?: string;
 }
 
-export async function sendMail({ to, subject, html, text }: SendMailOptions) {
-  const provider = getEmailProvider();
+export interface SendMailResult {
+  success: boolean;
+  transport?: string;
+  simulated?: boolean;
+  error?: any;
+  data?: any;
+  messageId?: string;
+}
 
-  // 1. Try SMTP if configured
-  if (provider === 'smtp') {
-    const transporter = getSmtpTransporter();
-    if (transporter) {
-      const from = getSmtpFromEmail();
-      try {
-        const info = await transporter.sendMail({
-          from,
-          to,
-          subject,
-          html,
-          text: text || html.replace(/<[^>]*>?/gm, ''),
-        });
-        console.log(`[Email Service - SMTP] ✅ Delivered to ${to}: "${subject}" (MessageId: ${info.messageId})`);
-        return { success: true, transport: 'smtp', messageId: info.messageId };
-      } catch (err: any) {
-        console.error('[Email Service - SMTP Error]', err.message || err);
-        // Fallback to Resend if available
-        if (process.env.RESEND_API_KEY) {
-          console.warn('[Email Service] SMTP delivery failed. Falling back to Resend...');
-        } else {
-          return { success: false, transport: 'smtp', error: err.message || err };
-        }
-      }
-    }
-  }
-
-  // 2. Try Resend if configured (primary or fallback)
-  const resend = getResendClient();
-  if (resend) {
-    const resendFrom = getResendFromEmail();
-    try {
-      const { data, error } = await resend.emails.send({
-        from: resendFrom,
-        to: [to],
-        subject,
-        html,
-      });
-
-      if (error) {
-        console.error('[Resend Error] API call rejected:', error);
-        return { success: false, transport: 'resend', error };
-      }
-      console.log(`[Email Service - Resend] ✅ Delivered to ${to}: "${subject}" (ID: ${data?.id})`);
-      return { success: true, transport: 'resend', data };
-    } catch (err: any) {
-      console.error('[Email Service - Resend Exception]:', err);
-      return { success: false, transport: 'resend', error: err.message || err };
-    }
-  }
-
-  // 3. Fallback: Dev Mode Simulation
-  console.log(`[Email Service - Dev Mode] 📢 Simulated email to ${to}: "${subject}"`);
+export async function sendMail({ to, subject }: SendMailOptions): Promise<SendMailResult> {
+  // Completely simulated mode: zero network overhead, zero port blocking, zero domain restrictions
+  console.log(`[Email Service - Simulated] 📢 Notification generated for ${to}: "${subject}"`);
   return { success: true, transport: 'simulated', simulated: true };
 }
 

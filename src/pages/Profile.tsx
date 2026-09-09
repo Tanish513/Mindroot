@@ -49,26 +49,6 @@ export function Profile() {
   const [newTeachSkill, setNewTeachSkill] = useState('');
   const [newLearnSkill, setNewLearnSkill] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
-  const [resendingVerification, setResendingVerification] = useState(false);
-  const [resendNotice, setResendNotice] = useState<string | null>(null);
-
-  const handleResendVerification = async () => {
-    setResendingVerification(true);
-    setResendNotice(null);
-    try {
-      const res = await api.resendVerification();
-      if (res && res.success) {
-        setResendNotice('Verification email dispatched! Please check your inbox.');
-      } else {
-        setResendNotice(res?.error || 'Failed to send verification email.');
-      }
-    } catch (err: any) {
-      setResendNotice(err.message || 'Error sending verification email.');
-    } finally {
-      setResendingVerification(false);
-      setTimeout(() => setResendNotice(null), 6000);
-    }
-  };
 
   useEffect(() => {
     if (currentUser) {
@@ -268,31 +248,6 @@ export function Profile() {
                 <span className="material-symbols-outlined text-primary text-base">mail</span>
                 <span>{email || 'user@mindroot.com'}</span>
               </div>
-
-              {currentUser?.emailVerified ? (
-                <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded-xl text-xs font-bold">
-                  <span className="material-symbols-outlined text-sm">verified</span>
-                  <span>Email Verified</span>
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-learning-amber-container border border-learning-amber/20 text-on-learning-amber-container rounded-xl text-xs font-bold">
-                  <span className="material-symbols-outlined text-sm">mark_email_unread</span>
-                  <span>Unverified</span>
-                  <button
-                    onClick={handleResendVerification}
-                    disabled={resendingVerification}
-                    className="underline text-primary hover:text-primary-hover font-extrabold ml-1 disabled:opacity-50 transition-colors"
-                  >
-                    {resendingVerification ? 'Sending...' : 'Resend Link'}
-                  </button>
-                </div>
-              )}
-
-              {resendNotice && (
-                <div className="text-[11px] font-bold text-primary px-2 py-1 bg-primary-container rounded-lg animate-in fade-in">
-                  {resendNotice}
-                </div>
-              )}
             </div>
           </div>
 

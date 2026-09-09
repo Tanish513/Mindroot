@@ -85,10 +85,10 @@ function toPublicUser(user: any, role?: string): any {
   }
   if (role === 'admin') {
     const { passwordResetToken, emailVerificationToken, ...safe } = user;
-    return safe;
+    return { ...safe, emailVerified: true };
   }
   const { password, passwordResetToken, emailVerificationToken, ...safe } = user;
-  return safe;
+  return { ...safe, emailVerified: true };
 }
 
 // Zod Validation Schemas
@@ -719,10 +719,17 @@ async function syncWithDatabase() {
       logger.warn({ err: adminErr }, 'Could not upsert admin user to PostgreSQL');
     }
 
+    try {
+      await prisma.user.updateMany({
+        where: { emailVerified: false },
+        data: { emailVerified: true }
+      });
+    } catch {}
+
     const dbUsers = await prisma.user.findMany({ include: { userSkills: { include: { skill: true } } } });
     if (dbUsers && dbUsers.length > 0) {
       inMemoryUsers.length = 0;
-      dbUsers.forEach((u: any) => inMemoryUsers.push(u));
+      dbUsers.forEach((u: any) => inMemoryUsers.push({ ...u, emailVerified: true }));
     }
 
     // 2. Guarantee admin user is present in inMemoryUsers
@@ -1436,7 +1443,7 @@ app.post('/api/auth/register', async (req, res) => {
       name: name || 'Peer User',
       email: cleanEmail,
       password: hashedPassword,
-      emailVerified: false,
+      emailVerified: true,
       role: cleanRole,
       trustScore: 5.0,
       tokenBalance: 50,
@@ -1457,7 +1464,7 @@ app.post('/api/auth/register', async (req, res) => {
             name: newUser.name,
             email: cleanEmail,
             password: hashedPassword,
-            emailVerified: false,
+            emailVerified: true,
             role: cleanRole,
             tokenBalance: 50,
             trustScore: 5.0,
@@ -1503,40 +1510,8 @@ app.post('/api/auth/register', async (req, res) => {
     saveDb();
     io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
 
-    // Generate SHA-256 email verification token with 24h expiry
-    const rawToken = crypto.randomBytes(32).toString('hex');
-    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
-    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    if (process.env.DATABASE_URL && prisma) {
-      try {
-        await prisma.emailVerificationToken.create({
-          data: {
-            userId: newUser.id,
-            tokenHash,
-            expiresAt
-          }
-        });
-      } catch (tokenErr) {
-        logger.error({ tokenErr, userId: newUser.id }, 'Failed to save verification token in DB');
-      }
-    }
-
-    inMemoryVerificationTokens.push({
-      id: 'evt-' + Date.now(),
-      userId: newUser.id,
-      tokenHash,
-      expiresAt,
-      createdAt: new Date()
-    });
-
-    // Send verification email via Resend asynchronously
-    sendVerificationEmail({ to: cleanEmail, name: newUser.name, token: rawToken }).catch(err => {
-      logger.error({ err }, 'Async verification email send error');
-    });
-
     const token = jwt.sign(
-      { userId: newUser.id, name: newUser.name, role: newUser.role, emailVerified: false },
+      { userId: newUser.id, name: newUser.name, role: newUser.role, emailVerified: true },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
