@@ -145,6 +145,16 @@ export const onDiscussionsUpdated = (cb: (discussions: any[]) => void) => {
   };
 };
 
+const paymentListeners: Array<(payment: any) => void> = [];
+
+export const onPaymentReceived = (cb: (payment: any) => void) => {
+  paymentListeners.push(cb);
+  return () => {
+    const idx = paymentListeners.indexOf(cb);
+    if (idx >= 0) paymentListeners.splice(idx, 1);
+  };
+};
+
 const notifyPeerListeners = (peers: any[]) => {
   peerListeners.forEach(cb => {
     try { cb(peers); } catch {}
@@ -235,6 +245,12 @@ globalSocket.on('network-messages-updated', (messages: any[]) => {
 
 globalSocket.on('network-rewards-updated', (rewards: any) => {
   notifyRewardListeners(rewards);
+});
+
+globalSocket.on('session-payment-received', (data: any) => {
+  paymentListeners.forEach(cb => {
+    try { cb(data); } catch {}
+  });
 });
 
 globalBc.onmessage = (e) => {
@@ -1393,6 +1409,72 @@ export const api = {
       success: true,
       message: 'Payment confirmed and session scheduled successfully!',
       session: newSession
+    };
+  },
+
+  getMentorUpi: async (teacherId: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/payment/mentor-upi/${encodeURIComponent(teacherId)}`, {
+        headers: getHeaders()
+      });
+      if (r.ok) {
+        return await safeParse(r, null);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch mentor UPI:', err);
+    }
+    return {
+      success: true,
+      teacherId,
+      mentorName: 'Mentor',
+      upiId: 'mindroot.peer@okhdfcbank',
+      isCustomUpi: false
+    };
+  },
+
+  confirmUpiPayment: async (data: {
+    sessionId?: string;
+    teacherId?: string;
+    amount?: number;
+    utr?: string;
+    isDemo?: boolean;
+    title?: string;
+  }) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/payment/confirm-upi`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify(data)
+      });
+      if (r.ok) {
+        const res = await safeParse(r, null);
+        if (res && res.session) {
+          try {
+            const stored = localStorage.getItem('mindroot_known_sessions');
+            const list = stored ? JSON.parse(stored) : [];
+            const idx = list.findIndex((s: any) => s.id === res.session.id);
+            if (idx >= 0) list[idx] = res.session;
+            else list.push(res.session);
+            safeSetStorage('mindroot_known_sessions', list);
+          } catch {}
+        }
+        return res;
+      }
+    } catch (err) {
+      console.warn('Backend UPI confirmation error, applying client fallback:', err);
+    }
+
+    const generatedPaymentId = data.isDemo ? `pay_demo_${Date.now()}` : `pay_upi_${data.utr || Date.now()}`;
+    return {
+      success: true,
+      message: data.isDemo ? 'Demo payment completed successfully!' : 'UPI payment confirmed!',
+      paymentId: generatedPaymentId,
+      utr: data.utr || 'DEMO_UTR_' + Date.now(),
+      session: {
+        id: data.sessionId || `session-${Date.now()}`,
+        paymentStatus: 'paid',
+        paymentId: generatedPaymentId
+      }
     };
   },
 

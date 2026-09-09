@@ -23,6 +23,7 @@ export function Profile() {
   const [email, setEmail] = useState(currentUser?.email || '');
   const [bio, setBio] = useState(currentUser?.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
   const [hourlyRate, setHourlyRate] = useState(currentUser?.hourlyRate || 499);
+  const [upiId, setUpiId] = useState(currentUser?.upiId || '');
   const [batchPricing, setBatchPricing] = useState<Record<number, number>>(() => {
     if (currentUser?.batchPricing && typeof currentUser.batchPricing === 'object') {
       return { ...currentUser.batchPricing };
@@ -60,6 +61,7 @@ export function Profile() {
       }
       const base = currentUser.hourlyRate || 499;
       setHourlyRate(base);
+      setUpiId(currentUser.upiId || '');
       if (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') {
         setBatchPricing({ ...currentUser.batchPricing });
       } else {
@@ -142,6 +144,7 @@ export function Profile() {
       bio,
       role: accountRole,
       hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
+      upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
       batchPricing: isTeacherOrBoth ? batchPricing : undefined,
       avatar,
       skillsTaught: isTeacherOrBoth ? skillsTaught : [],
@@ -164,6 +167,7 @@ export function Profile() {
           bio,
           role: accountRole,
           hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
+          upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
           batchPricing: isTeacherOrBoth ? batchPricing : undefined,
           avatar,
           skillsTaught: isTeacherOrBoth ? skillsTaught : [],
@@ -438,18 +442,36 @@ export function Profile() {
               </div>
 
               {(accountRole === 'teacher' || accountRole === 'both') && (
-                <div>
-                  <label className="block text-xs font-bold text-on-surface mb-1">Teaching Base Rate (1-on-1 ₹/Hour)</label>
-                  <input 
-                    type="number" 
-                    min={50}
-                    max={10000}
-                    step={50}
-                    value={hourlyRate} 
-                    onChange={(e) => handleHourlyRateChange(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-on-surface mb-1">Teaching Base Rate (1-on-1 ₹/Hour)</label>
+                    <input 
+                      type="number" 
+                      min={50}
+                      max={10000}
+                      step={50}
+                      value={hourlyRate} 
+                      onChange={(e) => handleHourlyRateChange(Number(e.target.value))}
+                      className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-on-surface mb-1 flex items-center justify-between">
+                      <span>Personal UPI ID (GPay / PhonePe / Paytm)</span>
+                      <span className="text-[10px] text-teaching-emerald font-bold uppercase tracking-wider">0% Fee Direct</span>
+                    </label>
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        value={upiId} 
+                        onChange={(e) => setUpiId(e.target.value)}
+                        placeholder="e.g. yourname@okhdfcbank or phone@paytm"
+                        className="w-full pl-9 pr-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-mono font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
+                      />
+                      <span className="material-symbols-outlined absolute left-2.5 top-2.5 text-base text-teaching-emerald">qr_code_2</span>
+                    </div>
+                  </div>
+                </>
               )}
 
               <div>

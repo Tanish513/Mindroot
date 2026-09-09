@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, onTransactionsUpdated, onSessionsUpdated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { Button } from '../components/ui/Button';
+import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
 
 declare global {
   interface Window {
@@ -20,8 +21,12 @@ export function Wallet() {
   const [selectedPeerId, setSelectedPeerId] = useState('');
   const [payAmount, setPayAmount] = useState(499);
   const [payNote, setPayNote] = useState('Tutoring & Mentorship Payment');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessing] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState<any | null>(null);
+
+  // Direct Peer UPI Modal State
+  const [upiModalSession, setUpiModalSession] = useState<UpiPaymentSession | null>(null);
+  const [isUpiModalOpen, setIsUpiModalOpen] = useState(false);
   
   // Payout & Withdrawal State
   const [payoutAccount, setPayoutAccount] = useState<any>({
@@ -91,209 +96,44 @@ export function Wallet() {
     };
   }, []);
 
-  const loadRazorpaySDK = (): Promise<boolean> => {
-    return new Promise((resolve) => {
-      if (window.Razorpay) {
-        resolve(true);
-        return;
-      }
-      const script = document.createElement('script');
-      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
-      script.onload = () => resolve(true);
-      script.onerror = () => resolve(false);
-      document.body.appendChild(script);
-    });
-  };
-
-  const handlePaySessionDirect = async (session: any) => {
+  const handlePaySessionDirect = (session: any) => {
     const amount = session.pricePerStudent || session.amount || session.teacher?.hourlyRate || 499;
     const teacherId = session.teacherId || session.teacher?.id || selectedPeerId;
     const targetPeer = peers.find(p => p.id === teacherId) || session.teacher || { id: teacherId, name: 'Mentor' };
 
-    setSelectedSessionId(session.id);
-    setSelectedPeerId(teacherId);
-    setPayAmount(amount);
-    setPayNote(`Fee for: ${session.title || 'Mentoring Session'}`);
-
-    setIsProcessing(true);
-    try {
-      const sdkLoaded = await loadRazorpaySDK();
-      if (!sdkLoaded) {
-        alert('Could not load Razorpay checkout SDK. Please check your internet connection.');
-        setIsProcessing(false);
-        return;
-      }
-
-      const orderData = await api.createSessionPaymentOrder({
-        sessionId: session.id,
-        teacherId,
-        mentorId: teacherId,
-        studentId: currentUser?.id || 'student-id',
-        amount,
-        title: session.title
-      });
-
-      const options = {
-        key: orderData.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TUrtuundUxD7Jh',
-        amount: orderData.amountInPaise || (amount * 100),
-        currency: orderData.currency || 'INR',
-        name: 'Mindroot Skill Exchange',
-        description: `Mentoring Fee: ${session.title || 'Mentoring Session'}`,
-        image: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
-        order_id: orderData.orderId,
-        handler: async (response: any) => {
-          try {
-            await api.verifySessionPayment({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              amount,
-              sessionData: {
-                sessionId: session.id,
-                title: session.title,
-                teacherId,
-                teacherName: targetPeer.name,
-                studentId: currentUser?.id || 'student-id',
-                studentName: currentUser?.name || 'Student'
-              }
-            });
-
-            await api.patchSession(session.id, { paymentStatus: 'paid', paymentId: response.razorpay_payment_id });
-
-            setPaymentSuccess({
-              paymentId: response.razorpay_payment_id,
-              mentorName: targetPeer.name,
-              amount,
-              note: session.title
-            });
-            loadData();
-          } catch (err: any) {
-            console.error('Payment verification failed:', err);
-            loadData();
-          } finally {
-            setIsProcessing(false);
-          }
-        },
-        prefill: {
-          name: currentUser?.name || 'Student',
-          email: currentUser?.email || 'student@mindroot.edu',
-          contact: '9999999999'
-        },
-        theme: {
-          color: '#2563eb'
-        },
-        modal: {
-          ondismiss: () => {
-            setIsProcessing(false);
-          }
-        }
-      };
-
-      const paymentObject = new window.Razorpay(options);
-      paymentObject.open();
-    } catch (err) {
-      console.error('Payment initialization error:', err);
-      alert('Failed to launch Razorpay checkout. Please try again.');
-      setIsProcessing(false);
-    }
+    setUpiModalSession({
+      id: session.id,
+      title: session.title || 'Mentoring Session',
+      amount,
+      teacherId,
+      teacherName: targetPeer.name,
+      teacherAvatar: targetPeer.avatar,
+      teacherUpiId: targetPeer.upiId
+    });
+    setIsUpiModalOpen(true);
   };
 
-  const handleDirectPayMentor = async () => {
+  const handleDirectPayMentor = () => {
     const selectedPeer = peers.find(p => p.id === selectedPeerId);
     if (!selectedPeer) return;
 
-    // Check if there is a matching pending session for selected peer
     let effectiveSessionId = selectedSessionId;
     if (!effectiveSessionId) {
       const matchSess = pendingStudentSessions.find((s: any) => (s.teacherId === selectedPeer.id || s.teacher?.id === selectedPeer.id));
       if (matchSess) effectiveSessionId = matchSess.id;
     }
 
-    setIsProcessing(true);
-    try {
-      const sdkLoaded = await loadRazorpaySDK();
-      if (!sdkLoaded) {
-        alert('Could not load Razorpay checkout SDK. Please check your internet connection.');
-        setIsProcessing(false);
-        return;
-      }
-
-      // Step 1: Create order on backend
-      const orderData = await api.createSessionPaymentOrder({
-        sessionId: effectiveSessionId || `direct-pay-${Date.now()}`,
-        teacherId: selectedPeer.id,
-        mentorId: selectedPeer.id,
-        studentId: currentUser?.id || 'student-id',
-        amount: payAmount,
-        title: payNote
-      });
-
-      // Step 2: Configure Razorpay modal
-      const options = {
-        key: orderData.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TUrtuundUxD7Jh',
-        amount: orderData.amountInPaise || (payAmount * 100),
-        currency: orderData.currency || 'INR',
-        name: 'Mindroot Skill Exchange',
-        description: `Direct Payment to ${selectedPeer.name} - ${payNote}`,
-        image: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
-        order_id: orderData.orderId,
-        handler: async (response: any) => {
-          try {
-            await api.verifySessionPayment({
-              razorpay_order_id: response.razorpay_order_id,
-              razorpay_payment_id: response.razorpay_payment_id,
-              razorpay_signature: response.razorpay_signature,
-              amount: payAmount,
-              sessionData: {
-                sessionId: effectiveSessionId || null,
-                title: payNote,
-                teacherId: selectedPeer.id,
-                teacherName: selectedPeer.name,
-                studentId: currentUser?.id || 'student-id',
-                studentName: currentUser?.name || 'Student'
-              }
-            });
-
-            if (effectiveSessionId) {
-              await api.patchSession(effectiveSessionId, { paymentStatus: 'paid', paymentId: response.razorpay_payment_id });
-            }
-
-            setPaymentSuccess({
-              paymentId: response.razorpay_payment_id,
-              mentorName: selectedPeer.name,
-              amount: payAmount,
-              note: payNote
-            });
-            loadData();
-          } catch (err: any) {
-            console.error('Payment verification failed:', err);
-            loadData();
-          } finally {
-            setIsProcessing(false);
-          }
-        },
-        prefill: {
-          name: currentUser?.name || 'Student',
-          email: currentUser?.email || 'student@mindroot.edu',
-          contact: '9999999999'
-        },
-        theme: {
-          color: '#2563eb'
-        },
-        modal: {
-          ondismiss: () => {
-            setIsProcessing(false);
-          }
-        }
-      };
-
-      const paymentObject = new window.Razorpay(options);
-      paymentObject.open();
-    } catch (err: any) {
-      console.error('Payment initialization failed:', err);
-      alert('Failed to initialize payment. Please try again.');
-      setIsProcessing(false);
-    }
+    setIsPayModalOpen(false);
+    setUpiModalSession({
+      id: effectiveSessionId || undefined,
+      title: payNote || `Direct Mentoring Payment to ${selectedPeer.name}`,
+      amount: payAmount,
+      teacherId: selectedPeer.id,
+      teacherName: selectedPeer.name,
+      teacherAvatar: selectedPeer.avatar,
+      teacherUpiId: selectedPeer.upiId
+    });
+    setIsUpiModalOpen(true);
   };
 
   const handleWithdrawFunds = async () => {
@@ -1180,7 +1020,7 @@ export function Wallet() {
                     className="w-full py-2 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-lg text-xs font-extrabold shadow-elevation-1 transition-all active:scale-98 flex items-center justify-center gap-1.5"
                   >
                     <span className="material-symbols-outlined text-[15px]">payments</span>
-                    <span>Pay ₹{amt} to {teacherName} with Razorpay</span>
+                    <span>Pay ₹{amt} to {teacherName} via UPI</span>
                   </button>
                 </div>
               );
@@ -1270,6 +1110,19 @@ export function Wallet() {
           )}
         </div>
       </section>
+
+      {/* Direct Peer-to-Peer UPI Payment Modal */}
+      <UpiPaymentModal
+        isOpen={isUpiModalOpen}
+        onClose={() => {
+          setIsUpiModalOpen(false);
+          setUpiModalSession(null);
+        }}
+        session={upiModalSession}
+        onSuccess={() => {
+          loadData();
+        }}
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { io, type Socket } from 'socket.io-client';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../lib/api';
+import { UpiPaymentModal } from '../components/payment/UpiPaymentModal';
 
 const safeUUID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -211,6 +212,7 @@ export function LiveRoom() {
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [isUpiModalOpen, setIsUpiModalOpen] = useState(false);
 
   // Whiteboard drawing tools
   const [drawColor, setDrawColor] = useState('#2563eb');
@@ -1779,67 +1781,12 @@ export function LiveRoom() {
     setNotice('Cleared simulated participants.');
   };
 
-  const handlePayPostLecture = async () => {
+  const handlePayPostLecture = () => {
     if (!currentSession) {
       navigate('/schedule');
       return;
     }
-    const amountToPay = currentSession.pricePerStudent || currentSession.amount || 349;
-    try {
-      const orderData = await api.createSessionPaymentOrder({
-        sessionId: currentSession.id,
-        teacherId: currentSession.teacherId,
-        studentId: currentUser?.id || 'user-alex',
-        amount: amountToPay,
-        title: currentSession.title || 'Cohort Mentoring Lecture'
-      });
-
-      const RazorpayConstructor = (window as any).Razorpay;
-      if (!RazorpayConstructor) {
-        navigate('/schedule');
-        return;
-      }
-
-      const options = {
-        key: orderData.keyId || import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TUrtuundUxD7Jh',
-        amount: orderData.amountInPaise || (amountToPay * 100),
-        currency: 'INR',
-        name: 'Mindroot Skill Exchange',
-        description: `Cohort Mentoring Fee: ${currentSession.title || 'Lecture'}`,
-        image: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
-        order_id: orderData.orderId,
-        prefill: {
-          name: currentUser?.name || 'Alex Student',
-          email: currentUser?.email || 'student@mindroot.com',
-          contact: '9999999999'
-        },
-        theme: {
-          color: '#10B981'
-        },
-        handler: async (response: any) => {
-          await api.verifySessionPayment({
-            razorpay_order_id: response.razorpay_order_id,
-            razorpay_payment_id: response.razorpay_payment_id,
-            razorpay_signature: response.razorpay_signature,
-            amount: amountToPay,
-            sessionData: {
-              sessionId: currentSession.id,
-              title: currentSession.title,
-              teacherId: currentSession.teacherId,
-              studentId: currentUser?.id || 'user-alex',
-              amount: amountToPay
-            }
-          });
-          navigate('/schedule');
-        }
-      };
-
-      const rzpInstance = new RazorpayConstructor(options);
-      rzpInstance.open();
-    } catch (err) {
-      console.error('Post-lecture payment error:', err);
-      navigate('/schedule');
-    }
+    setIsUpiModalOpen(true);
   };
 
   const handleEndCall = () => {
@@ -2701,14 +2648,14 @@ export function LiveRoom() {
                   </span>
                 </div>
                 <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed">
-                  As part of our Pay After Lecture guarantee, please complete your fee payment via Razorpay.
+                  As part of our Pay After Lecture guarantee, please complete your fee payment via UPI / Direct Transfer.
                 </p>
                 <button
                   onClick={handlePayPostLecture}
                   className="w-full py-2.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-black transition-all shadow-elevation-1 active:scale-95 flex items-center justify-center gap-1.5 mt-1"
                 >
-                  <span className="material-symbols-outlined text-[16px]">lock</span>
-                  <span>Pay ₹{currentSession?.pricePerStudent || currentSession?.amount || 499} with Razorpay</span>
+                  <span className="material-symbols-outlined text-[16px]">qr_code_2</span>
+                  <span>Pay ₹{currentSession?.pricePerStudent || currentSession?.amount || 499} via UPI</span>
                 </button>
               </div>
             )}
@@ -2795,6 +2742,31 @@ export function LiveRoom() {
           />
         ))}
       </div>
+
+      {/* Post-Lecture UPI Payment Modal */}
+      <UpiPaymentModal
+        isOpen={isUpiModalOpen}
+        onClose={() => {
+          setIsUpiModalOpen(false);
+          navigate('/schedule');
+        }}
+        session={currentSession ? {
+          id: currentSession.id,
+          title: currentSession.title || 'Cohort Mentoring Lecture',
+          amount: currentSession.pricePerStudent || currentSession.amount || 349,
+          teacherId: currentSession.teacherId,
+          teacherName: currentSession.teacher?.name || 'Mentor',
+          teacherAvatar: currentSession.teacher?.avatar,
+          teacherUpiId: currentSession.teacher?.upiId
+        } : null}
+        onSuccess={() => {
+          setIsUpiModalOpen(false);
+          if (currentSession) {
+            currentSession.paymentStatus = 'paid';
+          }
+          navigate('/schedule');
+        }}
+      />
     </div>
   );
 }

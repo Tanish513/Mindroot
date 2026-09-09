@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAppStore } from '../store/useAppStore';
-import { api, onMessagesUpdated, onSessionsUpdated, calcSessionRewardPoints } from '../lib/api';
+import { api, onMessagesUpdated, onSessionsUpdated, onPaymentReceived, calcSessionRewardPoints } from '../lib/api';
 import { triggerNativeNotification, registerServiceWorker, requestNotificationPermission } from '../lib/notifications';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 
 // Web Audio API sound chime synthesizer for native audio feedback without external audio files
-function playNotificationChime(type: 'message' | 'reminder') {
+function playNotificationChime(type: 'message' | 'reminder' | 'payment') {
   try {
     const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
@@ -23,7 +23,17 @@ function playNotificationChime(type: 'message' | 'reminder') {
 
     const now = ctx.currentTime;
 
-    if (type === 'reminder') {
+    if (type === 'payment') {
+      // Triumphant 3-tone ascending fanfare for verified payment
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, now); // C5
+      osc.frequency.setValueAtTime(659.25, now + 0.12); // E5
+      osc.frequency.setValueAtTime(783.99, now + 0.24); // G5
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.8);
+      osc.start(now);
+      osc.stop(now + 0.8);
+    } else if (type === 'reminder') {
       // Urgent 2-tone bell chime for 5-min lecture reminder
       osc.type = 'sine';
       osc.frequency.setValueAtTime(587.33, now); // D5
@@ -51,7 +61,7 @@ export function NotificationManager() {
 
   const [toasts, setToasts] = useState<Array<{
     id: string;
-    type: 'message' | 'reminder';
+    type: 'message' | 'reminder' | 'payment';
     title: string;
     body: string;
     link?: string;
@@ -63,7 +73,7 @@ export function NotificationManager() {
   const initialLoadDone = useRef(false);
 
   const triggerToast = useCallback((
-    type: 'message' | 'reminder',
+    type: 'message' | 'reminder' | 'payment',
     title: string,
     body: string,
     link?: string,
@@ -83,6 +93,30 @@ export function NotificationManager() {
       setToasts(prev => prev.filter(t => t.id !== toastId));
     }, 7000);
   }, []);
+
+  // Listen for real-time peer UPI payments via Socket.io
+  useEffect(() => {
+    if (!currentUser || !currentUser.id) return;
+    const unsub = onPaymentReceived((paymentData: any) => {
+      // Alert the mentor if they received this payment
+      if (paymentData.teacherId === currentUser.id) {
+        const title = `🎉 ₹${paymentData.amount} Payment Received!`;
+        const body = `${paymentData.studentName || 'Student'} completed payment for "${paymentData.sessionTitle || 'Mentoring Session'}". Classroom unlocked!`;
+        const link = `/live/${paymentData.sessionId}`;
+
+        addNotification({
+          type: 'session',
+          title,
+          body,
+          link
+        });
+
+        triggerToast('payment', title, body, link);
+      }
+    });
+
+    return () => unsub();
+  }, [currentUser, addNotification, triggerToast]);
 
   // Register Service Worker & request browser notification permission
   useEffect(() => {
@@ -316,15 +350,21 @@ export function NotificationManager() {
               }
             }}
           >
-            <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${toast.type === 'reminder' ? 'bg-learning-amber' : 'bg-primary'}`} />
+            <div className={`absolute top-0 left-0 bottom-0 w-1.5 ${toast.type === 'reminder' ? 'bg-learning-amber' : (toast.type === 'payment' ? 'bg-teaching-emerald' : 'bg-primary')}`} />
 
             <div className="flex items-start justify-between gap-3 pl-1">
               <div className="flex items-start gap-3 min-w-0 flex-1">
                 {toast.avatar ? (
                   <img src={toast.avatar} alt="Avatar" className="w-9 h-9 rounded-full object-cover shrink-0 ring-2 ring-primary/30" />
                 ) : (
-                  <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center ${toast.type === 'reminder' ? 'bg-learning-amber-container text-on-learning-amber-container' : 'bg-primary-container text-on-primary-container'}`}>
-                    <span className="material-symbols-outlined text-lg">{toast.type === 'reminder' ? 'alarm' : 'chat'}</span>
+                  <div className={`w-9 h-9 rounded-full shrink-0 flex items-center justify-center ${
+                    toast.type === 'reminder' 
+                      ? 'bg-learning-amber-container text-on-learning-amber-container' 
+                      : (toast.type === 'payment' ? 'bg-teaching-emerald/20 text-teaching-emerald' : 'bg-primary-container text-on-primary-container')
+                  }`}>
+                    <span className="material-symbols-outlined text-lg">
+                      {toast.type === 'reminder' ? 'alarm' : (toast.type === 'payment' ? 'payments' : 'chat')}
+                    </span>
                   </div>
                 )}
 
@@ -346,6 +386,22 @@ export function NotificationManager() {
                       >
                         <span className="material-symbols-outlined text-sm">video_call</span>
                         <span>Join Classroom Live</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {toast.type === 'payment' && (
+                    <div className="mt-2.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (toast.link) navigate(toast.link);
+                          dismissToast(toast.id);
+                        }}
+                        className="w-full py-1.5 px-3 rounded-xl bg-teaching-emerald hover:bg-teaching-emerald/90 text-on-teaching-emerald font-extrabold text-xs shadow-elevation-1 transition-all flex items-center justify-center gap-1 active:scale-98"
+                      >
+                        <span className="material-symbols-outlined text-sm">video_chat</span>
+                        <span>Open Live Classroom</span>
                       </button>
                     </div>
                   )}

@@ -2362,6 +2362,169 @@ app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/pa
   }
 });
 
+// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID
+app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
+  const teacherId = req.params.teacherId;
+  const payoutAcc = inMemoryPayoutAccounts[teacherId];
+  const user = inMemoryUsers.find(u => u.id === teacherId);
+  
+  const mentorName = user?.name || payoutAcc?.accountHolderName || 'Mentor';
+  const cleanMentorHandle = mentorName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'mentor';
+  const upiId = payoutAcc?.upiId || user?.upiId || `${cleanMentorHandle}@okhdfcbank`;
+  
+  res.json({
+    success: true,
+    teacherId,
+    mentorName,
+    upiId,
+    isCustomUpi: Boolean(payoutAcc?.upiId || user?.upiId)
+  });
+});
+
+// POST /api/payment/confirm-upi — Confirm peer-to-peer UPI transfer (or instant demo)
+app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => {
+  try {
+    const studentId = req.userId;
+    const { sessionId, teacherId, amount, utr, isDemo, title } = req.body;
+
+    const studentObj = inMemoryUsers.find(u => u.id === studentId) || { id: studentId, name: 'Peer Student' };
+    let targetSession = sessionId ? inMemorySessions.find(s => s.id === sessionId) : null;
+    
+    // Fallback search if sessionId was omitted or not found
+    if (!targetSession && teacherId) {
+      targetSession = inMemorySessions.find(s => {
+        if (!s || s.paymentStatus === 'paid') return false;
+        const isStudentInSession = s.studentId === studentId || (Array.isArray(s.students) && s.students.some((st: any) => st.id === studentId && st.paymentStatus !== 'paid'));
+        const isTeacherMatch = s.teacherId === teacherId || s.teacher?.id === teacherId;
+        return isStudentInSession && isTeacherMatch;
+      }) || null;
+    }
+
+    const finalTeacherId = teacherId || targetSession?.teacherId || targetSession?.teacher?.id;
+    const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
+
+    const finalAmount = Number(amount || targetSession?.pricePerStudent || targetSession?.amount || teacherObj.hourlyRate || 499);
+    const generatedPaymentId = isDemo 
+      ? `pay_demo_${Date.now()}` 
+      : `pay_upi_${utr || Date.now()}`;
+    const generatedUtr = utr || (isDemo ? `DEMO_UTR_${Math.floor(100000000000 + Math.random() * 900000000000)}` : `UPI_${Date.now()}`);
+    const sessionTitle = title || targetSession?.title || 'Cohort Mentoring Session';
+
+    // 1. Update session payment status
+    if (targetSession) {
+      if (!Array.isArray(targetSession.students)) {
+        targetSession.students = targetSession.studentId ? [{ id: targetSession.studentId, name: targetSession.student?.name || studentObj.name, enrolledAt: new Date().toISOString(), paymentStatus: targetSession.paymentStatus || 'pending' }] : [];
+      }
+      
+      const existingStudentIdx = targetSession.students.findIndex((s: any) => s.id === studentId || (s.name && studentObj.name && s.name.toLowerCase() === studentObj.name.toLowerCase()));
+      if (existingStudentIdx >= 0) {
+        targetSession.students[existingStudentIdx].paymentStatus = 'paid';
+        targetSession.students[existingStudentIdx].paymentId = generatedPaymentId;
+        targetSession.students[existingStudentIdx].amountPaid = finalAmount;
+        targetSession.students[existingStudentIdx].amountDue = 0;
+      } else {
+        targetSession.students.push({
+          id: studentId,
+          name: studentObj.name,
+          avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
+          enrolledAt: new Date().toISOString(),
+          paymentId: generatedPaymentId,
+          paymentStatus: 'paid',
+          amountPaid: finalAmount,
+          amountDue: 0
+        });
+      }
+
+      const allPaid = targetSession.students.every((st: any) => st.paymentStatus === 'paid');
+      if (allPaid) {
+        targetSession.paymentStatus = 'paid';
+        targetSession.paymentId = generatedPaymentId;
+      }
+      
+      if (process.env.DATABASE_URL && prisma) {
+        try {
+          await prisma.session.update({
+            where: { id: targetSession.id },
+            data: { paymentStatus: targetSession.paymentStatus }
+          });
+        } catch {}
+      }
+    }
+
+    // 2. Credit Teacher Wallet & Trust Score
+    const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
+    if (teacherUser) {
+      teacherUser.tokenBalance = (teacherUser.tokenBalance || 0) + finalAmount;
+      teacherUser.totalEarned = (teacherUser.totalEarned || 0) + finalAmount;
+      teacherUser.rewardPoints = (teacherUser.rewardPoints || 0) + 50; // +50 platform reward points
+      teacherUser.trustScore = Math.min(5.0, Number(((teacherUser.trustScore || 4.8) + 0.05).toFixed(2)));
+    }
+
+    // 3. Award Student Platform Reward Points
+    const studentUser = inMemoryUsers.find(u => u.id === studentId);
+    if (studentUser) {
+      studentUser.rewardPoints = (studentUser.rewardPoints || 0) + 50; // +50 platform reward points
+    }
+
+    // 4. Create Transaction Record
+    const newTransaction = {
+      id: 'tx-upi-' + Date.now(),
+      userId: studentId,
+      recipientId: finalTeacherId,
+      type: 'EARNED',
+      title: `Peer UPI Payment: ${sessionTitle}`,
+      amount: finalAmount,
+      currency: 'INR',
+      status: 'COMPLETED',
+      paymentMethod: isDemo ? 'Mindroot Instant Demo' : 'Direct UPI Transfer',
+      paymentId: generatedPaymentId,
+      orderId: `upi_${generatedUtr}`,
+      utr: generatedUtr,
+      isDemo: Boolean(isDemo),
+      createdAt: new Date(),
+      peerName: teacherObj.name,
+      teacherName: teacherObj.name,
+      studentName: studentObj.name,
+      sessionId: targetSession?.id || sessionId
+    };
+    inMemoryTransactions.unshift(newTransaction);
+    saveDb();
+
+    // 5. Real-Time Socket.io Handshake Broadcasts
+    const paymentBroadcastPayload = {
+      sessionId: targetSession?.id || sessionId,
+      sessionTitle,
+      studentId,
+      studentName: studentObj.name,
+      teacherId: finalTeacherId,
+      teacherName: teacherObj.name,
+      amount: finalAmount,
+      utr: generatedUtr,
+      isDemo: Boolean(isDemo),
+      paymentId: generatedPaymentId,
+      timestamp: new Date().toISOString()
+    };
+
+    io.emit('session-payment-received', paymentBroadcastPayload);
+    io.emit('session-payment-confirmed', paymentBroadcastPayload);
+    io.emit('network-sessions-updated', inMemorySessions);
+    io.emit('network-transactions-updated', inMemoryTransactions);
+    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+
+    res.json({
+      success: true,
+      message: isDemo ? 'Demo payment completed successfully!' : 'UPI payment confirmed and session unlocked!',
+      paymentId: generatedPaymentId,
+      utr: generatedUtr,
+      transaction: newTransaction,
+      session: targetSession
+    });
+  } catch (err: any) {
+    logger.error({ err }, 'Error confirming UPI payment');
+    res.status(500).json({ error: 'Failed to confirm UPI payment. Please try again.' });
+  }
+});
+
 // GET /api/wallet/payout-account — Retrieve teacher's bank/UPI payout settings
 app.get('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
   const userId = req.userId; // Authenticated user ID ONLY
@@ -2392,6 +2555,11 @@ app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
     isVerified: true,
     updatedAt: new Date().toISOString()
   };
+
+  const user = inMemoryUsers.find(u => u.id === targetUser);
+  if (user && upiId) {
+    user.upiId = (upiId || '').toLowerCase().trim();
+  }
 
   saveDb();
   res.json({ success: true, message: 'Bank account & payout details updated successfully!', account: inMemoryPayoutAccounts[targetUser] });
@@ -3037,7 +3205,7 @@ app.patch('/api/sessions/:id', async (req, res) => {
 // PATCH /api/users/:id — Edit user details / profile / availability / streak
 app.patch('/api/users/:id', async (req: any, res: any) => {
   const { id } = req.params;
-  const { password, name, email, role, hourlyRate, batchPricing, trustScore, tokenBalance, rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills } = req.body;
+  const { password, name, email, role, hourlyRate, batchPricing, trustScore, tokenBalance, rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills, upiId } = req.body;
   if (!id) return res.status(400).json({ error: 'User ID is required' });
 
   // Security check: Only admins can assign or modify the 'admin' role
@@ -3096,8 +3264,18 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
         if (skillsTaught !== undefined) user.skillsTaught = skillsTaught;
         if (skillsLearned !== undefined) user.skillsLearned = skillsLearned;
         if (userSkills !== undefined) user.userSkills = userSkills;
+        if (upiId !== undefined) {
+          user.upiId = String(upiId).toLowerCase().trim();
+          inMemoryPayoutAccounts[id] = {
+            ...(inMemoryPayoutAccounts[id] || {}),
+            upiId: user.upiId,
+            payoutMethod: 'upi',
+            accountHolderName: user.name || 'Mentor Beneficiary',
+            isVerified: true
+          };
+        }
       } else {
-        const copy = { ...dbUser, hourlyRate: hourlyRate !== undefined ? parseInt(hourlyRate, 10) : dbUser.hourlyRate, batchPricing, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills };
+        const copy = { ...dbUser, hourlyRate: hourlyRate !== undefined ? parseInt(hourlyRate, 10) : dbUser.hourlyRate, batchPricing, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills, upiId: upiId ? String(upiId).toLowerCase().trim() : undefined };
         if (hashedPassword) copy.password = hashedPassword;
         inMemoryUsers.push(copy);
       }
@@ -3132,6 +3310,16 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
   if (skillsTaught !== undefined) user.skillsTaught = skillsTaught;
   if (skillsLearned !== undefined) user.skillsLearned = skillsLearned;
   if (userSkills !== undefined) user.userSkills = userSkills;
+  if (upiId !== undefined) {
+    user.upiId = String(upiId).toLowerCase().trim();
+    inMemoryPayoutAccounts[id] = {
+      ...(inMemoryPayoutAccounts[id] || {}),
+      upiId: user.upiId,
+      payoutMethod: 'upi',
+      accountHolderName: user.name || 'Mentor Beneficiary',
+      isVerified: true
+    };
+  }
 
   saveDb();
   io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
