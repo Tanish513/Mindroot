@@ -7,6 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "dev:host": "vite --host 0.0.0.0",
     "server": "cd server && npm run dev",
+    "test:email": "cd server && npm run test:email",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

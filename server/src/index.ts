@@ -18,8 +18,11 @@ import {
   sendPasswordResetEmail,
   sendPaymentReceiptEmail,
   sendBookingNotificationEmail,
+  sendScheduleChangeEmail,
+  sendSessionReminderEmail,
   sendPayoutConfirmationEmail,
-  sendTestEmail
+  sendTestEmail,
+  getEmailServiceStatus
 } from './lib/email';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -688,10 +691,62 @@ async function syncWithDatabase() {
     return;
   }
   try {
+    const adminHashedPassword = bcrypt.hashSync(ADMIN_PASSWORD, 10);
+    // 1. Ensure admin user exists in PostgreSQL
+    try {
+      await prisma.user.upsert({
+        where: { email: ADMIN_EMAIL },
+        update: {
+          role: 'admin',
+          password: adminHashedPassword,
+          name: 'System Admin',
+          emailVerified: true
+        },
+        create: {
+          id: 'user-admin',
+          name: 'System Admin',
+          email: ADMIN_EMAIL,
+          password: adminHashedPassword,
+          role: 'admin',
+          emailVerified: true,
+          trustScore: 5.0,
+          tokenBalance: 9999,
+          hourlyRate: 0
+        }
+      });
+      logger.info('✅ Admin user synchronized to PostgreSQL database.');
+    } catch (adminErr) {
+      logger.warn({ err: adminErr }, 'Could not upsert admin user to PostgreSQL');
+    }
+
     const dbUsers = await prisma.user.findMany({ include: { userSkills: { include: { skill: true } } } });
     if (dbUsers && dbUsers.length > 0) {
       inMemoryUsers.length = 0;
       dbUsers.forEach((u: any) => inMemoryUsers.push(u));
+    }
+
+    // 2. Guarantee admin user is present in inMemoryUsers
+    const adminIdx = inMemoryUsers.findIndex(u => u.id === 'user-admin' || u.role === 'admin' || u.email?.toLowerCase() === ADMIN_EMAIL);
+    if (adminIdx >= 0) {
+      inMemoryUsers[adminIdx].email = ADMIN_EMAIL;
+      inMemoryUsers[adminIdx].role = 'admin';
+      inMemoryUsers[adminIdx].password = adminHashedPassword;
+      inMemoryUsers[adminIdx].emailVerified = true;
+    } else {
+      inMemoryUsers.unshift({
+        id: 'user-admin',
+        name: 'System Admin',
+        email: ADMIN_EMAIL,
+        password: adminHashedPassword,
+        role: 'admin',
+        emailVerified: true,
+        trustScore: 5.00,
+        tokenBalance: 9999,
+        hourlyRate: 0,
+        skillsTaught: ['Platform Moderation', 'System Audit'],
+        skillsLearned: [],
+        userSkills: []
+      });
     }
     const dbSessions = await prisma.session.findMany();
     if (dbSessions && dbSessions.length > 0) {
@@ -1235,6 +1290,35 @@ app.post('/api/auth/login', async (req, res) => {
     return res.status(400).json({ error: 'Email/User ID and Password are required.' });
   }
 
+  // Direct authentication for platform administrator
+  if ((cleanEmail === ADMIN_EMAIL || cleanEmail === 'user-admin') && cleanPassword === ADMIN_PASSWORD) {
+    let adminUser = inMemoryUsers.find(u => u.id === 'user-admin' || u.email?.toLowerCase() === ADMIN_EMAIL);
+    if (!adminUser) {
+      adminUser = {
+        id: 'user-admin',
+        name: 'System Admin',
+        email: ADMIN_EMAIL,
+        role: 'admin',
+        emailVerified: true,
+        trustScore: 5.0,
+        tokenBalance: 9999,
+        hourlyRate: 0,
+        skillsTaught: ['Platform Moderation', 'System Audit'],
+        skillsLearned: [],
+        userSkills: []
+      };
+      inMemoryUsers.unshift(adminUser);
+    }
+    adminUser.role = 'admin';
+    adminUser.emailVerified = true;
+    const token = jwt.sign(
+      { userId: adminUser.id, name: adminUser.name, role: 'admin' },
+      JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    return res.json({ success: true, user: toPublicUser(adminUser, 'admin'), token });
+  }
+
   let user: any = null;
 
   if (process.env.DATABASE_URL && prisma) {
@@ -1594,18 +1678,37 @@ app.post('/api/auth/resend-verification', requireAuth, async (req: any, res: any
     createdAt: new Date()
   });
 
-  sendVerificationEmail({ to: user.email, name: user.name, token: rawToken }).catch(err => logger.error({ err }, 'Error sending resend verification email'));
+  const emailResult = await sendVerificationEmail({ to: user.email, name: user.name, token: rawToken });
+  
+  if (!emailResult.success) {
+    const errorMsg = typeof emailResult.error === 'object' ? JSON.stringify(emailResult.error) : String(emailResult.error);
+    const isResendRestriction = errorMsg.includes('testing emails to your own email address');
+    
+    return res.json({
+      success: true,
+      message: 'Verification link generated and logged to server console.',
+      warning: isResendRestriction 
+        ? 'Resend test sandbox requires a custom domain or Gmail SMTP to deliver to this address. The direct verification link was printed in your server console.'
+        : 'Email gateway returned an issue; link was printed to server console for testing.'
+    });
+  }
 
-  res.json({ success: true, message: 'Verification email sent successfully.' });
+  res.json({ success: true, message: 'Verification email sent successfully! Please check your inbox.' });
 });
 
-// POST & GET /api/email/test — Test Resend integration directly
+// GET /api/email/status — Check current mailing provider and configuration
+app.get('/api/email/status', (req: any, res: any) => {
+  res.json({ success: true, status: getEmailServiceStatus() });
+});
+
+// POST & GET /api/email/test — Test active Mailing System (SMTP / Resend)
 app.all('/api/email/test', async (req: any, res: any) => {
   const targetEmail = req.body?.to || req.query?.to;
   if (!targetEmail) {
     return res.status(400).json({ 
       success: false,
-      error: 'Recipient email "to" is required (provide ?to=your_email@example.com or JSON body { "to": "..." })' 
+      error: 'Recipient email "to" is required (provide ?to=your_email@example.com or JSON body { "to": "..." })',
+      serviceStatus: getEmailServiceStatus()
     });
   }
 
@@ -1616,18 +1719,22 @@ app.all('/api/email/test', async (req: any, res: any) => {
 
     return res.status(500).json({
       success: false,
-      message: 'Resend API call failed',
+      message: 'Email gateway delivery failed',
+      transport: result.transport,
       details: result.error,
+      serviceStatus: getEmailServiceStatus(),
       hint: isTestingRestriction
-        ? 'Resend free testing domain (onboarding@resend.dev) only delivers to the email address registered on your Resend account. To send to any recipient, add and verify your custom domain in Resend Dashboard.'
-        : 'Ensure your RESEND_API_KEY is correctly set in your environment variables and starts with "re_".'
+        ? 'Resend free sandbox only delivers to the owner account email. To send to any recipient, either configure Gmail SMTP (SMTP_USER & SMTP_PASS in .env) or verify your domain in Resend.'
+        : 'If using Gmail SMTP, ensure you generated a 16-character Google App Password (not your normal Gmail password).'
     });
   }
 
   return res.json({
     success: true,
-    message: `Test email successfully dispatched to ${targetEmail} via Resend!`,
-    data: result.data
+    transport: result.transport,
+    message: `Test email successfully dispatched to ${targetEmail} via ${result.transport?.toUpperCase()}!`,
+    data: (result as any).data || (result as any).messageId,
+    serviceStatus: getEmailServiceStatus()
   });
 });
 
@@ -2800,13 +2907,46 @@ app.get('/api/transactions', async (req: any, res) => {
 // PATCH /api/sessions/:id — approve / decline / update status / paymentStatus
 app.patch('/api/sessions/:id', async (req, res) => {
   const { id } = req.params;
-  const { status, paymentStatus, paymentId, studentId } = req.body;
+  const { status, paymentStatus, paymentId, studentId, scheduledAt, reason } = req.body;
 
   const memSess = inMemorySessions.find(s => s.id === id);
   if (memSess) {
     const prevStatus = memSess.status;
     if (status) {
       memSess.status = status;
+    }
+
+    // Handle rescheduling / schedule timing updates
+    if (scheduledAt && scheduledAt !== memSess.scheduledAt) {
+      const oldScheduledAt = memSess.scheduledAt;
+      memSess.scheduledAt = scheduledAt;
+      memSess.reminderEmailSent = false; // Reset reminder so next 15-min reminder triggers for new time
+
+      const teacherObj = inMemoryUsers.find(u => u.id === memSess.teacherId) || memSess.teacher;
+
+      if (memSess.student?.email) {
+        sendScheduleChangeEmail({
+          to: memSess.student.email,
+          name: memSess.student.name || 'Learner',
+          title: memSess.title || 'Mentoring Session',
+          oldScheduledAt,
+          newScheduledAt: scheduledAt,
+          sessionId: memSess.id,
+          reason
+        }).catch(err => console.error('Student reschedule notification error:', err));
+      }
+
+      if (teacherObj?.email) {
+        sendScheduleChangeEmail({
+          to: teacherObj.email,
+          name: teacherObj.name || 'Mentor',
+          title: memSess.title || 'Mentoring Session',
+          oldScheduledAt,
+          newScheduledAt: scheduledAt,
+          sessionId: memSess.id,
+          reason
+        }).catch(err => console.error('Teacher reschedule notification error:', err));
+      }
     }
 
     if (paymentStatus) {
@@ -2874,13 +3014,18 @@ app.patch('/api/sessions/:id', async (req, res) => {
 
     if (status && status !== prevStatus && (status === 'confirmed' || status === 'declined' || status === 'rejected')) {
       const studentEmail = memSess.student?.email;
+      const teacherObj = inMemoryUsers.find(u => u.id === memSess.teacherId) || memSess.teacher;
+
       if (studentEmail) {
         sendBookingNotificationEmail({
           to: studentEmail,
           name: memSess.student?.name || 'Learner',
           title: memSess.title || 'Mentoring Session',
           scheduledAt: memSess.scheduledAt || new Date().toISOString(),
-          status: status === 'confirmed' ? 'confirmed' : 'rejected'
+          status: status === 'confirmed' ? 'confirmed' : 'rejected',
+          sessionId: memSess.id,
+          peerName: teacherObj?.name || 'Mentor',
+          peerRole: 'Mentor'
         }).catch(err => console.error('Session update email error:', err));
       }
     }
@@ -3889,6 +4034,84 @@ app.use((err: any, req: any, res: any, next: any) => {
   res.status(500).json({ error: 'An unexpected error occurred. Please try again.' });
 });
 
+// -----------------------------------------------------------------------------
+// Automated Background Mailing Service: Session Reminders (checks every 60s)
+// -----------------------------------------------------------------------------
+const REMINDER_CHECK_INTERVAL_MS = 60 * 1000;
+const REMINDER_WINDOW_MS = 30 * 60 * 1000; // Notify if session starts within 30 minutes
+
+const sessionReminderInterval = setInterval(async () => {
+  try {
+    const now = Date.now();
+    for (const s of inMemorySessions) {
+      if (s.status !== 'confirmed') continue;
+      if (s.reminderEmailSent) continue;
+      if (!s.scheduledAt) continue;
+
+      const startTime = new Date(s.scheduledAt).getTime();
+      if (isNaN(startTime)) continue;
+
+      const diff = startTime - now;
+      // Trigger if session starts in <= 30 mins and is not in the deep past (> -10 mins)
+      if (diff > -10 * 60 * 1000 && diff <= REMINDER_WINDOW_MS) {
+        s.reminderEmailSent = true;
+        saveDb();
+
+        const teacherObj = inMemoryUsers.find(u => u.id === s.teacherId) || s.teacher;
+        const studentObj = inMemoryUsers.find(u => u.id === s.studentId) || s.student;
+
+        logger.info({ sessionId: s.id, title: s.title }, '⏰ Dispatching session reminder emails...');
+
+        // 1. Send reminder to student
+        if (studentObj?.email) {
+          sendSessionReminderEmail({
+            to: studentObj.email,
+            name: studentObj.name || 'Learner',
+            role: 'Learner',
+            title: s.title || 'Peer Mentoring Session',
+            scheduledAt: s.scheduledAt,
+            sessionId: s.id,
+            peerName: teacherObj?.name || 'Mentor'
+          }).catch(err => logger.error({ err, sessionId: s.id }, 'Error sending student reminder email'));
+        }
+
+        // 2. Send reminder to cohort students if group session
+        if (Array.isArray(s.students)) {
+          for (const st of s.students) {
+            const cohortEmail = st?.email;
+            if (cohortEmail && cohortEmail !== studentObj?.email) {
+              sendSessionReminderEmail({
+                to: cohortEmail,
+                name: st.name || 'Learner',
+                role: 'Learner',
+                title: s.title || 'Peer Mentoring Session',
+                scheduledAt: s.scheduledAt,
+                sessionId: s.id,
+                peerName: teacherObj?.name || 'Mentor'
+              }).catch(err => logger.error({ err, sessionId: s.id }, 'Error sending cohort student reminder email'));
+            }
+          }
+        }
+
+        // 3. Send reminder to teacher
+        if (teacherObj?.email) {
+          sendSessionReminderEmail({
+            to: teacherObj.email,
+            name: teacherObj.name || 'Mentor',
+            role: 'Mentor',
+            title: s.title || 'Peer Mentoring Session',
+            scheduledAt: s.scheduledAt,
+            sessionId: s.id,
+            peerName: studentObj?.name || (Array.isArray(s.students) && s.students.length > 0 ? `${s.students.length} Learners` : 'Student')
+          }).catch(err => logger.error({ err, sessionId: s.id }, 'Error sending teacher reminder email'));
+        }
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Error in automated session reminder background worker');
+  }
+}, REMINDER_CHECK_INTERVAL_MS);
+
 const PORT = Number(process.env.PORT) || 3000;
 server.on('error', (err: any) => {
   if (err.code === 'EADDRINUSE') {
@@ -3917,6 +4140,7 @@ server.listen(PORT, '0.0.0.0', () => {
 // Graceful Shutdown Handlers (SIGTERM / SIGINT)
 const gracefulShutdown = async (signal: string) => {
   logger.info(`Received ${signal}. Stopping new connections and initiating graceful shutdown...`);
+  clearInterval(sessionReminderInterval);
   server.close(() => {
     logger.info('HTTP server closed.');
   });

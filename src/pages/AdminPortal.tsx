@@ -11,9 +11,14 @@ export function AdminPortal() {
   // Filters & Tabs
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'both' | 'admin'>('all');
-  const [activeSection, setActiveSection] = useState<'users' | 'sessions' | 'analytics'>('users');
+  const [activeSection, setActiveSection] = useState<'users' | 'sessions' | 'analytics' | 'email'>('users');
 
-  // Selected User Inspection Modal State
+  // Email System Diagnostic State
+  const [emailStatus, setEmailStatus] = useState<any>(null);
+  const [loadingEmailStatus, setLoadingEmailStatus] = useState(false);
+  const [testRecipient, setTestRecipient] = useState('');
+  const [sendingTestEmail, setSendingTestEmail] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<any>(null);
   const [inspectUser, setInspectUser] = useState<any | null>(null);
   const [inspectTab, setInspectTab] = useState<'overview' | 'sessions' | 'transactions' | 'reviews'>('overview');
   const [inspectReviews, setInspectReviews] = useState<any[]>([]);
@@ -88,6 +93,48 @@ export function AdminPortal() {
       unsubSessions();
     };
   }, [loadData]);
+
+  const fetchEmailStatus = useCallback(async () => {
+    setLoadingEmailStatus(true);
+    try {
+      const res = await api.getEmailStatus();
+      if (res && res.status) {
+        setEmailStatus(res.status);
+        if (res.status.smtpUser) {
+          setTestRecipient(prev => prev || res.status.smtpUser);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch email status:', err);
+    } finally {
+      setLoadingEmailStatus(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeSection === 'email') {
+      fetchEmailStatus();
+    }
+  }, [activeSection, fetchEmailStatus]);
+
+  const handleSendTestEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!testRecipient.trim()) return;
+    setSendingTestEmail(true);
+    setTestEmailResult(null);
+    try {
+      const res = await api.sendTestEmail(testRecipient.trim());
+      setTestEmailResult(res);
+      if (res.success) {
+        setActionMessage(`Test email successfully delivered to ${testRecipient.trim()}!`);
+        setTimeout(() => setActionMessage(''), 5000);
+      }
+    } catch (err: any) {
+      setTestEmailResult({ success: false, error: err.message || 'Error dispatching test email' });
+    } finally {
+      setSendingTestEmail(false);
+    }
+  };
 
   // Open inspection drawer for a user
   const handleInspectUser = async (user: any) => {
@@ -307,6 +354,18 @@ export function AdminPortal() {
           >
             <span className="material-symbols-outlined text-lg align-middle mr-2">analytics</span>
             System Analytics
+          </button>
+
+          <button
+            onClick={() => setActiveSection('email')}
+            className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
+              activeSection === 'email'
+                ? 'bg-primary text-on-primary shadow-elevation-1'
+                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-lg align-middle mr-2">mail</span>
+            Email Gateway
           </button>
         </div>
 
@@ -564,6 +623,249 @@ export function AdminPortal() {
                 <span className="material-symbols-outlined text-primary text-xl">account_balance_wallet</span>
                 Atomic Prisma Database Transactions Enabled for Token Transfers
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 4: EMAIL GATEWAY */}
+      {activeSection === 'email' && (
+        <div className="space-y-6 animate-in fade-in duration-200">
+          {/* Header Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-4 bg-surface p-6 rounded-2xl border border-outline-variant shadow-elevation-1">
+            <div className="flex items-center gap-3">
+              <div className="h-12 w-12 rounded-2xl bg-primary-container text-on-primary-container flex items-center justify-center shadow-elevation-1">
+                <span className="material-symbols-outlined text-2xl">mail</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-on-surface">Email Delivery Gateway</h3>
+                <p className="text-xs text-on-surface-variant font-medium">
+                  Transaction mailing service powered by Gmail SMTP with Resend secondary fallback.
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={fetchEmailStatus}
+              disabled={loadingEmailStatus}
+              className="px-4 py-2 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-bold transition-all flex items-center gap-2 border border-outline-variant disabled:opacity-50"
+            >
+              <span className={`material-symbols-outlined text-base ${loadingEmailStatus ? 'animate-spin' : ''}`}>
+                sync
+              </span>
+              Refresh Gateway Status
+            </button>
+          </div>
+
+          {/* Status Metrics Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {/* Active Provider Card */}
+            <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Active Provider</span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-teaching-emerald-container text-on-teaching-emerald-container">
+                  <span className="h-1.5 w-1.5 rounded-full bg-teaching-emerald animate-ping" />
+                  {emailStatus?.provider?.toUpperCase() || 'SMTP'}
+                </span>
+              </div>
+              <div>
+                <p className="text-xl font-black text-on-surface flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-xl">forward_to_inbox</span>
+                  {emailStatus?.provider === 'smtp' ? 'Gmail SMTP' : emailStatus?.provider === 'resend' ? 'Resend Gateway' : 'Dev Simulation'}
+                </p>
+                <p className="text-xs text-on-surface-variant font-mono mt-1 truncate" title={emailStatus?.smtpFromEmail || emailStatus?.fromEmail}>
+                  Sender: {emailStatus?.smtpFromEmail || emailStatus?.fromEmail || 'Mindroot Learning'}
+                </p>
+              </div>
+            </div>
+
+            {/* SMTP Host Details */}
+            <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">SMTP Connection</span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-primary-container text-on-primary-container">
+                  SSL / 465
+                </span>
+              </div>
+              <div>
+                <p className="text-base font-bold text-on-surface truncate font-mono">
+                  {emailStatus?.smtpHost || 'smtp.gmail.com'}
+                </p>
+                <p className="text-xs text-teaching-emerald font-semibold mt-1 flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">check_circle</span>
+                  Delivers to ANY email (0 DNS restrictions)
+                </p>
+              </div>
+            </div>
+
+            {/* Fallback Gateway */}
+            <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">Secondary Fallback</span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-secondary-container text-on-secondary-container">
+                  {emailStatus?.resendConfigured ? 'Ready' : 'Not Set'}
+                </span>
+              </div>
+              <div>
+                <p className="text-base font-bold text-on-surface flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-secondary text-xl">cloud_sync</span>
+                  Resend Email API
+                </p>
+                <p className="text-xs text-on-surface-variant font-medium mt-1 truncate">
+                  {emailStatus?.resendConfigured ? 'Automatic failover if SMTP is unreachable' : 'Optional secondary gateway'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Interactive Live Email Dispatcher Tool */}
+          <div className="bg-surface p-6 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-4">
+            <div className="flex items-center gap-2 text-on-surface">
+              <span className="material-symbols-outlined text-primary text-xl">send</span>
+              <h4 className="text-base font-black">Dispatch Diagnostic Verification Email</h4>
+            </div>
+            <p className="text-xs text-on-surface-variant font-medium">
+              Send a live test email directly through the active gateway to any address to verify end-to-end delivery, formatting, and spam filtering.
+            </p>
+
+            <form onSubmit={handleSendTestEmail} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-1">
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined absolute left-3.5 top-2.5 text-on-surface-variant text-lg">alternate_email</span>
+                <input
+                  type="email"
+                  required
+                  placeholder="Enter recipient email (e.g. your_email@gmail.com)"
+                  value={testRecipient}
+                  onChange={(e) => setTestRecipient(e.target.value)}
+                  className="w-full pl-11 pr-4 py-2.5 bg-surface border border-outline-variant rounded-xl text-xs font-bold text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-elevation-1"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={sendingTestEmail || !testRecipient.trim()}
+                className="px-6 py-2.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+              >
+                {sendingTestEmail ? (
+                  <>
+                    <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                    <span>Sending...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-base">outgoing_mail</span>
+                    <span>Send Test Email</span>
+                  </>
+                )}
+              </button>
+            </form>
+
+            {/* Result Box */}
+            {testEmailResult && (
+              <div
+                className={`p-4 rounded-xl border text-xs font-medium space-y-1.5 animate-in fade-in duration-200 ${
+                  testEmailResult.success
+                    ? 'bg-teaching-emerald-container/60 border-teaching-emerald/30 text-on-teaching-emerald-container'
+                    : 'bg-alert-rose-container/60 border-alert-rose/30 text-on-alert-rose-container'
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold">
+                  <span className="material-symbols-outlined text-base">
+                    {testEmailResult.success ? 'check_circle' : 'error'}
+                  </span>
+                  <span>
+                    {testEmailResult.success ? 'Delivery Confirmed!' : 'Delivery Error'}
+                  </span>
+                </div>
+                <p className="text-[11px] font-semibold">
+                  {testEmailResult.message || testEmailResult.error || JSON.stringify(testEmailResult)}
+                </p>
+                {testEmailResult.transport && (
+                  <p className="text-[10px] font-mono opacity-80">
+                    Transport: {testEmailResult.transport?.toUpperCase()} | Recipient: {testRecipient}
+                  </p>
+                )}
+                {testEmailResult.hint && (
+                  <p className="text-[11px] bg-surface/50 p-2 rounded-lg mt-2 text-on-surface border border-outline-variant">
+                    💡 <strong>Hint:</strong> {testEmailResult.hint}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Active Platform Email Triggers Registry */}
+          <div className="bg-surface p-6 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-4">
+            <h4 className="text-base font-black text-on-surface flex items-center gap-2">
+              <span className="material-symbols-outlined text-teaching-emerald">checklist</span>
+              Active Platform Email Triggers (7 Automated Workflows)
+            </h4>
+            <p className="text-xs text-on-surface-variant font-medium">
+              Every transactional notification below is hooked into the Mindroot email gateway:
+            </p>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5 pt-1">
+              {[
+                {
+                  title: 'Account Verification',
+                  desc: 'Delivers a 24-hour cryptographically hashed activation link upon student/mentor registration.',
+                  route: 'POST /api/auth/register',
+                  icon: 'verified'
+                },
+                {
+                  title: 'Password Reset',
+                  desc: 'Dispatches a 60-minute time-bound password reset token to recover locked accounts.',
+                  route: 'POST /api/auth/forgot-password',
+                  icon: 'lock_reset'
+                },
+                {
+                  title: 'Peer Session Booking',
+                  desc: 'Notifies both student and mentor instantly with full agenda, date, and live classroom link.',
+                  route: 'POST /api/sessions',
+                  icon: 'event'
+                },
+                {
+                  title: 'Schedule Change Notification',
+                  desc: 'Alerts participants whenever a session is rescheduled or modified by either party.',
+                  route: 'PATCH /api/sessions/:id',
+                  icon: 'update'
+                },
+                {
+                  title: '30-Minute Session Reminders',
+                  desc: 'Automated background cron worker runs every minute to alert learners before lecture starts.',
+                  route: 'Background Worker',
+                  icon: 'alarm'
+                },
+                {
+                  title: 'Razorpay Payment Receipt',
+                  desc: 'Provides automated payment invoice with Session ID, amount in INR, and Razorpay Tx ID.',
+                  route: 'POST /api/payments/verify',
+                  icon: 'receipt_long'
+                },
+                {
+                  title: 'Mentor Payout Confirmation',
+                  desc: 'Sends instant email receipts when teachers request token earnings withdrawal to bank/UPI.',
+                  route: 'POST /api/wallet/payout',
+                  icon: 'payments'
+                }
+              ].map((trigger) => (
+                <div key={trigger.title} className="p-3.5 bg-surface-container rounded-xl border border-outline-variant/60 flex items-start gap-3">
+                  <div className="h-8 w-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0 mt-0.5">
+                    <span className="material-symbols-outlined text-lg">{trigger.icon}</span>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <h5 className="text-xs font-black text-on-surface">{trigger.title}</h5>
+                      <span className="px-2 py-0.5 bg-surface rounded text-[9px] font-mono text-on-surface-variant font-bold border border-outline-variant/50">
+                        {trigger.route}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                      {trigger.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>

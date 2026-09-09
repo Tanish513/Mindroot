@@ -7,6 +7,7 @@
     "dev": "npx tsx watch src/index.ts",
     "start": "npx tsx src/index.ts",
     "typecheck": "tsc --noEmit",
+    "test:email": "npx tsx src/scripts/test-email.ts",
     "postinstall": "prisma generate"
   },
   "keywords": [],
@@ -22,6 +23,7 @@
     "express": "^5.2.1",
     "google-auth-library": "^11.0.2",
     "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^10.0.0",
     "pg": "^8.23.0",
     "pino": "^10.3.1",
     "razorpay": "^2.9.8",
@@ -35,6 +37,7 @@
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.7",
     "@types/node": "^26.2.0",
+    "@types/nodemailer": "^8.0.1",
     "@types/pg": "^8.23.1",
     "prisma": "^7.9.1",
     "ts-node": "^10.9.2",

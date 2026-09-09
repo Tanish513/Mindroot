@@ -1632,5 +1632,48 @@ export const api = {
       if (r.ok) return await safeParse(r, { success: true });
     } catch {}
     return { success: true };
+  },
+
+  getEmailStatus: async () => {
+    try {
+      const r = await fetch(`${getBASE()}/api/email/status`, { headers: getHeaders() });
+      if (r.ok) return await safeParse(r, { success: false });
+    } catch (err) {
+      console.error('[API] getEmailStatus failed:', err);
+    }
+    return { success: false, status: { provider: 'unavailable' } };
+  },
+
+  sendTestEmail: async (to: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/email/test`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getHeaders()
+        },
+        body: JSON.stringify({ to })
+      });
+      const data = await safeParse(r, { success: false, error: 'Unknown response' });
+      return { ok: r.ok, status: r.status, ...data };
+    } catch (err: any) {
+      return { ok: false, success: false, error: err.message || 'Network error sending test email' };
+    }
+  },
+
+  resendVerification: async () => {
+    try {
+      const r = await fetch(`${getBASE()}/api/auth/resend-verification`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getHeaders()
+        }
+      });
+      const data = await safeParse(r, { success: false, error: 'Failed to resend' });
+      return { ok: r.ok, ...data };
+    } catch (err: any) {
+      return { ok: false, success: false, error: err.message || 'Network error' };
+    }
   }
 };
