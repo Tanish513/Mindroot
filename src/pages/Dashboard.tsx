@@ -247,6 +247,68 @@ export function Dashboard() {
     return 'Good evening';
   };
 
+  const getGoogleCalendarUrl = (session: any) => {
+    const title = encodeURIComponent(session.title || 'Mindroot Peer Mentorship Session');
+    const start = session.scheduledAt ? new Date(session.scheduledAt) : new Date();
+    const durationMin = session.durationMin || 60;
+    const end = new Date(start.getTime() + durationMin * 60000);
+    const formatTime = (date: Date) => date.toISOString().replace(/-|:|\.\d\d\d/g, '');
+    const dates = `${formatTime(start)}/${formatTime(end)}`;
+    const details = encodeURIComponent(`Mindroot Peer Learning Session.\nClassroom: ${window.location.origin}/live/${session.id}`);
+    const location = encodeURIComponent(`${window.location.origin}/live/${session.id}`);
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
+  };
+
+  const handleDownloadIcs = (session: any) => {
+    const start = session.scheduledAt ? new Date(session.scheduledAt) : new Date();
+    const durationMin = session.durationMin || 60;
+    const end = new Date(start.getTime() + durationMin * 60000);
+    const formatDate = (date: Date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Mindroot//Peer Mentorship//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:session-${session.id}@mindroot.com`,
+      `DTSTAMP:${formatDate(new Date())}`,
+      `DTSTART:${formatDate(start)}`,
+      `DTEND:${formatDate(end)}`,
+      `SUMMARY:${session.title || 'Mindroot Session'}`,
+      `DESCRIPTION:Classroom link: ${window.location.origin}/live/${session.id}`,
+      `LOCATION:${window.location.origin}/live/${session.id}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mindroot-session-${session.id.slice(0, 8)}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const isSessionLiveNow = (scheduledAt?: string) => {
+    if (!scheduledAt) return false;
+    const diffMin = Math.round((new Date(scheduledAt).getTime() - Date.now()) / 60000);
+    return diffMin <= 15 && diffMin >= -60;
+  };
+
+  const getCountdownLabel = (scheduledAt?: string) => {
+    if (!scheduledAt) return 'Upcoming';
+    const diffMin = Math.round((new Date(scheduledAt).getTime() - Date.now()) / 60000);
+    if (diffMin <= 15 && diffMin >= -60) return '● LIVE CLASSROOM READY';
+    if (diffMin > 0 && diffMin <= 60) return `Starts in ${diffMin}m`;
+    return 'Starting Soon';
+  };
+
   // Determine Badge & Subtitle
   const roleBadgeLabel = isBothRole 
     ? 'Student & Peer Mentor' 
@@ -355,6 +417,30 @@ export function Dashboard() {
 
   return (
     <div className="max-w-container_max mx-auto space-y-6 select-none">
+      {/* Existing Teacher UPI & ID Setup Reminder Banner */}
+      {(role === 'teacher' || currentUser?.role === 'teacher' || currentUser?.role === 'both') && !currentUser?.upiId && (
+        <div className="bg-learning-amber-container/70 border border-learning-amber/30 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-elevation-1 animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-learning-amber/20 text-learning-amber flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-2xl">qr_code_2</span>
+            </div>
+            <div>
+              <h4 className="text-xs font-black text-on-surface">Enable Direct UPI Student Payments</h4>
+              <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
+                Add your UPI ID & official College ID in your profile to start accepting direct student payments.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/profile')}
+            className="px-3.5 py-1.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs flex items-center gap-1"
+          >
+            <span>Set Up Now</span>
+            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+          </button>
+        </div>
+      )}
+
       {/* Search Results Banner when search query is active */}
       {query && (
         <div className="bg-primary-container/40 border border-primary/20 rounded-2xl p-5 shadow-elevation-1 space-y-4 animate-in fade-in duration-200">
@@ -703,25 +789,62 @@ export function Dashboard() {
                   </Button>
                 </div>
               ) : (
-                filteredSessions.map(session => (
-                  <div key={session.id} className="bg-surface rounded-xl p-4 border border-outline-variant shadow-elevation-1 hover:border-outline transition-colors">
-                    <div className="flex justify-between items-start mb-1.5">
-                      <span className="px-2 py-0.5 bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded text-[10px] font-bold">
-                        STARTING SOON
-                      </span>
-                      <span className="text-xs text-on-surface-variant font-semibold">
-                        {new Date(session.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                      </span>
+                filteredSessions.map(session => {
+                  const isLive = isSessionLiveNow(session.scheduledAt);
+                  const countdown = getCountdownLabel(session.scheduledAt);
+                  return (
+                    <div key={session.id} className="bg-surface rounded-xl p-4 border border-outline-variant shadow-elevation-1 hover:border-outline transition-colors space-y-3">
+                      <div className="flex justify-between items-start">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 ${
+                          isLive 
+                            ? 'bg-teaching-emerald text-white animate-pulse shadow-xs' 
+                            : 'bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container'
+                        }`}>
+                          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
+                          {countdown}
+                        </span>
+                        <span className="text-xs text-on-surface-variant font-bold">
+                          {new Date(session.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                        </span>
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-on-surface mb-0.5">{session.title}</h4>
+                        <p className="text-[11px] text-on-surface-variant flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs text-outline">person</span> 
+                          {session.teacherId === currentUser?.id ? `Teaching ${session.student?.name || 'Student'}` : `Learning from ${session.teacher?.name || 'Teacher'}`}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <button
+                          onClick={() => window.open(getGoogleCalendarUrl(session), '_blank')}
+                          title="Add to Google Calendar"
+                          className="flex-1 py-1.5 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded-lg text-[10px] font-bold border border-outline-variant transition-colors flex items-center justify-center gap-1"
+                        >
+                          <span className="material-symbols-outlined text-xs text-primary">calendar_month</span>
+                          <span>Google Cal</span>
+                        </button>
+                        <button
+                          onClick={() => handleDownloadIcs(session)}
+                          title="Download .ics event file"
+                          className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded-lg text-[10px] font-bold border border-outline-variant transition-colors flex items-center justify-center"
+                        >
+                          <span className="material-symbols-outlined text-xs">download</span>
+                          <span className="text-[9px] font-extrabold uppercase">.ics</span>
+                        </button>
+                      </div>
+                      <Button 
+                        variant={isLive ? "primary" : "secondary"} 
+                        className={`w-full flex items-center justify-center gap-1.5 font-bold text-xs py-2 ${
+                          isLive ? 'bg-teaching-emerald hover:bg-teaching-emerald/90 text-white shadow-elevation-1 ring-2 ring-teaching-emerald/30' : ''
+                        }`} 
+                        onClick={() => navigate(`/live/${session.id}`)}
+                      >
+                        <span className="material-symbols-outlined text-sm">videocam</span> 
+                        {isLive ? 'Join Live Classroom' : 'Enter Classroom'}
+                      </Button>
                     </div>
-                    <h4 className="text-xs font-bold text-on-surface mb-1">{session.title}</h4>
-                    <p className="text-[11px] text-on-surface-variant mb-3 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-xs text-outline">person</span> {session.teacherId === currentUser.id ? `Teaching ${session.student?.name || 'Student'}` : `Learning from ${session.teacher?.name || 'Teacher'}`}
-                    </p>
-                    <Button variant="primary" className="w-full flex items-center justify-center gap-1.5 font-semibold text-xs py-2" onClick={() => navigate(`/live/${session.id}`)}>
-                      <span className="material-symbols-outlined text-sm">videocam</span> Join Classroom
-                    </Button>
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </section>

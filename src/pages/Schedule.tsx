@@ -50,6 +50,81 @@ export function Schedule() {
     setTimeout(() => setCopiedSessionId(null), 2500);
   };
 
+  const getGoogleCalendarUrl = (session: any) => {
+    const title = encodeURIComponent(session.title || 'Mindroot Peer Learning Session');
+    const start = session.scheduledAt ? new Date(session.scheduledAt) : new Date();
+    const durationMin = session.durationMin || 60;
+    const end = new Date(start.getTime() + durationMin * 60000);
+    const formatTime = (date: Date) => date.toISOString().replace(/-|:|\.\d\d\d/g, '');
+    const dates = `${formatTime(start)}/${formatTime(end)}`;
+    const details = encodeURIComponent(`Mindroot Peer Mentorship with ${session.teacher?.name || 'Mentor'}.\nClassroom link: ${window.location.origin}/live/${session.id}`);
+    const location = encodeURIComponent(`${window.location.origin}/live/${session.id}`);
+    return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dates}&details=${details}&location=${location}`;
+  };
+
+  const handleDownloadIcs = (session: any) => {
+    const start = session.scheduledAt ? new Date(session.scheduledAt) : new Date();
+    const durationMin = session.durationMin || 60;
+    const end = new Date(start.getTime() + durationMin * 60000);
+    const formatDate = (date: Date) => date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
+
+    const icsContent = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Mindroot//Peer Mentoring Platform//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:session-${session.id}@mindroot.com`,
+      `DTSTAMP:${formatDate(new Date())}`,
+      `DTSTART:${formatDate(start)}`,
+      `DTEND:${formatDate(end)}`,
+      `SUMMARY:${session.title || 'Mindroot Peer Session'}`,
+      `DESCRIPTION:Peer learning session with ${session.teacher?.name || 'Mentor'}. Meeting link: ${window.location.origin}/live/${session.id}`,
+      `LOCATION:${window.location.origin}/live/${session.id}`,
+      'STATUS:CONFIRMED',
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+
+    const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `mindroot-session-${session.id.slice(0, 8)}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  };
+
+  const getCountdownBadge = (scheduledAt?: string) => {
+    if (!scheduledAt) return null;
+    const diffMin = Math.round((new Date(scheduledAt).getTime() - Date.now()) / 60000);
+    if (diffMin <= 15 && diffMin >= -60) {
+      return (
+        <span className="px-2 py-0.5 rounded-full bg-teaching-emerald/20 text-teaching-emerald font-black text-[10px] animate-pulse flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-teaching-emerald" />
+          ● LIVE CLASSROOM READY
+        </span>
+      );
+    }
+    if (diffMin > 0 && diffMin <= 60) {
+      return (
+        <span className="px-2 py-0.5 rounded-full bg-learning-amber/20 text-learning-amber font-bold text-[10px]">
+          Starts in {diffMin}m
+        </span>
+      );
+    }
+    return null;
+  };
+
+  const isSessionLiveNow = (scheduledAt?: string) => {
+    if (!scheduledAt) return false;
+    const diffMin = Math.round((new Date(scheduledAt).getTime() - Date.now()) / 60000);
+    return diffMin <= 15 && diffMin >= -60;
+  };
+
   // Loaded week start
   const [weekStart, setWeekStart] = useState(() => {
     const d = new Date();
@@ -285,6 +360,15 @@ export function Schedule() {
   const handleApproveSession = async (id: string) => {
     try {
       await api.patchSession(id, { status: 'confirmed' });
+      loadData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeclineSession = async (id: string) => {
+    try {
+      await api.patchSession(id, { status: 'declined' });
       loadData();
     } catch (err) {
       console.error(err);
@@ -576,12 +660,16 @@ export function Schedule() {
                   const totalEnrolledCount = Array.isArray(session.students) ? session.students.length : (session.studentId ? 1 : 0);
                   const teacherRevenueReceived = paidStudentsList.reduce((sum: number, st: any) => sum + (Number(st.amountPaid) || Number(session.pricePerStudent) || Number(session.amount) || 499), 0);
 
+                  const isSwap = Boolean(session.isSwap || (session.title && session.title.includes('↔')) || session.paymentStatus === 'swap');
+                  const isProposer = session.proposerId ? session.proposerId === currentUser?.id : session.studentId === currentUser?.id;
+                  const isRecipient = isSwap ? !isProposer : isTeacher;
+
                   return (
                     <div 
                       key={session.id} 
                       className={clsx(
                         "p-4 rounded-2xl border-l-4 bg-surface shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-200 group border-y border-r border-outline-variant",
-                        isTeacher ? "border-l-learning-amber" : "border-l-primary"
+                        isSwap ? "border-l-primary" : (isTeacher ? "border-l-learning-amber" : "border-l-primary")
                       )}
                     >
                       <div className="flex justify-between items-start mb-3">
@@ -595,7 +683,14 @@ export function Schedule() {
                             <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-teaching-emerald rounded-full ring-2 ring-surface" />
                           </div>
                           <div>
-                            <p className="font-bold text-sm text-on-surface">{partner?.name}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-bold text-sm text-on-surface">{partner?.name}</p>
+                              {isSwap && (
+                                <span className="px-1.5 py-0.2 rounded bg-primary-container text-on-primary-container text-[9px] font-black uppercase tracking-wider">
+                                  Swap
+                                </span>
+                              )}
+                            </div>
                             <p className="text-xs text-on-surface-variant font-medium truncate max-w-[130px]">{session.title}</p>
                           </div>
                         </div>
@@ -608,7 +703,12 @@ export function Schedule() {
                           )}>
                             {session.status}
                           </span>
-                          {isTeacher ? (
+                          {isSwap ? (
+                            <span className="text-[10px] font-bold text-on-teaching-emerald-container bg-teaching-emerald-container border border-teaching-emerald/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                              <span className="material-symbols-outlined text-[11px]">swap_horiz</span>
+                              Skill Swap (Free)
+                            </span>
+                          ) : isTeacher ? (
                             paidStudentsList.length > 0 ? (
                               <span className="text-[10px] font-bold text-on-teaching-emerald-container bg-teaching-emerald-container border border-teaching-emerald/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-[11px]">verified</span>
@@ -665,10 +765,11 @@ export function Schedule() {
                           <span className="material-symbols-outlined text-sm text-outline">schedule</span>
                           {new Date(session.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
+                        {getCountdownBadge(session.scheduledAt)}
                       </div>
                       <div className="flex flex-wrap gap-2 pt-1 border-t border-outline-variant">
-                        {/* Post-Lecture Payment Button for Students */}
-                        {!isTeacher && !isPaidByMe && (
+                        {/* Post-Lecture Payment Button for Students (Regular mentoring only) */}
+                        {!isTeacher && !isPaidByMe && !isSwap && (
                           <button 
                             onClick={() => handlePayForSession(session)}
                             className="w-full py-2 px-3 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-elevation-1 transition-all active:scale-95 mb-1"
@@ -678,20 +779,40 @@ export function Schedule() {
                           </button>
                         )}
                         {(session.status === 'confirmed' || session.status === 'live') && (
-                          <Button 
-                            variant="primary" 
-                            className="flex-1 py-1.5 text-xs font-extrabold flex items-center justify-center gap-1 shadow-elevation-1" 
+                          <button 
+                            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-elevation-1 transition-all ${
+                              isSessionLiveNow(session.scheduledAt)
+                                ? 'bg-teaching-emerald hover:bg-teaching-emerald/90 text-white animate-pulse ring-2 ring-teaching-emerald/30'
+                                : 'bg-primary hover:bg-primary-hover text-on-primary'
+                            }`}
                             onClick={() => navigate(`/live/${session.id}`)}
                           >
                             <span className="material-symbols-outlined text-[15px]">videocam</span>
-                            <span>{(session.maxCapacity || 1) > 1 ? `Join Live Batch (${session.maxCapacity || 3} Students + Teacher)` : 'Join Live Room'}</span>
-                          </Button>
+                            <span>
+                              {isSessionLiveNow(session.scheduledAt)
+                                ? '● Join Live Classroom'
+                                : (session.maxCapacity || 1) > 1 
+                                  ? `Join Live Batch (${session.maxCapacity || 3} Students + Teacher)` 
+                                  : 'Join Live Room'}
+                            </span>
+                          </button>
                         )}
-                        {session.status === 'pending' && !isTeacher && (
-                          <div className="flex-1 py-1.5 px-3 bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
-                            <span className="material-symbols-outlined text-[16px] text-learning-amber">hourglass_top</span>
-                            <span>Waiting for Teacher Approval</span>
-                          </div>
+                        {session.status === 'pending' && (
+                          isSwap ? (
+                            isProposer ? (
+                              <div className="flex-1 py-1.5 px-3 bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
+                                <span className="material-symbols-outlined text-[16px] text-learning-amber">hourglass_top</span>
+                                <span>Awaiting Peer Response</span>
+                              </div>
+                            ) : null
+                          ) : (
+                            !isTeacher && (
+                              <div className="flex-1 py-1.5 px-3 bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
+                                <span className="material-symbols-outlined text-[16px] text-learning-amber">hourglass_top</span>
+                                <span>Waiting for Teacher Approval</span>
+                              </div>
+                            )
+                          )
                         )}
                         <button
                           onClick={() => handleCopySessionLink(session.id)}
@@ -702,36 +823,82 @@ export function Schedule() {
                           <span>{copiedSessionId === session.id ? 'Copied!' : 'Copy Link'}</span>
                         </button>
                         {session.status === 'confirmed' && (
-                          <button
-                            onClick={() => api.downloadCalendarIcs(session.id)}
-                            className="px-2.5 py-1.5 bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 active:scale-95 shadow-elevation-1"
-                            title="Download .ics event file to add to Calendar"
-                          >
-                            <span className="material-symbols-outlined text-[14px]">calendar_add_on</span>
-                            <span>Add to Calendar</span>
-                          </button>
+                          <div className="inline-flex items-center gap-1">
+                            <button
+                              onClick={() => window.open(getGoogleCalendarUrl(session), '_blank')}
+                              className="px-2.5 py-1.5 bg-primary-container hover:bg-primary-container/80 text-on-primary-container border border-primary/20 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 active:scale-95 shadow-xs"
+                              title="Add to Google Calendar"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">calendar_today</span>
+                              <span>Google Cal</span>
+                            </button>
+                            <button
+                              onClick={() => handleDownloadIcs(session)}
+                              className="px-2 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95"
+                              title="Download .ics event file for Apple / Outlook Calendar"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">download</span>
+                              <span>.ics</span>
+                            </button>
+                          </div>
                         )}
-                        {session.status === 'pending' && isTeacher && (
-                          <Button 
-                            variant="primary" 
-                            className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-elevation-1" 
-                            onClick={() => handleApproveSession(session.id)}
-                          >
-                            <span className="material-symbols-outlined text-[15px]">check_circle</span>
-                            <span>Accept & Confirm</span>
-                          </Button>
+                        {session.status === 'pending' && (
+                          isSwap ? (
+                            isRecipient ? (
+                              <>
+                                <Button 
+                                  variant="mint" 
+                                  className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-elevation-1" 
+                                  onClick={() => handleApproveSession(session.id)}
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                  <span>Accept Swap</span>
+                                </Button>
+                                <Button 
+                                  variant="danger" 
+                                  className="py-1.5 px-3 text-xs font-bold" 
+                                  onClick={() => handleDeclineSession(session.id)}
+                                >
+                                  Decline
+                                </Button>
+                              </>
+                            ) : (
+                              <Button 
+                                variant="ghost" 
+                                className="py-1.5 px-3 font-bold text-[11px] text-on-surface-variant hover:text-alert-rose" 
+                                onClick={() => handleDeleteSession(session.id)}
+                              >
+                                Cancel Request
+                              </Button>
+                            )
+                          ) : (
+                            isTeacher ? (
+                              <>
+                                <Button 
+                                  variant="primary" 
+                                  className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-elevation-1" 
+                                  onClick={() => handleApproveSession(session.id)}
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                  <span>Accept & Confirm</span>
+                                </Button>
+                                <Button 
+                                  variant="danger" 
+                                  className="py-1.5 px-3 text-xs font-bold" 
+                                  onClick={() => handleDeclineSession(session.id)}
+                                >
+                                  Decline
+                                </Button>
+                              </>
+                            ) : null
+                          )
                         )}
-                        {session.status === 'confirmed' && isTeacher && (
+                        {session.status === 'confirmed' && isTeacher && !isSwap && (
                           <Button variant="mint" className="py-1.5 px-3 text-xs font-bold" onClick={() => handleCompleteSession(session.id)}>
                             Complete
                           </Button>
                         )}
-                        {session.status === 'pending' && (
-                          <Button variant="danger" className="py-1.5 px-3 text-xs font-bold" onClick={() => handleDeleteSession(session.id)}>
-                            Decline
-                          </Button>
-                        )}
-                        {session.status !== 'completed' && (
+                        {session.status !== 'pending' && session.status !== 'completed' && (
                           <Button variant="ghost" className="py-1.5 px-3 font-bold text-[11px] text-on-surface-variant hover:text-alert-rose" onClick={() => handleDeleteSession(session.id)}>
                             Cancel
                           </Button>

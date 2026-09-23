@@ -27,6 +27,8 @@ export function Login() {
   const [signUpLoading, setSignUpLoading] = useState(false);
   const [signUpRole, setSignUpRole] = useState<'student' | 'teacher' | 'both'>('student');
   const [signUpHourlyRate, setSignUpHourlyRate] = useState(499);
+  const [signUpUpiId, setSignUpUpiId] = useState('');
+  const [signUpOfficialId, setSignUpOfficialId] = useState('');
   const [signUpBatchPricing, setSignUpBatchPricing] = useState<Record<number, number>>({
     1: 499,
     2: 399,
@@ -36,11 +38,14 @@ export function Login() {
   });
 
   // Google OAuth Onboarding states
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [googleError, setGoogleError] = useState('');
   const [showNewUserModal, setShowNewUserModal] = useState(false);
   const [pendingUser, setPendingUser] = useState<any>(null);
   const [onboardRole, setOnboardRole] = useState<'student' | 'teacher' | 'both'>('student');
   const [onboardHourlyRate, setOnboardHourlyRate] = useState(499);
+  const [onboardUpiId, setOnboardUpiId] = useState('');
+  const [onboardOfficialId, setOnboardOfficialId] = useState('');
   const [onboardBatchPricing, setOnboardBatchPricing] = useState<Record<number, number>>({
     1: 499,
     2: 399,
@@ -79,8 +84,10 @@ export function Login() {
   // Shared Google OAuth Success/Error handlers
   const handleGoogleSuccess = async (credentialResponse: any) => {
     if (credentialResponse?.credential) {
+      if (googleLoading) return;
+      setGoogleLoading(true);
+      setGoogleError('');
       try {
-        setGoogleError('');
         const res = await api.loginWithGoogleToken(credentialResponse.credential);
         if (res && res.user) {
           const resolvedRole = res.user.role || 'student';
@@ -102,19 +109,24 @@ export function Login() {
         }
       } catch (err: any) {
         setGoogleError(err.message || 'Google Sign-In failed.');
+      } finally {
+        setGoogleLoading(false);
       }
     }
   };
 
-  const handleGoogleError = () => {
-    setGoogleError('Google Sign-In was unsuccessful or cancelled.');
+  const handleGoogleButtonError = () => {
+    setGoogleError('Google Sign-In was cancelled or popup closed.');
   };
 
   // Google One-Tap prompt for returning users
   useGoogleOneTapLogin({
     onSuccess: handleGoogleSuccess,
-    onError: handleGoogleError,
-    disabled: !googleClientId,
+    onError: () => {
+      // Silently log; background One-Tap dismissals or browser FedCM cooldown should not display red error banners
+      console.log('[Google One-Tap] Prompt dismissed, suppressed, or unavailable.');
+    },
+    disabled: !googleClientId || googleLoading,
   });
 
   // Reusable Google OAuth button renderer
@@ -123,15 +135,22 @@ export function Login() {
     return (
       <div className="space-y-3 mb-2">
         {googleClientId ? (
-          <div className="flex justify-center w-full">
-            <GoogleLogin
-              onSuccess={handleGoogleSuccess}
-              onError={handleGoogleError}
-              theme="outline"
-              shape="pill"
-              size="large"
-              text={isRegister ? "signup_with" : "continue_with"}
-            />
+          <div className="flex justify-center w-full min-h-[44px]">
+            {googleLoading ? (
+              <div className="flex items-center justify-center gap-3 px-6 py-2.5 bg-surface-container-high rounded-full border border-outline-variant/40 text-xs font-semibold text-primary animate-pulse w-full max-w-[280px]">
+                <div className="w-4 h-4 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+                <span>Signing in with Google...</span>
+              </div>
+            ) : (
+              <GoogleLogin
+                onSuccess={handleGoogleSuccess}
+                onError={handleGoogleButtonError}
+                theme="outline"
+                shape="pill"
+                size="large"
+                text={isRegister ? "signup_with" : "continue_with"}
+              />
+            )}
           </div>
         ) : null}
 
@@ -248,6 +267,21 @@ export function Login() {
         batchPricing: signUpBatchPricing
       });
 
+      if (signUpUpiId || signUpOfficialId) {
+        try {
+          await api.updateUser(newUser.id, {
+            upiId: signUpUpiId.trim() || undefined,
+            officialIdNumber: signUpOfficialId.trim() || undefined,
+            officialIdStatus: signUpOfficialId.trim() ? 'verified' : undefined
+          });
+          Object.assign(newUser, {
+            upiId: signUpUpiId.trim() || undefined,
+            officialIdNumber: signUpOfficialId.trim() || undefined,
+            officialIdStatus: signUpOfficialId.trim() ? 'verified' : undefined
+          });
+        } catch {}
+      }
+
       setSignUpSuccess(true);
       loginAction(newUser, signUpRole);
       setCurrentUser(newUser);
@@ -280,6 +314,9 @@ export function Login() {
       role: onboardRole,
       hourlyRate: onboardHourlyRate,
       batchPricing: onboardBatchPricing,
+      upiId: onboardUpiId.trim() || undefined,
+      officialIdNumber: onboardOfficialId.trim() || undefined,
+      officialIdStatus: onboardOfficialId.trim() ? 'verified' : undefined,
       skillsTaught: teachesArray,
       skillsLearned: learnsArray,
       userSkills: [
@@ -629,6 +666,30 @@ export function Login() {
                           })}
                         </div>
                       </div>
+
+                      {/* Teacher Verification & UPI Details (Optional) */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-outline-variant/60">
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-on-surface">Personal UPI ID (VPA)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. yourname@okhdfcbank"
+                            value={signUpUpiId}
+                            onChange={(e) => setSignUpUpiId(e.target.value)}
+                            className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-mono font-medium text-on-surface px-3 py-2 outline-none focus:border-primary"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="block text-xs font-bold text-on-surface">College / Faculty ID (Optional)</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 2024-CS-0941"
+                            value={signUpOfficialId}
+                            onChange={(e) => setSignUpOfficialId(e.target.value)}
+                            className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-medium text-on-surface px-3 py-2 outline-none focus:border-primary"
+                          />
+                        </div>
+                      </div>
                     </>
                   )}
 
@@ -782,6 +843,30 @@ export function Login() {
                           </div>
                         );
                       })}
+                    </div>
+                  </div>
+
+                  {/* Onboard UPI & Official ID */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2 border-t border-outline-variant/60">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-on-surface">Personal UPI ID (VPA)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. name@okhdfcbank"
+                        value={onboardUpiId}
+                        onChange={(e) => setOnboardUpiId(e.target.value)}
+                        className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-mono font-medium text-on-surface p-2 outline-none focus:border-primary"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="block text-xs font-semibold text-on-surface">College / Faculty ID (Optional)</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 2024-CS-0941"
+                        value={onboardOfficialId}
+                        onChange={(e) => setOnboardOfficialId(e.target.value)}
+                        className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-medium text-on-surface p-2 outline-none focus:border-primary"
+                      />
                     </div>
                   </div>
                 </>

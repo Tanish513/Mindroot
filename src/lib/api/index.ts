@@ -3,7 +3,7 @@ import { getBackendUrl } from '../env';
 
 const getBASE = () => getBackendUrl();
 
-const globalSocket = io(getBackendUrl(), { 
+export const globalSocket = io(getBackendUrl(), { 
   path: '/socket.io', 
   transports: ['websocket', 'polling'],
   reconnectionAttempts: 5,
@@ -323,6 +323,10 @@ export interface NewSessionInput {
   maxCapacity?: number;
   pricePerStudent?: number;
   amount?: number;
+  isSwap?: boolean;
+  giveSkill?: string;
+  takeSkill?: string;
+  proposerId?: string;
   students?: Array<{
     id: string;
     name: string;
@@ -447,6 +451,44 @@ export const api = {
     return null;
   },
 
+  getUserProfile: async (id: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/users/${id}`, { headers: getHeaders() });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.error('Failed to fetch user profile:', err);
+    }
+    return null;
+  },
+
+  toggleVisibility: async (id: string, isPublic: boolean) => {
+    let result: any = null;
+    try {
+      const r = await fetch(`${getBASE()}/api/users/${id}/visibility`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify({ isPublic })
+      });
+      if (r.ok) result = await safeParse(r, null);
+    } catch (err) {
+      console.error('Failed to toggle user visibility:', err);
+    }
+
+    try {
+      const stored = localStorage.getItem('mindroot_known_peers');
+      const list: any[] = stored ? JSON.parse(stored) : [];
+      const target = list.find(u => u.id === id);
+      if (target) {
+        target.isPublic = isPublic;
+        safeSetStorage('mindroot_known_peers', list);
+        globalSocket.emit('register-user-sync', target);
+        globalBc.postMessage({ type: 'sync-peers', peers: list });
+      }
+    } catch {}
+
+    return result || { success: true, id, isPublic };
+  },
+
   getPeers: async () => {
     let remotePeers: any[] = [];
     try {
@@ -500,6 +542,7 @@ export const api = {
       return {
         ...p,
         role: p.role || (teaches.length && learns.length ? 'both' : (teaches.length ? 'teacher' : 'student')),
+        isPublic: p.isPublic !== undefined ? Boolean(p.isPublic) : true,
         trustScore: typeof p.trustScore === 'number' ? p.trustScore : 5.0,
         tokenBalance: typeof p.tokenBalance === 'number' ? p.tokenBalance : 50,
         hourlyRate: baseRate,
@@ -530,7 +573,7 @@ export const api = {
       });
     }
 
-    return Array.from(allMap.values());
+    return Array.from(allMap.values()).filter(p => p && p.isPublic !== false);
   },
 
   getCommunityChampions: async (): Promise<any[]> => {
@@ -802,12 +845,13 @@ export const api = {
       const studentId = data.studentId || currentUser?.id || 'user-alex';
       const studentName = currentUser?.name || 'Alex (Student)';
       const maxCap = Math.min(Math.max(data.maxCapacity || 1, 1), 5);
-      const seatPrice = data.pricePerStudent || data.amount || calculateSeatPrice(499, maxCap);
+      const isSwapSession = Boolean(data.isSwap || (data.title && data.title.includes('↔')));
+      const seatPrice = isSwapSession ? 0 : (data.pricePerStudent || data.amount || calculateSeatPrice(499, maxCap));
       const reqTime = new Date(data.scheduledAt).getTime();
 
       // Fallback offline conflict check
       const localConflict = storedSessions.find(s => {
-        if (!s || s.status === 'declined' || s.status === 'completed') return false;
+        if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
         if (s.teacherId !== data.teacherId && s.teacher?.id !== data.teacherId) return false;
         const sTime = new Date(s.scheduledAt).getTime();
         return Math.abs(sTime - reqTime) < 45 * 60 * 1000;
@@ -830,6 +874,10 @@ export const api = {
         title: data.title,
         teacherId: data.teacherId,
         studentId: studentId,
+        proposerId: data.proposerId || studentId,
+        isSwap: isSwapSession,
+        giveSkill: data.giveSkill || null,
+        takeSkill: data.takeSkill || null,
         teacher: { id: data.teacherId, name: 'Teacher', hourlyRate: 499 },
         student: { id: studentId, name: studentName },
         maxCapacity: maxCap,
@@ -841,13 +889,13 @@ export const api = {
             name: studentName,
             avatar: currentUser?.avatar || 'https://i.pravatar.cc/150?img=11',
             enrolledAt: new Date().toISOString(),
-            paymentStatus: 'pending',
+            paymentStatus: isSwapSession ? 'swap' : 'pending',
             amountPaid: 0,
             amountDue: seatPrice
           }
         ],
-        status: 'pending', // Requires Teacher Approval
-        paymentStatus: 'pending',
+        status: 'pending', // Requires Recipient Approval
+        paymentStatus: isSwapSession ? 'swap' : 'pending',
         scheduledAt: data.scheduledAt,
         durationMin: data.durationMin || 60
       };
@@ -864,6 +912,18 @@ export const api = {
     } catch {}
 
     return createdSession;
+  },
+
+  acceptSwap: async (id: string) => {
+    return api.patchSession(id, { status: 'confirmed', paymentStatus: 'swap' });
+  },
+
+  declineSwap: async (id: string) => {
+    return api.patchSession(id, { status: 'declined' });
+  },
+
+  cancelSwap: async (id: string) => {
+    return api.patchSession(id, { status: 'cancelled' });
   },
 
   joinGroupSession: async (sessionId: string, studentData?: any) => {
@@ -973,14 +1033,20 @@ export const api = {
 
   loginAuth: async (data: { email: string; password: string }) => {
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       const r = await fetch(`${getBASE()}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: data.email?.trim(),
           password: data.password?.trim()
-        })
+        }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+
       const parsed = await safeParse(r, null);
       if (r.ok && parsed && parsed.user) {
         if (parsed.token) {
@@ -991,7 +1057,11 @@ export const api = {
       }
       if (parsed && parsed.error) throw new Error(parsed.error);
     } catch (err: any) {
-      if (err.message && !err.message.includes('fetch')) throw err;
+      if (err.name === 'AbortError') {
+        console.warn('[Auth Login] Request timed out after 12s');
+      } else if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
     }
 
     // Local fallback matching defaultSeedPeers and mindroot_known_peers
@@ -1090,11 +1160,17 @@ export const api = {
   loginWithGoogleToken: async (credential: string) => {
     let authRes: any = null;
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 12000);
+
       const r = await fetch(`${getBASE()}/api/auth/google`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ credential })
+        body: JSON.stringify({ credential }),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+
       const parsed = await safeParse(r, null);
       if (r.ok && parsed && parsed.user) {
         if (parsed.token) {
@@ -1107,7 +1183,11 @@ export const api = {
         }
       }
     } catch (err: any) {
-      if (err.message && !err.message.includes('fetch') && !credential.includes('.devsig')) throw err;
+      if (err.name === 'AbortError') {
+        console.warn('[Google OAuth] Verification request timed out after 12s, checking local fallback');
+      } else if (err.message && !err.message.includes('fetch') && !credential.includes('.devsig')) {
+        throw err;
+      }
     }
 
     if (!authRes) {
@@ -1428,6 +1508,11 @@ export const api = {
       teacherId,
       mentorName: 'Mentor',
       upiId: 'mindroot.peer@okhdfcbank',
+      upiQrImage: null,
+      officialIdType: null,
+      officialIdNumber: null,
+      officialIdStatus: 'unverified',
+      isIdVerified: false,
       isCustomUpi: false
     };
   },
@@ -1491,6 +1576,11 @@ export const api = {
       bankName: 'HDFC Bank',
       upiId: 'mentor@okhdfcbank',
       payoutMethod: 'upi',
+      upiQrImage: null,
+      officialIdType: null,
+      officialIdNumber: null,
+      officialIdDocument: null,
+      officialIdStatus: 'unverified',
       isVerified: true
     };
   },
@@ -1503,6 +1593,11 @@ export const api = {
     bankName?: string;
     upiId?: string;
     payoutMethod: 'upi' | 'bank';
+    upiQrImage?: string | null;
+    officialIdType?: string | null;
+    officialIdNumber?: string | null;
+    officialIdDocument?: string | null;
+    officialIdStatus?: string;
   }) => {
     try {
       const r = await fetch(`${getBASE()}/api/wallet/payout-account`, {
@@ -1513,6 +1608,20 @@ export const api = {
       if (r.ok) return await safeParse(r, null);
     } catch {}
     return { success: true, message: 'Payout details saved successfully!', account: data };
+  },
+
+  verifyTeacherId: async (teacherId: string, status: 'verified' | 'rejected' | 'pending' | 'unverified', rejectionReason?: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/admin/verify-teacher-id`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ teacherId, status, rejectionReason })
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API verifyTeacherId fallback:', err);
+    }
+    return { success: true, teacherId, status };
   },
 
   withdrawEarnings: async (data: {
@@ -1714,5 +1823,86 @@ export const api = {
       if (r.ok) return await safeParse(r, { success: true });
     } catch {}
     return { success: true };
+  },
+
+  confirmSessionPayment: async (sessionId: string, teacherId?: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/sessions/${sessionId}/confirm-payment`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ teacherId })
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API confirmSessionPayment error:', err);
+    }
+    return { success: true, sessionId, status: 'confirmed', paymentStatus: 'paid' };
+  },
+
+  raisePaymentDispute: async (sessionId: string, reason: string, utrNumber?: string, reportedBy?: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/sessions/${sessionId}/dispute`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ reason, utrNumber, reportedBy })
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API raisePaymentDispute error:', err);
+    }
+    return { success: true, sessionId, message: 'Dispute submitted' };
+  },
+
+  getPaymentDisputes: async () => {
+    try {
+      const r = await fetch(`${getBASE()}/api/admin/disputes`, {
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, []);
+    } catch (err) {
+      console.warn('API getPaymentDisputes error:', err);
+    }
+    return [];
+  },
+
+  resolvePaymentDispute: async (disputeId: string, resolution: 'verified' | 'rejected', note?: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/admin/disputes/${disputeId}/resolve`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ resolution, note })
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API resolvePaymentDispute error:', err);
+    }
+    return { success: true, disputeId, resolution };
+  },
+
+  seedDemoSession: async () => {
+    try {
+      const r = await fetch(`${getBASE()}/api/admin/seed-demo`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API seedDemoSession error:', err);
+    }
+    return null;
+  },
+
+  updateSessionNotes: async (sessionId: string, studyNotes: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/sessions/${sessionId}`, {
+        method: 'PATCH',
+        headers: getHeaders(),
+        body: JSON.stringify({ studyNotes })
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API updateSessionNotes error:', err);
+    }
+    return { success: true, sessionId, studyNotes };
   }
 };

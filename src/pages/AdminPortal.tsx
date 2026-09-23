@@ -1,19 +1,20 @@
 import { useState, useEffect, useCallback } from 'react';
-import { api, onPeersUpdated, onSessionsUpdated } from '../lib/api';
+import { api, onPeersUpdated, onSessionsUpdated, globalSocket } from '../lib/api';
 import { Button } from '../components/ui/Button';
 
 export function AdminPortal() {
   const [users, setUsers] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
+  const [disputes, setDisputes] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionMessage, setActionMessage] = useState('');
 
   // Filters & Tabs
   const [searchQuery, setSearchQuery] = useState('');
   const [roleFilter, setRoleFilter] = useState<'all' | 'student' | 'teacher' | 'both' | 'admin'>('all');
-  const [activeSection, setActiveSection] = useState<'users' | 'sessions' | 'analytics'>('users');
+  const [activeSection, setActiveSection] = useState<'users' | 'sessions' | 'disputes' | 'analytics'>('users');
   const [inspectUser, setInspectUser] = useState<any | null>(null);
-  const [inspectTab, setInspectTab] = useState<'overview' | 'sessions' | 'transactions' | 'reviews'>('overview');
+  const [inspectTab, setInspectTab] = useState<'overview' | 'sessions' | 'transactions' | 'reviews' | 'verification'>('overview');
   const [inspectReviews, setInspectReviews] = useState<any[]>([]);
   const [inspectTransactions, setInspectTransactions] = useState<any[]>([]);
   const [loadingDetails, setLoadingDetails] = useState(false);
@@ -63,9 +64,14 @@ export function AdminPortal() {
 
   const loadData = useCallback(async () => {
     try {
-      const [peers, sessList] = await Promise.all([api.getPeers(), api.getSessions()]);
+      const [peers, sessList, dispList] = await Promise.all([
+        api.getPeers(),
+        api.getSessions(),
+        api.getPaymentDisputes()
+      ]);
       setUsers(peers || []);
       setSessions(sessList || []);
+      setDisputes(dispList || []);
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
@@ -81,11 +87,29 @@ export function AdminPortal() {
     const unsubSessions = onSessionsUpdated((s) => {
       if (Array.isArray(s)) setSessions(s);
     });
+    const onDisputes = (d: any) => {
+      if (Array.isArray(d)) setDisputes(d);
+    };
+    globalSocket.on('network-disputes-updated', onDisputes);
+
     return () => {
       unsubPeers();
       unsubSessions();
+      globalSocket.off('network-disputes-updated', onDisputes);
     };
   }, [loadData]);
+
+  const handleResolveDispute = async (disputeId: string, resolution: 'verified' | 'rejected') => {
+    try {
+      await api.resolvePaymentDispute(disputeId, resolution);
+      setDisputes(prev => prev.map(d => d.id === disputeId ? { ...d, status: resolution === 'verified' ? 'resolved_verified' : 'resolved_rejected' } : d));
+      setActionMessage(`Dispute ${disputeId} marked as ${resolution}!`);
+      setTimeout(() => setActionMessage(''), 4000);
+      loadData();
+    } catch (err) {
+      console.error('Error resolving dispute:', err);
+    }
+  };
 
   // Open inspection drawer for a user
   const handleInspectUser = async (user: any) => {
@@ -296,6 +320,18 @@ export function AdminPortal() {
           </button>
 
           <button
+            onClick={() => setActiveSection('disputes')}
+            className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
+              activeSection === 'disputes'
+                ? 'bg-primary text-on-primary shadow-elevation-1'
+                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+            }`}
+          >
+            <span className="material-symbols-outlined text-lg align-middle mr-2">gavel</span>
+            Payment Disputes ({disputes.length})
+          </button>
+
+          <button
             onClick={() => setActiveSection('analytics')}
             className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
               activeSection === 'analytics'
@@ -410,6 +446,12 @@ export function AdminPortal() {
                             </span>
                             {u.role || 'both'}
                           </span>
+                          {(u.officialIdStatus === 'verified' || u.officialIdDocument) && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-primary-container text-on-primary-container text-[9px] font-black uppercase mt-1">
+                              <span className="material-symbols-outlined text-[10px] text-primary">verified_user</span>
+                              {u.officialIdStatus === 'verified' ? 'ID Verified' : 'ID Pending'}
+                            </span>
+                          )}
                         </td>
 
                       <td className="py-3.5 px-4">
@@ -510,6 +552,108 @@ export function AdminPortal() {
                         >
                           <span className="material-symbols-outlined text-base">delete</span>
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* SECTION: PAYMENT DISPUTES */}
+      {activeSection === 'disputes' && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="text-base font-black text-on-surface flex items-center gap-2">
+                <span className="material-symbols-outlined text-alert-rose">gavel</span>
+                <span>P2P UPI Payment Disputes & Escalations</span>
+              </h3>
+              <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                Review payment mismatches, unverified UTR submissions, and mentor escalations.
+              </p>
+            </div>
+            <span className="text-xs font-mono font-bold px-3 py-1 bg-surface-container rounded-xl border border-outline-variant">
+              Total Disputes: {disputes.length}
+            </span>
+          </div>
+
+          {disputes.length === 0 ? (
+            <div className="bg-surface rounded-2xl border border-outline-variant p-12 text-center space-y-3">
+              <span className="material-symbols-outlined text-4xl text-teaching-emerald">verified</span>
+              <h4 className="text-sm font-bold text-on-surface">Zero Payment Disputes</h4>
+              <p className="text-xs text-on-surface-variant max-w-md mx-auto font-medium">
+                All student UPI transfers and mentor acknowledgments are operating smoothly with no open claims.
+              </p>
+            </div>
+          ) : (
+            <div className="bg-surface rounded-2xl border border-outline-variant shadow-elevation-1 overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-surface-container border-b border-outline-variant text-on-surface-variant font-black uppercase text-[10px] tracking-wider">
+                  <tr>
+                    <th className="p-4">Session / Topic</th>
+                    <th className="p-4">Student</th>
+                    <th className="p-4">Mentor</th>
+                    <th className="p-4">Amount</th>
+                    <th className="p-4">UTR / Ref</th>
+                    <th className="p-4">Reported Issue</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4 text-right">Admin Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-outline-variant font-medium">
+                  {disputes.map((disp: any) => (
+                    <tr key={disp.id} className="hover:bg-surface-container-low transition-colors">
+                      <td className="p-4">
+                        <p className="font-bold text-on-surface truncate max-w-[180px]">{disp.sessionTitle || 'Mentorship Session'}</p>
+                        <p className="text-[10px] text-on-surface-variant font-mono">{disp.sessionId}</p>
+                      </td>
+                      <td className="p-4 font-semibold text-on-surface">{disp.studentName || disp.studentId}</td>
+                      <td className="p-4 font-semibold text-on-surface">{disp.teacherName || disp.teacherId}</td>
+                      <td className="p-4 font-black text-teaching-emerald">₹{disp.amount || 499}</td>
+                      <td className="p-4 font-mono font-bold text-primary text-[11px]">{disp.utrNumber || 'N/A'}</td>
+                      <td className="p-4 text-on-surface-variant max-w-[200px] truncate" title={disp.reason}>
+                        {disp.reason}
+                      </td>
+                      <td className="p-4">
+                        {disp.status === 'open' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-alert-rose/15 text-alert-rose font-bold text-[10px]">
+                            Open Dispute
+                          </span>
+                        ) : disp.status === 'resolved_verified' ? (
+                          <span className="px-2.5 py-1 rounded-full bg-teaching-emerald/15 text-teaching-emerald font-bold text-[10px]">
+                            Verified & Unlocked
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-[10px]">
+                            Declined
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-4 text-right">
+                        {disp.status === 'open' ? (
+                          <div className="inline-flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleResolveDispute(disp.id, 'verified')}
+                              className="px-2.5 py-1 rounded-lg bg-teaching-emerald hover:bg-teaching-emerald/90 text-white font-bold text-[11px] transition-colors flex items-center gap-1"
+                              title="Approve payment and unlock session"
+                            >
+                              <span className="material-symbols-outlined text-xs">check</span>
+                              <span>Verify & Unlock</span>
+                            </button>
+                            <button
+                              onClick={() => handleResolveDispute(disp.id, 'rejected')}
+                              className="px-2 py-1 rounded-lg bg-alert-rose/10 hover:bg-alert-rose/20 text-alert-rose font-bold text-[11px] transition-colors"
+                              title="Reject payment and cancel session"
+                            >
+                              Reject
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-on-surface-variant font-semibold">Resolved</span>
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -662,7 +806,8 @@ export function AdminPortal() {
                 { key: 'overview', label: 'Skills Matrix', icon: 'psychology' },
                 { key: 'sessions', label: 'Session History', icon: 'event' },
                 { key: 'transactions', label: 'Token Ledger', icon: 'account_balance' },
-                { key: 'reviews', label: 'Reviews & Feedback', icon: 'rate_review' }
+                { key: 'reviews', label: 'Reviews & Feedback', icon: 'rate_review' },
+                { key: 'verification', label: 'Official ID & UPI QR', icon: 'verified_user' }
               ].map(t => (
                 <button
                   key={t.key}
@@ -785,6 +930,140 @@ export function AdminPortal() {
                           </div>
                         ))
                       )}
+                    </div>
+                  )}
+
+                  {/* TAB 5: OFFICIAL ID & UPI QR VERIFICATION */}
+                  {inspectTab === 'verification' && (
+                    <div className="space-y-6">
+                      {/* Status Banner */}
+                      <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                        inspectUser.officialIdStatus === 'verified'
+                          ? 'bg-teaching-emerald/10 border-teaching-emerald/30 text-teaching-emerald'
+                          : inspectUser.officialIdStatus === 'rejected'
+                          ? 'bg-alert-rose/10 border-alert-rose/30 text-alert-rose'
+                          : 'bg-learning-amber/10 border-learning-amber/30 text-learning-amber'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <span className="material-symbols-outlined text-3xl">
+                            {inspectUser.officialIdStatus === 'verified' ? 'verified_user' : inspectUser.officialIdStatus === 'rejected' ? 'cancel' : 'pending'}
+                          </span>
+                          <div>
+                            <h4 className="font-extrabold text-sm uppercase tracking-wide">
+                              Verification Status: {inspectUser.officialIdStatus || (inspectUser.officialIdDocument ? 'Verified' : 'Unverified')}
+                            </h4>
+                            <p className="text-xs text-on-surface-variant font-medium">
+                              {inspectUser.officialIdStatus === 'verified'
+                                ? 'Teacher has verified credentials and displays an ID Verified badge on marketplace.'
+                                : inspectUser.officialIdStatus === 'rejected'
+                                ? 'Verification was declined by platform administrators.'
+                                : 'Pending admin review or teacher has not yet attached an ID document.'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Admin Action Buttons */}
+                        <div className="flex items-center gap-2 self-end sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await api.verifyTeacherId(inspectUser.id, 'verified');
+                              setInspectUser((prev: any) => ({ ...prev, officialIdStatus: 'verified' }));
+                              setUsers(prev => prev.map(u => u.id === inspectUser.id ? { ...u, officialIdStatus: 'verified' } : u));
+                              setActionMessage(`Teacher ID verified for ${inspectUser.name}!`);
+                              setTimeout(() => setActionMessage(''), 4000);
+                            }}
+                            className="px-3 py-1.5 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-sm">check_circle</span>
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await api.verifyTeacherId(inspectUser.id, 'rejected');
+                              setInspectUser((prev: any) => ({ ...prev, officialIdStatus: 'rejected' }));
+                              setUsers(prev => prev.map(u => u.id === inspectUser.id ? { ...u, officialIdStatus: 'rejected' } : u));
+                              setActionMessage(`Teacher verification rejected for ${inspectUser.name}.`);
+                              setTimeout(() => setActionMessage(''), 4000);
+                            }}
+                            className="px-3 py-1.5 bg-alert-rose hover:bg-alert-rose/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                          >
+                            <span className="material-symbols-outlined text-sm">cancel</span>
+                            Reject
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Credentials Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* ID Document Box */}
+                        <div className="bg-surface p-4 rounded-2xl border border-outline-variant space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-sm text-primary">badge</span>
+                              Official Academic / Gov ID
+                            </h4>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-container uppercase">
+                              {inspectUser.officialIdType === 'college_id' ? 'College Student ID' :
+                               inspectUser.officialIdType === 'faculty_id' ? 'Faculty / Professor ID' :
+                               inspectUser.officialIdType === 'govt_id' ? 'Govt Photo ID' :
+                               (inspectUser.officialIdType || 'College ID')}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-on-surface-variant">
+                            <strong>ID / Roll Number:</strong> <span className="font-mono font-bold text-on-surface">{inspectUser.officialIdNumber || 'Not specified'}</span>
+                          </div>
+
+                          {inspectUser.officialIdDocument ? (
+                            <div className="border border-outline-variant rounded-xl overflow-hidden bg-surface-container flex items-center justify-center p-2">
+                              <img
+                                src={inspectUser.officialIdDocument}
+                                alt="Official ID Document"
+                                className="max-h-48 object-contain rounded-lg shadow-sm"
+                              />
+                            </div>
+                          ) : (
+                            <div className="h-36 border border-dashed border-outline-variant rounded-xl flex flex-col items-center justify-center text-on-surface-variant gap-1">
+                              <span className="material-symbols-outlined text-2xl">no_photography</span>
+                              <span className="text-xs italic">No official ID image uploaded</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* UPI QR Code Box */}
+                        <div className="bg-surface p-4 rounded-2xl border border-outline-variant space-y-3">
+                          <div className="flex items-center justify-between">
+                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-sm text-teaching-emerald">qr_code_2</span>
+                              UPI Payment Credentials
+                            </h4>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teaching-emerald/10 text-teaching-emerald uppercase">
+                              {inspectUser.upiQrImage ? 'Custom QR Uploaded' : 'Dynamic Generated QR'}
+                            </span>
+                          </div>
+
+                          <div className="text-xs text-on-surface-variant">
+                            <strong>UPI ID (VPA):</strong> <span className="font-mono font-bold text-on-surface">{inspectUser.upiId || `${(inspectUser.name || 'mentor').toLowerCase().replace(/[^a-z0-9]/g, '')}@okhdfcbank`}</span>
+                          </div>
+
+                          {inspectUser.upiQrImage ? (
+                            <div className="border border-outline-variant rounded-xl overflow-hidden bg-white flex items-center justify-center p-2">
+                              <img
+                                src={inspectUser.upiQrImage}
+                                alt="Custom Teacher UPI QR"
+                                className="max-h-48 object-contain rounded-lg shadow-sm"
+                              />
+                            </div>
+                          ) : (
+                            <div className="h-36 border border-dashed border-outline-variant rounded-xl flex flex-col items-center justify-center text-on-surface-variant gap-1">
+                              <span className="material-symbols-outlined text-2xl text-teaching-emerald">qr_code</span>
+                              <span className="text-xs">Using Auto-Generated UPI QR</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </>

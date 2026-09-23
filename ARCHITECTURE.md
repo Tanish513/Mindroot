@@ -66,6 +66,7 @@ erDiagram
         string role "student | teacher | admin | both"
         int tokenBalance
         float trustScore
+        boolean isPublic
     }
 
     Session {
@@ -228,8 +229,10 @@ c:/Users/tanis/Downloads/hackton/Student to Student/
 | **Auth** | `/api/auth/verify-email` | `GET` | Verifies user email address via token. |
 | **Auth** | `/api/auth/reset-password` | `POST` | Sets a new password via reset token. |
 | **Users** | `/api/users/me` | `GET` | Returns authenticated user profile. |
-| **Users** | `/api/peers` | `GET` | Returns public peer profiles excluding requesting user. |
-| **Users** | `/api/users/:id` | `PATCH` | Admin-only user details update and password reset. |
+| **Users** | `/api/users/:id` | `GET` | Returns specific user profile; enforces privacy if profile is private (minimal payload for non-owners). |
+| **Users** | `/api/users/:id/visibility` | `PATCH` | Toggles user profile visibility (public/private); owner or admin protected. |
+| **Users** | `/api/peers` | `GET` | Returns public peer profiles excluding requesting user (and excluding private profiles for non-admins). |
+| **Users** | `/api/users/:id` | `PATCH` | User details update and admin moderation. |
 | **Sessions** | `/api/sessions` | `GET` | Returns scoped sessions where caller is teacher or student. |
 | **Sessions** | `/api/sessions` | `POST` | Books a new peer session (status: `pending`). |
 | **Sessions** | `/api/sessions/:id` | `PATCH` | Updates session status (`pending` $\rightarrow$ `confirmed` $\rightarrow$ `completed` / `live`). |

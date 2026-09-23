@@ -225,20 +225,63 @@ export function LiveRoom() {
   const [isRunningCode, setIsRunningCode] = useState(false);
   const [currentSession, setCurrentSession] = useState<any | null>(null);
 
-  useEffect(() => {
-    if (sessionId) {
-      api.getSessions().then(list => {
-        const found = list.find((s: any) => s.id === sessionId);
-        if (found) setCurrentSession(found);
-      }).catch(console.error);
-    }
-  }, [sessionId]);
-
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 'welcome', sender: 'Mindroot System', text: 'Welcome to your live cohort studio! All enrolled batch students and the instructor join and collaborate here together.' }
   ]);
   const [notes, setNotes] = useState('## 🎯 Cohort Lesson Plan & Objectives\n\n- [x] Topic Introduction & Theory overview\n- [ ] Deep Dive with Interactive Diagrams on Whiteboard\n- [ ] Hands-on Live Code Session & Execution\n- [ ] Student Q&A and Concept Review\n\n> 💡 Tip: Click "Fullscreen Explanation Mode" on the top right for a wide focused workspace!');
   const [code, setCode] = useState('// 🚀 Live Interactive Cohort Code Pad\n// All students & the teacher can write and execute code together!\n\nfunction calculateCohortProgress(students: string[], topic: string) {\n  return {\n    topic,\n    totalStudents: students.length,\n    batchStatus: "3-Student Cohort Active 🎓",\n    studentList: students,\n    message: `All ${students.length} students are live with the instructor!`\n  };\n}\n\nconst cohort = calculateCohortProgress(["Alex", "Liam", "Sarah"], "React & TypeScript Systems");\nconsole.log("Cohort Session Info:", JSON.stringify(cohort, null, 2));\n');
+
+  useEffect(() => {
+    if (sessionId) {
+      api.getSessions().then(list => {
+        const found = list.find((s: any) => s.id === sessionId);
+        if (found) {
+          setCurrentSession(found);
+          if (found.studyNotes) {
+            setNotes(found.studyNotes);
+          }
+        }
+      }).catch(console.error);
+    }
+  }, [sessionId]);
+
+  // Auto-save study notes to session history
+  useEffect(() => {
+    if (currentSession?.id && notes) {
+      const timer = setTimeout(() => {
+        api.updateSessionNotes(currentSession.id, notes).catch(() => {});
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [notes, currentSession?.id]);
+
+  // Post-Session 30-Second Review States
+  const [quickRating, setQuickRating] = useState<number>(5);
+  const [selectedKarmaBadges, setSelectedKarmaBadges] = useState<string[]>(['Clear Explanations', 'Punctual']);
+  const [reviewComment, setReviewComment] = useState('');
+  const [isReviewSubmitted, setIsReviewSubmitted] = useState(false);
+  const [isSubmittingReview, setIsSubmittingReview] = useState(false);
+
+  const handleQuickSubmitReview = async () => {
+    if (!currentSession?.teacherId && !currentSession?.teacher?.id) return;
+    setIsSubmittingReview(true);
+    const teacherId = currentSession.teacherId || currentSession.teacher?.id;
+    try {
+      await api.postReview({
+        targetId: teacherId,
+        authorId: currentUser?.id || 'student-current',
+        topic: currentSession?.title || 'Peer Mentorship',
+        rating: quickRating,
+        quote: reviewComment.trim() || selectedKarmaBadges.join(', ') || 'Excellent mentorship session!',
+        chips: selectedKarmaBadges
+      });
+      setIsReviewSubmitted(true);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setIsSubmittingReview(false);
+    }
+  };
   const [notice, setNotice] = useState('Connecting to live cohort studio…');
   const [hardwareInfo, setHardwareInfo] = useState<{ cam: boolean; mic: boolean }>({ cam: false, mic: false });
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -2701,6 +2744,88 @@ export function LiveRoom() {
                 </p>
               )}
             </div>
+
+            {/* Quick 30-Second Karma & Mentor Rating Card (Students Only) */}
+            {!isTeacher && (
+              <div className="p-4 bg-surface-container/60 rounded-2xl border border-outline-variant/60 space-y-3 text-left">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-black text-on-surface">
+                    <span className="material-symbols-outlined text-learning-amber text-base">award_star</span>
+                    <span>Rate Mentor: {currentSession?.teacher?.name || 'Instructor'}</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 bg-learning-amber/15 text-learning-amber rounded-full font-bold">
+                    +15 Karma Pts
+                  </span>
+                </div>
+
+                {isReviewSubmitted ? (
+                  <div className="p-3 bg-teaching-emerald-container text-on-teaching-emerald-container rounded-xl text-xs font-bold flex items-center gap-2">
+                    <span className="material-symbols-outlined text-sm">check_circle</span>
+                    <span>Rating submitted! Mentor trust score boosted.</span>
+                  </div>
+                ) : (
+                  <>
+                    {/* Star Selector */}
+                    <div className="flex items-center gap-1.5">
+                      {[1, 2, 3, 4, 5].map(star => (
+                        <button
+                          key={star}
+                          type="button"
+                          onClick={() => setQuickRating(star)}
+                          className={`p-1 rounded-lg transition-transform hover:scale-110 ${star <= quickRating ? 'text-learning-amber' : 'text-outline-variant'}`}
+                        >
+                          <span className="material-symbols-outlined text-xl">star</span>
+                        </button>
+                      ))}
+                      <span className="text-xs font-bold text-on-surface ml-1">{quickRating}.0 / 5.0</span>
+                    </div>
+
+                    {/* Quick Karma Badges */}
+                    <div className="flex flex-wrap gap-1.5">
+                      {['Clear Explanations', 'Great Code Walkthrough', 'Patient & Friendly', 'Punctual'].map(badge => {
+                        const isSelected = selectedKarmaBadges.includes(badge);
+                        return (
+                          <button
+                            key={badge}
+                            type="button"
+                            onClick={() => {
+                              setSelectedKarmaBadges(prev => 
+                                isSelected ? prev.filter(b => b !== badge) : [...prev, badge]
+                              );
+                            }}
+                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-colors ${
+                              isSelected
+                                ? 'bg-primary text-on-primary'
+                                : 'bg-surface border border-outline-variant text-on-surface-variant'
+                            }`}
+                          >
+                            {isSelected ? '✓ ' : '+ '}{badge}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <input
+                      type="text"
+                      value={reviewComment}
+                      onChange={(e) => setReviewComment(e.target.value)}
+                      placeholder="Add brief note (optional)..."
+                      className="w-full px-2.5 py-1.5 text-xs bg-surface border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary"
+                    />
+
+                    <button
+                      type="button"
+                      onClick={handleQuickSubmitReview}
+                      disabled={isSubmittingReview}
+                      className="w-full py-2 bg-teaching-emerald hover:bg-teaching-emerald/90 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-sm">thumb_up</span>
+                      <span>{isSubmittingReview ? 'Submitting...' : 'Submit 30-Sec Review'}</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
 
             <div className="space-y-2 pt-1">
               <button

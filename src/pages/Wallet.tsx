@@ -161,6 +161,23 @@ export function Wallet() {
     }
   };
 
+  const handleWalletQrUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("QR Code image exceeds 5MB. Please choose a smaller photo.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setPayoutAccount((prev: any) => ({ ...prev, upiQrImage: reader.result }));
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleSavePayoutSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -853,18 +870,100 @@ export function Wallet() {
               </div>
 
               {payoutAccount.payoutMethod === 'upi' ? (
-                /* UPI ID */
-                <div className="space-y-1">
-                  <label className="block text-xs font-bold text-on-surface">UPI ID / VPA</label>
-                  <input
-                    type="text"
-                    required
-                    value={payoutAccount.upiId}
-                    onChange={e => setPayoutAccount({ ...payoutAccount, upiId: e.target.value })}
-                    placeholder="e.g. yourname@okhdfcbank or 9876543210@paytm"
-                    className="w-full px-3.5 py-2.5 bg-surface border border-outline-variant rounded-xl text-xs font-bold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
-                  />
-                  <p className="text-[10px] text-on-surface-variant">Supports Google Pay, PhonePe, Paytm, BHIM, and all bank UPI apps.</p>
+                /* UPI ID & QR Code */
+                <div className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-on-surface">UPI ID / VPA</label>
+                    <input
+                      type="text"
+                      required
+                      value={payoutAccount.upiId}
+                      onChange={e => setPayoutAccount({ ...payoutAccount, upiId: e.target.value })}
+                      placeholder="e.g. yourname@okhdfcbank or 9876543210@paytm"
+                      className="w-full px-3.5 py-2.5 bg-surface border border-outline-variant rounded-xl text-xs font-bold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
+                    />
+                    <p className="text-[10px] text-on-surface-variant">Supports Google Pay, PhonePe, Paytm, BHIM, and all bank UPI apps.</p>
+                  </div>
+
+                  {/* Upload Custom UPI QR */}
+                  <div className="space-y-1.5 p-3 bg-surface-container-low border border-dashed border-outline-variant rounded-xl">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-on-surface">Official UPI QR Code</label>
+                      {payoutAccount.upiQrImage && (
+                        <span className="text-[10px] font-bold text-teaching-emerald flex items-center gap-0.5">
+                          <span className="material-symbols-outlined text-xs">check_circle</span> Active
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {payoutAccount.upiQrImage ? (
+                        <div className="relative group shrink-0">
+                          <img
+                            src={payoutAccount.upiQrImage}
+                            alt="Teacher UPI QR"
+                            className="w-16 h-16 object-contain rounded-lg border border-outline-variant bg-white p-1 shadow-xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setPayoutAccount((prev: any) => ({ ...prev, upiQrImage: null }))}
+                            className="absolute -top-1.5 -right-1.5 bg-alert-rose text-white rounded-full p-0.5 shadow hover:scale-110 transition-all"
+                            title="Remove QR"
+                          >
+                            <span className="material-symbols-outlined text-[10px]">close</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="w-12 h-12 rounded-lg bg-surface-container flex items-center justify-center text-on-surface-variant shrink-0">
+                          <span className="material-symbols-outlined text-xl text-teaching-emerald">qr_code_2</span>
+                        </div>
+                      )}
+                      <div className="flex-1">
+                        <input
+                          type="file"
+                          id="wallet-qr-upload"
+                          accept="image/*"
+                          onChange={handleWalletQrUpload}
+                          className="hidden"
+                        />
+                        <label
+                          htmlFor="wallet-qr-upload"
+                          className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1 bg-teaching-emerald/10 hover:bg-teaching-emerald/20 text-teaching-emerald rounded-lg text-xs font-bold transition-all"
+                        >
+                          <span className="material-symbols-outlined text-sm">upload</span>
+                          <span>{payoutAccount.upiQrImage ? 'Change QR Image' : 'Upload QR Screenshot'}</span>
+                        </label>
+                        <p className="text-[10px] text-on-surface-variant mt-0.5">
+                          Students scan this exact QR to pay for direct sessions.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ID Verification Status Pill */}
+                  <div className="p-2.5 bg-surface-container rounded-xl flex items-center justify-between text-xs border border-outline-variant/60">
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-teaching-emerald text-base">
+                        {payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified' ? 'verified_user' : 'badge'}
+                      </span>
+                      <div>
+                        <p className="font-bold text-on-surface text-[11px]">
+                          {payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified'
+                            ? 'Official Teacher ID Verified'
+                            : 'Official ID Pending / Unverified'}
+                        </p>
+                        <p className="text-[10px] text-on-surface-variant">
+                          {payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified'
+                            ? 'Your credentials display a verified trust badge'
+                            : 'Upload student/faculty card in Profile for trust badge'}
+                        </p>
+                      </div>
+                    </div>
+                    {(payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified') && (
+                      <span className="px-1.5 py-0.5 rounded bg-teaching-emerald/20 text-teaching-emerald text-[9px] font-black uppercase">
+                        Verified
+                      </span>
+                    )}
+                  </div>
                 </div>
               ) : (
                 /* Bank Account Details */

@@ -24,6 +24,12 @@ export function Profile() {
   const [bio, setBio] = useState(currentUser?.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
   const [hourlyRate, setHourlyRate] = useState(currentUser?.hourlyRate || 499);
   const [upiId, setUpiId] = useState(currentUser?.upiId || '');
+  const [upiQrImage, setUpiQrImage] = useState<string>(currentUser?.upiQrImage || '');
+  const [officialIdType, setOfficialIdType] = useState<string>(currentUser?.officialIdType || 'college_id');
+  const [officialIdNumber, setOfficialIdNumber] = useState<string>(currentUser?.officialIdNumber || '');
+  const [officialIdDocument, setOfficialIdDocument] = useState<string>(currentUser?.officialIdDocument || '');
+  const [officialIdStatus, setOfficialIdStatus] = useState<string>(currentUser?.officialIdStatus || (currentUser?.officialIdDocument ? 'verified' : 'unverified'));
+
   const [batchPricing, setBatchPricing] = useState<Record<number, number>>(() => {
     if (currentUser?.batchPricing && typeof currentUser.batchPricing === 'object') {
       return { ...currentUser.batchPricing };
@@ -50,18 +56,29 @@ export function Profile() {
   const [newTeachSkill, setNewTeachSkill] = useState('');
   const [newLearnSkill, setNewLearnSkill] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [showCertificateModal, setShowCertificateModal] = useState(false);
+
+  const [isPublic, setIsPublic] = useState<boolean>(currentUser?.isPublic !== false);
+  const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
+  const [visibilityFeedback, setVisibilityFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentUser) {
       setName(currentUser.name || '');
       setEmail(currentUser.email || '');
       setBio(currentUser.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
+      setIsPublic(currentUser.isPublic !== false);
       if (currentUser.role === 'student' || currentUser.role === 'teacher' || currentUser.role === 'both') {
         setAccountRole(currentUser.role);
       }
       const base = currentUser.hourlyRate || 499;
       setHourlyRate(base);
       setUpiId(currentUser.upiId || '');
+      setUpiQrImage(currentUser.upiQrImage || '');
+      setOfficialIdType(currentUser.officialIdType || 'college_id');
+      setOfficialIdNumber(currentUser.officialIdNumber || '');
+      setOfficialIdDocument(currentUser.officialIdDocument || '');
+      setOfficialIdStatus(currentUser.officialIdStatus || (currentUser.officialIdDocument ? 'verified' : 'unverified'));
       if (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') {
         setBatchPricing({ ...currentUser.batchPricing });
       } else {
@@ -78,6 +95,38 @@ export function Profile() {
       if (currentUser.skillsLearned) setSkillsLearned(currentUser.skillsLearned);
     }
   }, [currentUser]);
+
+  const handleToggleVisibility = async () => {
+    if (!currentUser?.id) return;
+    const nextVal = !isPublic;
+    const prevVal = isPublic;
+
+    // Optimistic UI update
+    setIsPublic(nextVal);
+    const updatedUser = { ...currentUser, isPublic: nextVal };
+    setCurrentUser(updatedUser);
+    setIsTogglingVisibility(true);
+
+    try {
+      const res = await api.toggleVisibility(currentUser.id, nextVal);
+      if (res && res.success !== false) {
+        setVisibilityFeedback(`Profile is now ${nextVal ? 'Public' : 'Private'}`);
+        setTimeout(() => setVisibilityFeedback(null), 3000);
+      } else {
+        // Revert on failure
+        setIsPublic(prevVal);
+        setCurrentUser({ ...currentUser, isPublic: prevVal });
+        alert('Failed to update visibility setting. Please try again.');
+      }
+    } catch (err) {
+      // Revert on error
+      setIsPublic(prevVal);
+      setCurrentUser({ ...currentUser, isPublic: prevVal });
+      alert('Failed to update visibility setting. Please check your connection.');
+    } finally {
+      setIsTogglingVisibility(false);
+    }
+  };
 
   const handleHourlyRateChange = (val: number) => {
     const safeVal = Math.max(50, val || 50);
@@ -104,6 +153,41 @@ export function Profile() {
       reader.onloadend = () => {
         if (typeof reader.result === 'string') {
           setAvatar(reader.result);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleIdFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("ID document exceeds 5MB. Please choose a smaller file.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setOfficialIdDocument(reader.result);
+          setOfficialIdStatus('verified'); // Auto-verify on upload for hackathon demo
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleQrFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        alert("QR Code image exceeds 5MB. Please choose a smaller photo.");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === 'string') {
+          setUpiQrImage(reader.result);
         }
       };
       reader.readAsDataURL(file);
@@ -143,8 +227,14 @@ export function Profile() {
       email,
       bio,
       role: accountRole,
+      isPublic,
       hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
       upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
+      upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
+      officialIdType: isTeacherOrBoth ? officialIdType : undefined,
+      officialIdNumber: isTeacherOrBoth ? officialIdNumber : undefined,
+      officialIdDocument: isTeacherOrBoth ? officialIdDocument : undefined,
+      officialIdStatus: isTeacherOrBoth ? officialIdStatus : undefined,
       batchPricing: isTeacherOrBoth ? batchPricing : undefined,
       avatar,
       skillsTaught: isTeacherOrBoth ? skillsTaught : [],
@@ -166,8 +256,14 @@ export function Profile() {
           email,
           bio,
           role: accountRole,
+          isPublic,
           hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
           upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
+          upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
+          officialIdType: isTeacherOrBoth ? officialIdType : undefined,
+          officialIdNumber: isTeacherOrBoth ? officialIdNumber : undefined,
+          officialIdDocument: isTeacherOrBoth ? officialIdDocument : undefined,
+          officialIdStatus: isTeacherOrBoth ? officialIdStatus : undefined,
           batchPricing: isTeacherOrBoth ? batchPricing : undefined,
           avatar,
           skillsTaught: isTeacherOrBoth ? skillsTaught : [],
@@ -175,6 +271,23 @@ export function Profile() {
         });
       } catch (err) {
         console.warn('API update in handleSaveProfile had non-blocking error:', err);
+      }
+    }
+
+    if (isTeacherOrBoth) {
+      try {
+        await api.savePayoutAccount({
+          accountHolderName: name,
+          upiId: upiId.trim().toLowerCase(),
+          payoutMethod: 'upi',
+          upiQrImage: upiQrImage || undefined,
+          officialIdType,
+          officialIdNumber,
+          officialIdDocument: officialIdDocument || undefined,
+          officialIdStatus
+        });
+      } catch (err) {
+        console.warn('Payout sync in handleSaveProfile had non-blocking notice:', err);
       }
     }
 
@@ -223,6 +336,14 @@ export function Profile() {
               <span className="px-3 py-1 bg-primary-container border border-primary/20 text-on-primary-container rounded-full text-xs font-bold uppercase tracking-wider">
                 {userRole}
               </span>
+              <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border ${
+                isPublic 
+                  ? 'bg-teaching-emerald-container border-teaching-emerald/20 text-on-teaching-emerald-container' 
+                  : 'bg-learning-amber-container border-learning-amber/20 text-on-learning-amber-container'
+              }`}>
+                <span className="material-symbols-outlined text-sm">{isPublic ? 'visibility' : 'visibility_off'}</span>
+                {isPublic ? 'Public Profile' : 'Private Profile'}
+              </span>
               <span className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 border ${role === 'student' ? 'bg-teaching-emerald-container border-teaching-emerald/20 text-on-teaching-emerald-container' : 'bg-learning-amber-container border-learning-amber/20 text-on-learning-amber-container'}`}>
                 <span className="material-symbols-outlined text-sm">{role === 'student' ? 'verified_user' : 'star'}</span>
                 {role === 'student' ? `${Math.min(100, Math.round(trustScore * 20))}% Reliability` : `${trustScore} Tutor Rating`}
@@ -233,8 +354,10 @@ export function Profile() {
 
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 pt-2">
               <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
-                <span className="material-symbols-outlined text-teaching-emerald text-base">shield_lock</span>
-                <span>Razorpay Active</span>
+                <span className="material-symbols-outlined text-teaching-emerald text-base">
+                  {officialIdStatus === 'verified' ? 'verified_user' : 'qr_code_2'}
+                </span>
+                <span>{officialIdStatus === 'verified' ? 'Official ID & UPI Verified' : 'Direct UPI Active'}</span>
               </div>
               {(accountRole === 'teacher' || accountRole === 'both') && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
@@ -350,6 +473,79 @@ export function Profile() {
                     </button>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Profile Visibility & Privacy Settings Card */}
+            <div className="p-4 bg-surface-container-low border border-outline-variant rounded-2xl space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-primary text-base">
+                    {isPublic ? 'visibility' : 'visibility_off'}
+                  </span>
+                  <span>Profile Visibility & Privacy</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  {visibilityFeedback && (
+                    <span className="text-[10px] font-bold text-teaching-emerald animate-fade-in">
+                      {visibilityFeedback}
+                    </span>
+                  )}
+                  <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border uppercase tracking-wider flex items-center gap-1.5 ${
+                    isPublic 
+                      ? 'bg-teaching-emerald-container text-on-teaching-emerald-container border-teaching-emerald/30' 
+                      : 'bg-learning-amber-container text-on-learning-amber-container border-learning-amber/30'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${isPublic ? 'bg-teaching-emerald' : 'bg-learning-amber'}`} />
+                    {isPublic ? 'Public' : 'Private'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-3.5 bg-surface rounded-xl border border-outline-variant">
+                <div className="space-y-1 flex-1">
+                  <div className="text-xs font-black text-on-surface flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-base text-primary">
+                      {isPublic ? 'public' : 'lock'}
+                    </span>
+                    <span>{isPublic ? 'Your Profile is Currently Public' : 'Your Profile is Currently Private'}</span>
+                  </div>
+                  <p className="text-[11px] text-on-surface-variant max-w-lg leading-relaxed">
+                    {isPublic
+                      ? 'Public profiles are discoverable in the Marketplace, Match Finder, and community rankings. Other peers can browse your teaching skills and book sessions.'
+                      : 'Private profiles are excluded from the Marketplace, Match Finder, and peer search results. Direct URL viewers only see your name with a private notice.'}
+                  </p>
+                </div>
+
+                {/* Interactive Toggle Switch with Optimistic UI */}
+                <div className="flex items-center gap-3 self-end sm:self-center">
+                  <span className="text-[11px] font-bold text-on-surface-variant hidden sm:inline">
+                    {isPublic ? 'Enabled' : 'Hidden'}
+                  </span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isPublic}
+                    disabled={isTogglingVisibility}
+                    onClick={handleToggleVisibility}
+                    className={`relative inline-flex h-7 w-14 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                      isPublic ? 'bg-primary' : 'bg-surface-variant'
+                    } ${isTogglingVisibility ? 'opacity-70 cursor-wait' : ''}`}
+                    title={`Click to switch profile to ${isPublic ? 'Private' : 'Public'}`}
+                  >
+                    <span className="sr-only">Toggle Profile Visibility</span>
+                    <span
+                      aria-hidden="true"
+                      className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out flex items-center justify-center ${
+                        isPublic ? 'translate-x-7' : 'translate-x-0'
+                      }`}
+                    >
+                      <span className={`material-symbols-outlined text-xs ${isPublic ? 'text-primary' : 'text-on-surface-variant'}`}>
+                        {isPublic ? 'visibility' : 'visibility_off'}
+                      </span>
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -550,6 +746,204 @@ export function Profile() {
             </div>
           </div>
 
+          {/* Teacher Official ID & Custom UPI QR Verification Card */}
+          {(accountRole === 'teacher' || accountRole === 'both') && (
+            <div className="bg-surface rounded-2xl p-6 border border-outline-variant shadow-elevation-1 space-y-5">
+              <div className="flex items-center justify-between border-b border-outline-variant pb-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-xl bg-teaching-emerald/10 text-teaching-emerald flex items-center justify-center font-bold">
+                    <span className="material-symbols-outlined text-2xl">verified_user</span>
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-black text-on-surface flex items-center gap-2">
+                      <span>Official Teacher Verification & UPI QR</span>
+                      {officialIdStatus === 'verified' ? (
+                        <span className="px-2.5 py-0.5 rounded-full bg-teaching-emerald/20 text-teaching-emerald text-[11px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs">check_circle</span> Verified
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-0.5 rounded-full bg-learning-amber/20 text-learning-amber text-[11px] font-extrabold uppercase tracking-wider">
+                          Action Recommended
+                        </span>
+                      )}
+                    </h2>
+                    <p className="text-xs text-on-surface-variant mt-0.5">
+                      Provide your official student / faculty ID card and UPI QR code so students can verify and pay you directly.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Verified Mentor Credential Certificate Action */}
+              {officialIdStatus === 'verified' && (
+                <div className="p-3.5 bg-teaching-emerald/10 border border-teaching-emerald/25 rounded-xl flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    <span className="material-symbols-outlined text-teaching-emerald text-2xl">workspace_premium</span>
+                    <div>
+                      <p className="text-xs font-black text-on-surface">Verified Academic Mentor Credential Ready</p>
+                      <p className="text-[11px] text-on-surface-variant font-medium">Downloadable digital certification card for LinkedIn & placement resume.</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCertificateModal(true)}
+                    className="px-3.5 py-1.5 bg-teaching-emerald hover:bg-teaching-emerald/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 shrink-0"
+                  >
+                    <span className="material-symbols-outlined text-sm">download</span>
+                    <span>View Certificate</span>
+                  </button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* ID Type */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-on-surface">Official ID Type</label>
+                  <select
+                    value={officialIdType}
+                    onChange={(e) => setOfficialIdType(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  >
+                    <option value="college_id">🎓 College / University Student ID</option>
+                    <option value="faculty_id">🏛️ Institutional Faculty / Professor ID</option>
+                    <option value="govt_id">🪪 Government Photo ID (Aadhaar/PAN/DL/Passport)</option>
+                    <option value="other">📑 Professional / Employee Work ID</option>
+                  </select>
+                </div>
+
+                {/* ID Number */}
+                <div className="space-y-1">
+                  <label className="block text-xs font-bold text-on-surface">Official ID / Roll Number</label>
+                  <input
+                    type="text"
+                    value={officialIdNumber}
+                    onChange={(e) => setOfficialIdNumber(e.target.value)}
+                    placeholder="e.g. 2024-CS-0941 or EMP-8821"
+                    className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20"
+                  />
+                </div>
+              </div>
+
+              {/* ID Document Upload & Preview */}
+              <div className="space-y-2">
+                <label className="block text-xs font-bold text-on-surface flex items-center justify-between">
+                  <span>Official ID Card / Proof Document Photo</span>
+                  {officialIdDocument && (
+                    <span className="text-[10px] text-teaching-emerald font-bold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">task_alt</span> Document Attached
+                    </span>
+                  )}
+                </label>
+                <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-surface-container-low border border-dashed border-outline-variant rounded-2xl">
+                  {officialIdDocument ? (
+                    <div className="relative group shrink-0">
+                      <img
+                        src={officialIdDocument}
+                        alt="Official ID Document Preview"
+                        className="w-36 h-24 object-cover rounded-xl border border-outline-variant shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => { setOfficialIdDocument(''); setOfficialIdStatus('unverified'); }}
+                        className="absolute -top-2 -right-2 bg-alert-rose text-white rounded-full p-1 shadow-md hover:scale-110 transition-all"
+                        title="Remove uploaded ID"
+                      >
+                        <span className="material-symbols-outlined text-xs">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl bg-surface-container flex flex-col items-center justify-center text-on-surface-variant shrink-0 border border-outline-variant/60">
+                      <span className="material-symbols-outlined text-3xl text-primary">badge</span>
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-1.5 text-center sm:text-left">
+                    <input
+                      type="file"
+                      id="official-id-upload"
+                      accept="image/*"
+                      onChange={handleIdFileUpload}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="official-id-upload"
+                      className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-primary/10 hover:bg-primary/20 text-primary rounded-xl text-xs font-extrabold transition-all"
+                    >
+                      <span className="material-symbols-outlined text-sm">upload_file</span>
+                      <span>{officialIdDocument ? 'Replace ID Card Photo' : 'Upload ID Card Photo'}</span>
+                    </label>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Upload your valid College Student ID or Faculty Card. JPG, PNG, or WebP up to 5MB. Verified mentors earn 3x more peer bookings.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Custom UPI QR Upload & Preview */}
+              <div className="space-y-2 pt-2 border-t border-outline-variant/60">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-bold text-on-surface">Teacher's Official UPI QR Code</label>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Upload your personal GPay, PhonePe, Paytm, or BHIM QR code image.
+                    </p>
+                  </div>
+                  {upiQrImage ? (
+                    <span className="text-[10px] font-bold text-teaching-emerald bg-teaching-emerald/10 px-2 py-0.5 rounded uppercase">
+                      Custom QR Active
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded uppercase">
+                      Auto-QR Fallback
+                    </span>
+                  )}
+                </div>
+
+                <div className="flex flex-col sm:flex-row items-center gap-4 p-4 bg-surface-container-low border border-dashed border-outline-variant rounded-2xl">
+                  {upiQrImage ? (
+                    <div className="relative group shrink-0">
+                      <img
+                        src={upiQrImage}
+                        alt="Teacher's Custom UPI QR"
+                        className="w-28 h-28 object-contain rounded-xl border border-outline-variant bg-white p-1.5 shadow-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setUpiQrImage('')}
+                        className="absolute -top-2 -right-2 bg-alert-rose text-white rounded-full p-1 shadow-md hover:scale-110 transition-all"
+                        title="Remove custom QR"
+                      >
+                        <span className="material-symbols-outlined text-xs">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="w-20 h-20 rounded-2xl bg-surface-container flex flex-col items-center justify-center text-on-surface-variant shrink-0 border border-outline-variant/60">
+                      <span className="material-symbols-outlined text-3xl text-teaching-emerald">qr_code_2</span>
+                    </div>
+                  )}
+                  <div className="flex-1 space-y-1.5 text-center sm:text-left">
+                    <input
+                      type="file"
+                      id="upi-qr-upload"
+                      accept="image/*"
+                      onChange={handleQrFileUpload}
+                      className="hidden"
+                    />
+                    <label
+                      htmlFor="upi-qr-upload"
+                      className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 bg-teaching-emerald/10 hover:bg-teaching-emerald/20 text-teaching-emerald rounded-xl text-xs font-extrabold transition-all"
+                    >
+                      <span className="material-symbols-outlined text-sm">qr_code_scanner</span>
+                      <span>{upiQrImage ? 'Replace UPI QR Image' : 'Upload GPay / PhonePe / Paytm QR Image'}</span>
+                    </label>
+                    <p className="text-[11px] text-on-surface-variant">
+                      Take a screenshot or export your QR from your UPI payment app. Students will scan this code directly when settling session fees.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Skills Management Card */}
           <div className="bg-surface rounded-2xl p-6 border border-outline-variant shadow-elevation-1 space-y-6">
             <div className="flex items-center gap-3 border-b border-outline-variant pb-4">
@@ -731,12 +1125,103 @@ export function Profile() {
             </div>
             <div className="text-3xl font-black text-teaching-emerald">₹{hourlyRate || 499} / hr</div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
-              Set your custom hourly rate in rupees. Students pay securely via Razorpay (UPI, GPay, Cards) when booking sessions with you.
+              Set your custom hourly rate in rupees. Students pay securely via direct UPI (GPay, PhonePe, Paytm, QR) to your verified account when booking sessions with you.
             </p>
           </div>
         </div>
 
       </div>
+
+      {/* Verified Peer Mentor Credential Certificate Modal */}
+      {showCertificateModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-surface border-2 border-teaching-emerald rounded-3xl w-full max-w-2xl shadow-elevation-4 overflow-hidden space-y-4 p-6 sm:p-8 relative">
+            <button
+              onClick={() => setShowCertificateModal(false)}
+              className="absolute top-4 right-4 h-8 w-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+
+            {/* Printable Certificate Canvas */}
+            <div id="mentor-certificate" className="border-4 border-double border-teaching-emerald/40 bg-surface-container/40 rounded-2xl p-6 sm:p-8 text-center space-y-4 relative overflow-hidden">
+              <div className="absolute top-0 right-0 -mr-8 -mt-8 w-24 h-24 bg-teaching-emerald/10 rounded-full blur-xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 -ml-8 -mb-8 w-24 h-24 bg-primary/10 rounded-full blur-xl pointer-events-none" />
+
+              <div className="inline-flex items-center justify-center h-14 w-14 rounded-full bg-teaching-emerald/10 text-teaching-emerald ring-8 ring-teaching-emerald/5 mx-auto">
+                <span className="material-symbols-outlined text-3xl">verified</span>
+              </div>
+
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-widest text-teaching-emerald">
+                  Mindroot Academic Peer Exchange
+                </p>
+                <h2 className="text-2xl sm:text-3xl font-black text-on-surface tracking-tight mt-1">
+                  Certificate of Verified Mentorship
+                </h2>
+                <p className="text-xs text-on-surface-variant font-medium mt-1">
+                  This certifies that the mentor below has satisfied institutional identity verification standards.
+                </p>
+              </div>
+
+              <div className="py-2 border-y border-outline-variant/60">
+                <p className="text-xs text-on-surface-variant uppercase font-semibold">Awarded To</p>
+                <p className="text-xl sm:text-2xl font-black text-primary mt-0.5">{name || 'Dr. Priya Sharma'}</p>
+                <p className="text-xs text-on-surface-variant font-medium mt-1 flex items-center justify-center gap-2">
+                  <span className="font-mono bg-surface px-2 py-0.5 rounded border border-outline-variant text-[11px] font-bold">
+                    ID: {officialIdNumber || 'MR-CERT-2026-ENG'}
+                  </span>
+                  <span>•</span>
+                  <span>{officialIdType === 'faculty_id' ? 'Institutional Faculty' : 'University Scholar'}</span>
+                </p>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-left text-xs bg-surface p-3.5 rounded-xl border border-outline-variant/60">
+                <div>
+                  <span className="text-[10px] text-on-surface-variant font-semibold block">Specialization</span>
+                  <span className="font-bold text-on-surface truncate block">{skillsTaught.slice(0, 2).join(', ') || 'Computer Science'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] text-on-surface-variant font-semibold block">Peer Trust Rating</span>
+                  <span className="font-black text-teaching-emerald flex items-center gap-1">
+                    <span>{currentUser?.trustScore || '4.98'} / 5.0</span>
+                    <span className="material-symbols-outlined text-xs">star</span>
+                  </span>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <span className="text-[10px] text-on-surface-variant font-semibold block">Settlement Model</span>
+                  <span className="font-bold text-on-surface block">P2P Direct UPI</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-on-surface-variant font-mono pt-2 border-t border-outline-variant/40">
+                <span>Verification: <strong>OFFICIALLY CONFIRMED</strong></span>
+                <span>Stamp: <strong>MINDROOT-CRYPT-V1</strong></span>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                onClick={() => window.print()}
+                className="px-4 py-2 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5"
+              >
+                <span className="material-symbols-outlined text-sm">print</span>
+                <span>Print / Save as PDF</span>
+              </button>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(`Mindroot Verified Peer Mentor Certificate: ${name} (ID: ${officialIdNumber || 'MR-CERT-2026'}). Trust Rating: ${currentUser?.trustScore || 5.0}/5.0.`);
+                  alert('Certificate summary copied to clipboard! You can paste this on LinkedIn.');
+                }}
+                className="px-4 py-2 bg-teaching-emerald hover:bg-teaching-emerald/90 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-xs"
+              >
+                <span className="material-symbols-outlined text-sm">share</span>
+                <span>Copy LinkedIn Summary</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

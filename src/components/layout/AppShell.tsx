@@ -12,7 +12,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
-  const { toggleSidebarCollapsed } = useAppStore();
+  const { toggleSidebarCollapsed, isSidebarCollapsed } = useAppStore();
 
   const authStandalonePages = ['/login', '/forgot-password', '/reset-password', '/verify-email'];
   const isStandalonePage = authStandalonePages.includes(location.pathname);
@@ -58,7 +58,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <NotificationManager />
       <Sidebar mobileOpen={mobileOpen} setMobileOpen={setMobileOpen} />
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
+      <div className={`flex-1 flex flex-col min-w-0 overflow-hidden relative transition-[margin-left] duration-300 ease-[cubic-bezier(0.2,0,0,1)] will-change-[margin-left] ${isSidebarCollapsed ? 'ml-0 md:ml-[72px]' : 'ml-0 md:ml-[260px]'}`}>
         {isBackendConfigMissing() && (
           <div className="bg-learning-amber text-on-learning-amber px-4 py-2 text-xs font-semibold text-center z-50 shadow-elevation-1 flex items-center justify-center gap-2">
             <span>🚨 Backend URL (`VITE_BACKEND_URL`) is not configured for production in your host dashboard. API & WebRTC connections will fail.</span>

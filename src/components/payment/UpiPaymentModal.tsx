@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api } from '../../lib/api';
+import { api, globalSocket } from '../../lib/api';
 
 export interface UpiPaymentSession {
   id?: string;
@@ -21,6 +21,7 @@ interface UpiPaymentModalProps {
 export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaymentModalProps) {
   const [activeTab, setActiveTab] = useState<'qr' | 'demo'>('qr');
   const [mentorUpi, setMentorUpi] = useState<string>('');
+  const [mentorDetails, setMentorDetails] = useState<any>(null);
   const [copied, setCopied] = useState(false);
   const [utrInput, setUtrInput] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -35,7 +36,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
   const mentorName = session?.teacherName || 'Mentor';
   const sessionTitle = session?.title || 'Cohort Mentoring Session';
 
-  // Load mentor's registered UPI ID or fallback
+  // Load mentor's registered UPI ID & Official Verification
   useEffect(() => {
     if (!isOpen || !session) return;
     setSuccessDetails(null);
@@ -44,13 +45,13 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
     if (session.teacherUpiId) {
       setMentorUpi(session.teacherUpiId);
-      return;
     }
 
     if (session.teacherId) {
       api.getMentorUpi(session.teacherId).then((res) => {
-        if (res && res.upiId) {
-          setMentorUpi(res.upiId);
+        if (res) {
+          setMentorDetails(res);
+          if (res.upiId) setMentorUpi(res.upiId);
         } else {
           const cleanName = mentorName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'mentor';
           setMentorUpi(`${cleanName}@okhdfcbank`);
@@ -77,19 +78,32 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
   const handleConfirmPayment = async (isDemo: boolean = false) => {
     setIsSubmitting(true);
+    const utr = isDemo ? `DEMO_${Date.now().toString().slice(-8)}` : (utrInput.trim() || `UPI_${Date.now().toString().slice(-8)}`);
     try {
       const res = await api.confirmUpiPayment({
-        sessionId: session.id,
-        teacherId: session.teacherId,
+        sessionId: session?.id,
+        teacherId: session?.teacherId,
         amount,
         title: sessionTitle,
         isDemo,
-        utr: isDemo ? `DEMO_${Date.now().toString().slice(-8)}` : (utrInput.trim() || `UPI_${Date.now().toString().slice(-8)}`)
+        utr
       });
+
+      // Emit live payment notification to mentor's screen
+      if (session?.teacherId) {
+        globalSocket.emit('payment-handshake-submitted', {
+          sessionId: session?.id,
+          teacherId: session.teacherId,
+          studentId: localStorage.getItem('mindroot_user_id') || 'student-current',
+          studentName: localStorage.getItem('mindroot_user_name') || 'Peer Learner',
+          amount,
+          utrNumber: utr
+        });
+      }
 
       const details = {
         paymentId: res.paymentId || (isDemo ? `pay_demo_${Date.now()}` : `pay_upi_${Date.now()}`),
-        utr: res.utr || utrInput || 'DEMO_CONFIRMED',
+        utr: res.utr || utr,
         amount,
         isDemo
       };
@@ -111,7 +125,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
         
         {/* Success / Receipt Screen */}
         {successDetails ? (
-          <div className="p-6 md:p-8 text-center space-y-6">
+          <div className="p-6 md:p-8 text-center space-y-5">
             <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-teaching-emerald/10 text-teaching-emerald ring-8 ring-teaching-emerald/5 animate-bounce">
               <span className="material-symbols-outlined text-4xl">verified</span>
             </div>
@@ -119,12 +133,23 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             <div>
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teaching-emerald/10 text-teaching-emerald text-xs font-bold uppercase tracking-wider mb-2">
                 <span className="material-symbols-outlined text-sm">check_circle</span>
-                {successDetails.isDemo ? 'Demo Payment Verified' : 'Real UPI Payment Verified'}
+                {successDetails.isDemo ? 'Demo Payment Verified' : 'Real UPI Payment Submitted'}
               </div>
-              <h2 className="text-2xl font-black text-on-surface">Payment Successful!</h2>
+              <h2 className="text-2xl font-black text-on-surface">Payment Submitted!</h2>
               <p className="text-xs text-on-surface-variant font-medium mt-1">
                 Your live interactive classroom and mentor session have been officially unlocked.
               </p>
+            </div>
+
+            {/* Provisional Access Assurance Banner */}
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-teaching-emerald/10 border border-teaching-emerald/25 text-teaching-emerald text-xs font-semibold text-left">
+              <span className="material-symbols-outlined text-lg shrink-0 mt-0.5">bolt</span>
+              <div>
+                <p className="font-bold">Instant Provisional Access Granted!</p>
+                <p className="text-[11px] opacity-90 mt-0.5 font-normal">
+                  Your classroom link is active now. The mentor has been alerted to acknowledge your UPI payment ({successDetails.utr}).
+                </p>
+              </div>
             </div>
 
             {/* Receipt Summary Card */}
@@ -226,24 +251,80 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             <div className="p-6">
               {activeTab === 'qr' ? (
                 <div className="space-y-4">
-                  {/* Dynamic QR Code */}
+                  {/* Official Teacher ID Verification Trust Badge */}
+                  {mentorDetails?.isIdVerified && (
+                    <div className="flex items-center justify-between p-3 bg-teaching-emerald/10 border border-teaching-emerald/30 rounded-2xl text-xs animate-fade-in">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-teaching-emerald/20 text-teaching-emerald flex items-center justify-center font-bold">
+                          <span className="material-symbols-outlined text-lg">verified_user</span>
+                        </div>
+                        <div>
+                          <p className="font-extrabold text-teaching-emerald flex items-center gap-1">
+                            <span>Official Verified Mentor</span>
+                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-teaching-emerald text-on-teaching-emerald uppercase">ID Checked</span>
+                          </p>
+                          <p className="text-[11px] text-on-surface-variant font-medium">
+                            {mentorDetails.officialIdType === 'college_id' ? 'University Student ID Confirmed' :
+                             mentorDetails.officialIdType === 'faculty_id' ? 'Faculty / Professor ID Confirmed' :
+                             mentorDetails.officialIdType === 'govt_id' ? 'Government Photo ID Confirmed' :
+                             'Official Academic / Identity Credentials Verified'}
+                          </p>
+                        </div>
+                      </div>
+                      <span className="material-symbols-outlined text-teaching-emerald text-xl">shield</span>
+                    </div>
+                  )}
+
+                  {/* QR Code (Teacher Uploaded Official QR OR Auto-Generated Dynamic QR) */}
                   <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-outline-variant/80 shadow-inner">
-                    <img
-                      src={qrCodeUrl}
-                      alt="UPI QR Code"
-                      className="w-44 h-44 object-contain rounded-lg"
-                    />
+                    {mentorDetails?.upiQrImage ? (
+                      <div className="flex flex-col items-center space-y-2">
+                        <div className="relative group">
+                          <img
+                            src={mentorDetails.upiQrImage}
+                            alt="Teacher's Official UPI QR Code"
+                            className="w-48 h-48 object-contain rounded-xl border border-slate-200 shadow-sm"
+                          />
+                          <div className="absolute top-2 right-2 bg-teaching-emerald text-on-teaching-emerald text-[9px] font-black px-2 py-0.5 rounded-md shadow uppercase tracking-wide flex items-center gap-1">
+                            <span className="material-symbols-outlined text-[11px]">verified</span>
+                            Teacher's Own QR
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Official Mentor QR Code
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center space-y-2">
+                        <img
+                          src={qrCodeUrl}
+                          alt="UPI QR Code"
+                          className="w-44 h-44 object-contain rounded-lg"
+                        />
+                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Dynamic Session QR Code
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-slate-700">
                       <span className="material-symbols-outlined text-sm text-teaching-emerald">security</span>
-                      <span>Scan with GPay, PhonePe, Paytm, or BHIM</span>
+                      <span>Scan with GPay, PhonePe, Paytm, BHIM, or Any Banking App</span>
                     </div>
                   </div>
 
                   {/* UPI ID Copy Field */}
                   <div>
-                    <label className="text-[11px] font-bold text-on-surface-variant block mb-1">
-                      Mentor's Verified UPI ID
-                    </label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[11px] font-bold text-on-surface-variant">
+                        Mentor's Verified UPI ID (VPA)
+                      </label>
+                      {mentorDetails?.upiQrImage && (
+                        <span className="text-[10px] font-bold text-teaching-emerald flex items-center gap-0.5">
+                          <span className="material-symbols-outlined text-xs">check_circle</span>
+                          QR & UPI Matched
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-2">
                       <div className="flex-1 px-3 py-2 bg-surface-container rounded-xl text-xs font-mono text-on-surface font-semibold border border-outline-variant/60 truncate">
                         {mentorUpi}

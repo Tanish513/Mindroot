@@ -23,6 +23,7 @@ model User {
   batchPricing     Json?
   bio              String?
   avatar           String?
+  isPublic         Boolean                  @default(true)
   deletedAt        DateTime?
   taughtSessions   Session[]                @relation("TeacherSessions")
   learnedSessions  Session[]                @relation("StudentSessions")
@@ -94,6 +95,10 @@ model Session {
   amount          Int      @default(499)
   maxCapacity     Int      @default(1)
   students        Json?
+  isSwap          Boolean  @default(false)
+  giveSkill       String?
+  takeSkill       String?
+  proposerId      String?
   scheduledAt     DateTime
   durationMin     Int      @default(60)
 

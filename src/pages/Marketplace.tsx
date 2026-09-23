@@ -328,7 +328,7 @@ const convert12to24 = (time12: string) => {
         <div className="flex items-center gap-2.5">
           <span className="material-symbols-outlined text-primary text-xl shrink-0">verified_user</span>
           <span>
-            <strong>Post-Lecture Payment Guarantee:</strong> Reserve your seat for ₹0 today. Attend the live studio lecture first and pay your mentor via Razorpay only after class ends.
+            <strong>Post-Lecture Payment Guarantee:</strong> Reserve your seat for ₹0 today. Attend the live studio lecture first and pay your verified mentor via direct UPI / QR only after class ends.
           </span>
         </div>
       </div>
@@ -422,6 +422,12 @@ const convert12to24 = (time12: string) => {
                             <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/30 text-[10px] font-black uppercase tracking-wide">
                               <span className="material-symbols-outlined text-xs text-teaching-emerald">bolt</span>
                               Live Now
+                            </span>
+                          )}
+                          {(peer.officialIdStatus === 'verified' || peer.officialIdDocument) && (
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-primary-container text-on-primary-container border border-primary/30 text-[10px] font-black uppercase tracking-wide" title="Official Academic / ID credentials verified">
+                              <span className="material-symbols-outlined text-xs text-primary">verified_user</span>
+                              ID Verified
                             </span>
                           )}
                         </div>

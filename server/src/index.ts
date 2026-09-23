@@ -31,11 +31,20 @@ process.on('unhandledRejection', (reason) => logger.error({ reason }, '[Unhandle
 process.on('uncaughtException', (err) => logger.error({ err }, '[Uncaught Exception]'));
 
 dotenv.config();
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+dotenv.config({ path: path.join(__dirname, '../../.env'), override: true });
+
+// Ensure Google Client ID is always valid and not a placeholder
+if (!process.env.GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID.includes('your_google_client_id_here')) {
+  process.env.GOOGLE_CLIENT_ID = '832106431414-q2afhkunmhn52p29merodho4u9ij5uvh.apps.googleusercontent.com';
+}
 
 const JWT_SECRET = process.env.JWT_SECRET || 'mindroot-dev-secret-key-change-in-prod';
 if (!process.env.JWT_SECRET) {
-  logger.warn('⚠️ WARNING: process.env.JWT_SECRET is unset. Using dev-only default secret key.');
+  if (process.env.NODE_ENV === 'production') {
+    logger.error('CRITICAL: process.env.JWT_SECRET is unset in production environment!');
+  } else {
+    logger.warn('⚠️ WARNING: process.env.JWT_SECRET is unset. Using dev-only default secret key.');
+  }
 }
 
 // Idempotency cache for payment and withdrawal routes
@@ -78,17 +87,58 @@ const inMemoryResetTokens: InMemoryToken[] = [];
 const lastResendVerificationMap = new Map<string, number>();
 const lastForgotPasswordMap = new Map<string, number>();
 
+// In-memory rate limiter for authentication routes (/api/auth/login, /api/auth/register)
+const authAttemptMap = new Map<string, { count: number; firstAttempt: number }>();
+const AUTH_RATE_WINDOW_MS = 15 * 60 * 1000; // 15-minute window
+const MAX_AUTH_ATTEMPTS = 20;
+
+const authRateLimiter = (req: any, res: any, next: any) => {
+  const clientIp = (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.socket?.remoteAddress || 'client-ip';
+  const now = Date.now();
+  const record = authAttemptMap.get(clientIp);
+
+  if (record) {
+    if (now - record.firstAttempt > AUTH_RATE_WINDOW_MS) {
+      authAttemptMap.set(clientIp, { count: 1, firstAttempt: now });
+    } else if (record.count >= MAX_AUTH_ATTEMPTS) {
+      const retryAfterSec = Math.ceil((AUTH_RATE_WINDOW_MS - (now - record.firstAttempt)) / 1000);
+      return res.status(429).json({ error: `Too many authentication attempts. Please try again after ${retryAfterSec} seconds.` });
+    } else {
+      record.count += 1;
+    }
+  } else {
+    authAttemptMap.set(clientIp, { count: 1, firstAttempt: now });
+  }
+  next();
+};
+
 function toPublicUser(user: any, role?: string): any {
   if (!user) return user;
   if (Array.isArray(user)) {
     return user.map(u => toPublicUser(u, role));
   }
+  const isPublicVal = user.isPublic !== undefined ? Boolean(user.isPublic) : true;
   if (role === 'admin') {
-    const { passwordResetToken, emailVerificationToken, ...safe } = user;
-    return { ...safe, emailVerified: true };
+    const { password, passwordResetToken, emailVerificationToken, ...adminSafe } = user;
+    return { ...adminSafe, isPublic: isPublicVal, emailVerified: true };
   }
-  const { password, passwordResetToken, emailVerificationToken, ...safe } = user;
-  return { ...safe, emailVerified: true };
+  // Strip credentials, token hashes, and sensitive personal/payment identity documents from public view
+  const {
+    password,
+    passwordResetToken,
+    emailVerificationToken,
+    officialIdNumber,
+    officialIdDocument,
+    upiId,
+    upiQrImage,
+    ...safe
+  } = user;
+  return { ...safe, isPublic: isPublicVal, emailVerified: true };
+}
+
+function getBroadcastPeers(users: any[]): any[] {
+  if (!Array.isArray(users)) return [];
+  return toPublicUser(users.filter(u => u && u.isPublic !== false));
 }
 
 // Zod Validation Schemas
@@ -183,6 +233,11 @@ const app = express();
 app.use(cors({ origin: corsOriginDelegate, credentials: true }));
 app.use(express.json());
 
+// GET /api/health — Instant server liveness & readiness check
+app.get('/api/health', (_req, res) => {
+  res.json({ status: 'ok', uptime: process.uptime(), time: Date.now() });
+});
+
 // Express Auth Middleware: Verify JWT from Authorization: Bearer <token>
 app.use((req: any, _res: any, next: any) => {
   const authHeader = req.headers['authorization'];
@@ -194,7 +249,8 @@ app.use((req: any, _res: any, next: any) => {
       req.userId = decoded.userId || decoded.id;
       req.userRole = decoded.role;
     } catch {
-      if (token.startsWith('dev-token-')) {
+      // In development mode only: allow dev-token- prefix for rapid local tests
+      if (process.env.NODE_ENV !== 'production' && token.startsWith('dev-token-')) {
         req.userId = token.replace('dev-token-', '');
       } else {
         req.userId = undefined;
@@ -244,6 +300,7 @@ try {
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "batchPricing" JSONB DEFAULT NULL;
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bio" TEXT DEFAULT 'Passionate about peer-to-peer knowledge sharing and skill exchanges.';
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" TEXT DEFAULT '';
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true;
     `).catch((err: any) => {
       logger.warn({ err }, 'Auto-migration for teacher pricing skipped or encountered error');
     });
@@ -282,6 +339,7 @@ const inMemoryReviews: any[] = [];
 const inMemoryTransactions: any[] = [];
 const inMemoryPayoutAccounts: Record<string, any> = {};
 const inMemoryRedemptions: any[] = [];
+const inMemoryDisputes: any[] = [];
 const inMemoryDiscussions: any[] = [
   {
     id: 'disc-1',
@@ -568,7 +626,8 @@ function saveDb() {
       transactions: inMemoryTransactions,
       payoutAccounts: inMemoryPayoutAccounts,
       redemptions: inMemoryRedemptions,
-      discussions: inMemoryDiscussions
+      discussions: inMemoryDiscussions,
+      disputes: inMemoryDisputes
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
@@ -595,6 +654,11 @@ function loadDb() {
                   4: Math.round(base * 0.6),
                   5: Math.round(base * 0.5)
                 };
+              }
+              if (u.isPublic === undefined) {
+                u.isPublic = true;
+              } else {
+                u.isPublic = Boolean(u.isPublic);
               }
               inMemoryUsers.push(u);
             }
@@ -671,6 +735,14 @@ function loadDb() {
           data.discussions.forEach((d: any) => {
             if (d && d.id) {
               inMemoryDiscussions.push(d);
+            }
+          });
+        }
+        if (Array.isArray(data.disputes)) {
+          inMemoryDisputes.length = 0;
+          data.disputes.forEach((disp: any) => {
+            if (disp && disp.id) {
+              inMemoryDisputes.push(disp);
             }
           });
         }
@@ -968,11 +1040,12 @@ io.on('connection', (socket) => {
   console.log(`🔌 Socket connected: ${socket.id}`);
 
   // Send initial synchronized public state to newly connected laptop
-  socket.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  socket.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   socket.emit('network-transactions-updated', inMemoryTransactions);
   socket.emit('network-reviews-updated', inMemoryReviews);
   socket.emit('network-rewards-updated', inMemoryRedemptions);
   socket.emit('network-discussions-updated', inMemoryDiscussions);
+  socket.emit('network-disputes-updated', inMemoryDisputes);
 
   socket.on('post-discussion-sync', (disc: any) => {
     if (disc && disc.id) {
@@ -1104,7 +1177,7 @@ io.on('connection', (socket) => {
       saveDb();
       sendSessionsToUser(user.id);
     }
-    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   });
 
   socket.on('book-session-sync', (session) => {
@@ -1134,7 +1207,7 @@ io.on('connection', (socket) => {
         if (student) student.tokenBalance = Math.max(0, (student.tokenBalance || 50) - studentDeduct);
         if (teacher) teacher.tokenBalance = (teacher.tokenBalance || 50) + teacherEarn;
 
-        io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+        io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
         // Student-centric Reward Points Awarding (students only, teachers never earn loyalty points)
         const sessionRewardPts = calcSessionRewardPoints(sess.durationMin);
@@ -1156,7 +1229,7 @@ io.on('connection', (socket) => {
         }
         saveDb();
         io.emit('network-rewards-updated', inMemoryRedemptions);
-        io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+        io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
       }
 
       sendSessionsToParticipants(sess);
@@ -1176,7 +1249,7 @@ io.on('connection', (socket) => {
       }
     }
     io.emit('network-reviews-updated', inMemoryReviews);
-    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   });
 
   socket.on('send-message-sync', (msg: any) => {
@@ -1197,6 +1270,48 @@ io.on('connection', (socket) => {
       saveDb();
     }
     io.emit('network-discussions-updated', inMemoryDiscussions);
+  });
+
+  socket.on('payment-handshake-submitted', (payload: any) => {
+    const { sessionId, teacherId, studentId, studentName, amount, utrNumber, note } = payload || {};
+    if (teacherId) {
+      io.to('user:' + teacherId).emit('teacher-payment-alert', {
+        sessionId,
+        studentId,
+        studentName: studentName || 'Student',
+        amount: amount || 0,
+        utrNumber: utrNumber || 'DEMO-INSTANT',
+        note,
+        timestamp: new Date().toISOString()
+      });
+    }
+    if (sessionId) {
+      const session = inMemorySessions.find(s => s.id === sessionId);
+      if (session) {
+        session.paymentStatus = 'submitted_provisional';
+        session.utrNumber = utrNumber || session.utrNumber;
+        saveDb();
+        sendSessionsToParticipants(session);
+      }
+    }
+  });
+
+  socket.on('study-notes-update', (data: any) => {
+    const { roomId, notes, senderName } = data || {};
+    if (roomId) {
+      socket.to(roomId).emit('study-notes-update', { notes, senderName, timestamp: new Date().toISOString() });
+    }
+  });
+
+  socket.on('study-notes-save', (data: any) => {
+    const { sessionId, notes } = data || {};
+    if (sessionId) {
+      const session = inMemorySessions.find(s => s.id === sessionId);
+      if (session) {
+        session.studyNotes = notes;
+        saveDb();
+      }
+    }
   });
 
   socket.on('disconnect', () => {
@@ -1246,6 +1361,101 @@ app.get('/api/users/me', async (req: any, res) => {
   res.json(toPublicUser(memUser));
 });
 
+// GET /api/users/:id (and /users/:id) — fetch a specific user's profile with privacy enforcement
+app.get(['/api/users/:id', '/users/:id'], async (req: any, res) => {
+  const { id } = req.params;
+  const callerId = req.userId;
+  const callerRole = req.userRole;
+
+  let targetUser: any = null;
+
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      targetUser = await prisma.user.findUnique({
+        where: { id },
+        include: { userSkills: { include: { skill: true } } }
+      });
+    } catch (err: any) {
+      logger.error({ err, id }, 'Database error in GET /api/users/:id');
+    }
+  }
+
+  if (!targetUser) {
+    targetUser = inMemoryUsers.find(u => u.id === id);
+  }
+
+  if (!targetUser) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  const isOwner = callerId && callerId === id;
+  const isAdmin = callerRole === 'admin';
+  const isProfilePublic = targetUser.isPublic !== false;
+
+  // Enforce visibility on reads: if isPublic is false, only owner and admin see full data
+  if (!isProfilePublic && !isOwner && !isAdmin) {
+    return res.json({
+      id: targetUser.id,
+      name: targetUser.name,
+      avatar: targetUser.avatar,
+      isPublic: false,
+      message: 'This profile is private.'
+    });
+  }
+
+  return res.json(toPublicUser(targetUser, callerRole));
+});
+
+// PATCH /api/users/:id/visibility (and /users/:id/visibility) — Toggle user profile public/private visibility
+app.patch(['/api/users/:id/visibility', '/users/:id/visibility'], requireAuth, async (req: any, res: any) => {
+  const { id } = req.params;
+  const { isPublic } = req.body;
+
+  if (typeof isPublic !== 'boolean') {
+    return res.status(400).json({ error: 'isPublic must be a boolean (true or false).' });
+  }
+
+  // Security check: Only the account owner or an admin can toggle visibility
+  if (req.userId !== id && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: You can only change the visibility of your own profile.' });
+  }
+
+  let updatedUser: any = null;
+
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      updatedUser = await prisma.user.update({
+        where: { id },
+        data: { isPublic }
+      });
+    } catch (err: any) {
+      logger.error({ err, id }, 'Database error in PATCH /api/users/:id/visibility');
+    }
+  }
+
+  const memUser = inMemoryUsers.find(u => u.id === id);
+  if (memUser) {
+    memUser.isPublic = isPublic;
+    if (!updatedUser) updatedUser = memUser;
+  } else if (updatedUser) {
+    inMemoryUsers.push({ ...updatedUser });
+  }
+
+  if (!updatedUser && !memUser) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+
+  saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+
+  return res.json({
+    success: true,
+    message: `Profile visibility updated to ${isPublic ? 'public' : 'private'} successfully.`,
+    isPublic,
+    user: toPublicUser(memUser || updatedUser)
+  });
+});
+
 // GET /api/peers — all other users excluding requesting user (or all users if not logged in)
 app.get('/api/peers', async (req: any, res) => {
   const userId = req.userId;
@@ -1255,6 +1465,9 @@ app.get('/api/peers', async (req: any, res) => {
   if (process.env.DATABASE_URL && prisma) {
     try {
       const whereClause: any = userId ? { NOT: { id: userId } } : {};
+      if (userRole !== 'admin') {
+        whereClause.isPublic = true;
+      }
       if (roleQuery) {
         const roles = roleQuery.split(',').map((r: string) => r.trim()).filter(Boolean);
         if (roles.length > 0) {
@@ -1273,6 +1486,9 @@ app.get('/api/peers', async (req: any, res) => {
   }
 
   let peers = userId ? inMemoryUsers.filter(u => u.id !== userId) : inMemoryUsers;
+  if (userRole !== 'admin') {
+    peers = peers.filter(u => u.isPublic !== false);
+  }
   if (roleQuery) {
     const roles = roleQuery.split(',').map((r: string) => r.trim()).filter(Boolean);
     if (roles.length > 0) {
@@ -1283,7 +1499,7 @@ app.get('/api/peers', async (req: any, res) => {
 });
 
 // POST /api/auth/login — Credential authentication with bcrypt & JWT
-app.post('/api/auth/login', async (req, res) => {
+app.post('/api/auth/login', authRateLimiter, async (req, res) => {
   const valResult = loginSchema.safeParse(req.body);
   if (!valResult.success) {
     return res.status(400).json({ error: valResult.error.issues[0]?.message || 'Invalid request body' });
@@ -1383,7 +1599,7 @@ app.post('/api/auth/login', async (req, res) => {
 });
 
 // POST /api/auth/register — Register user with email verification token & return JWT
-app.post('/api/auth/register', async (req, res) => {
+app.post('/api/auth/register', authRateLimiter, async (req, res) => {
   const valResult = registerSchema.safeParse(req.body);
   if (!valResult.success) {
     return res.status(400).json({ error: valResult.error.issues[0]?.message || 'Invalid request body' });
@@ -1508,7 +1724,7 @@ app.post('/api/auth/register', async (req, res) => {
     if (idx >= 0) inMemoryUsers[idx] = newUser;
     else inMemoryUsers.push(newUser);
     saveDb();
-    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     const token = jwt.sign(
       { userId: newUser.id, name: newUser.name, role: newUser.role, emailVerified: true },
@@ -1585,7 +1801,7 @@ app.post('/api/auth/verify-email', async (req, res) => {
   }
 
   saveDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   res.json({ success: true, message: 'Your email address has been successfully verified!' });
 });
@@ -1854,7 +2070,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 
   saveDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   res.json({ success: true, message: 'Password has been reset successfully. You can now sign in with your new password.' });
 });
@@ -1867,27 +2083,33 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   let verifiedPayload: any = null;
-  const googleClientId = process.env.GOOGLE_CLIENT_ID;
+  const googleClientId = process.env.GOOGLE_CLIENT_ID || '832106431414-q2afhkunmhn52p29merodho4u9ij5uvh.apps.googleusercontent.com';
 
   if (googleClientId && !googleClientId.includes('your_google_client_id_here') && !credential.endsWith('.devsig')) {
     try {
+      const audience = [
+        googleClientId,
+        '832106431414-q2afhkunmhn52p29merodho4u9ij5uvh.apps.googleusercontent.com'
+      ].filter(Boolean);
       const ticket = await googleClient.verifyIdToken({
         idToken: credential,
-        audience: googleClientId
+        audience
       });
       verifiedPayload = ticket.getPayload();
     } catch (err: any) {
       console.warn('[OAuth Warning] Google ID token verification failed:', err.message);
+      return res.status(401).json({ error: 'Google ID token verification failed: ' + (err.message || 'Invalid cryptographic signature') });
     }
-  }
-
-  if (!verifiedPayload) {
+  } else if (process.env.NODE_ENV !== 'production' && credential.endsWith('.devsig')) {
+    // Development/testing mode only: allow simulated token with explicit .devsig suffix
     try {
       const parts = credential.split('.');
       if (parts.length === 3) {
         verifiedPayload = JSON.parse(Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8'));
       }
     } catch {}
+  } else {
+    return res.status(400).json({ error: 'Google OAuth client ID is not configured or token format is invalid.' });
   }
 
   if (!verifiedPayload || (!verifiedPayload.email && !verifiedPayload.sub)) {
@@ -1961,13 +2183,32 @@ app.post('/api/auth/google', async (req, res) => {
       }
     } catch (dbErr: any) {
       logger.error({ dbErr, cleanEmail }, 'Prisma OAuth user creation error');
+      // If a concurrent request created the user first, gracefully recover rather than failing
+      if (dbErr?.code === 'P2002') {
+        try {
+          const concurrentUser = await prisma.user.findFirst({
+            where: { email: { equals: cleanEmail, mode: 'insensitive' } },
+            include: { userSkills: { include: { skill: true } } }
+          });
+          if (concurrentUser) {
+            const token = jwt.sign(
+              { userId: concurrentUser.id, name: concurrentUser.name, role: concurrentUser.role },
+              JWT_SECRET,
+              { expiresIn: '7d' }
+            );
+            return res.json({ success: true, user: toPublicUser(concurrentUser), token, isNewUser: false });
+          }
+        } catch (findErr) {
+          logger.error({ findErr }, 'Error fetching user after P2002 conflict');
+        }
+      }
       return res.status(500).json({ error: 'Failed to create OAuth user account in database.' });
     }
   }
 
   inMemoryUsers.push(newUser);
   saveDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   const token = jwt.sign(
     { userId: newUser.id, name: newUser.name, role: newUser.role },
@@ -2008,7 +2249,7 @@ app.post('/api/users', async (req, res) => {
       });
       if (fullUser) {
         inMemoryUsers.push(fullUser);
-        io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+        io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
         return res.status(201).json(toPublicUser(fullUser));
       }
     } catch (err: any) {
@@ -2019,7 +2260,7 @@ app.post('/api/users', async (req, res) => {
 
   inMemoryUsers.push(newUser);
   saveDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   res.status(201).json(toPublicUser(newUser));
 });
 
@@ -2125,17 +2366,26 @@ app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/pa
       return res.status(400).json({ error: 'Missing or invalid payment ID.' });
     }
 
-    const isTestMode = razorpay_signature === 'test_sig' || razorpay_payment_id.startsWith('pay_test_') || razorpay_payment_id.startsWith('pay_sim_');
+    const isTestMode = process.env.NODE_ENV !== 'production' && (
+      razorpay_signature === 'test_sig' ||
+      razorpay_payment_id.startsWith('pay_test_') ||
+      razorpay_payment_id.startsWith('pay_sim_')
+    );
 
-    // 1. Cryptographic HMAC-SHA256 signature verification (if secret available)
-    if (!isTestMode && RAZORPAY_KEY_SECRET && razorpay_order_id && razorpay_signature) {
-      const generatedSignature = crypto
-        .createHmac('sha256', RAZORPAY_KEY_SECRET)
-        .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-        .digest('hex');
+    // 1. Cryptographic HMAC-SHA256 signature verification
+    if (!isTestMode) {
+      if (RAZORPAY_KEY_SECRET && razorpay_order_id && razorpay_signature) {
+        const generatedSignature = crypto
+          .createHmac('sha256', RAZORPAY_KEY_SECRET)
+          .update(`${razorpay_order_id}|${razorpay_payment_id}`)
+          .digest('hex');
 
-      if (generatedSignature !== razorpay_signature) {
-        console.warn('⚠️ Razorpay signature warning (continuing with payment record):', { razorpay_order_id, razorpay_payment_id });
+        if (generatedSignature !== razorpay_signature) {
+          logger.warn({ razorpay_order_id, razorpay_payment_id }, 'Invalid Razorpay payment signature rejected');
+          return res.status(400).json({ error: 'Payment signature verification failed. Untrusted payment record.' });
+        }
+      } else if (RAZORPAY_KEY_SECRET && (!razorpay_order_id || !razorpay_signature)) {
+        return res.status(400).json({ error: 'Missing Razorpay order ID or cryptographic signature for payment verification.' });
       }
     }
 
@@ -2347,7 +2597,7 @@ app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/pa
       sendSessionsToParticipants(targetSession);
     }
     io.emit('network-transactions-updated', inMemoryTransactions);
-    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     res.json({
       success: true,
@@ -2362,7 +2612,7 @@ app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/pa
   }
 });
 
-// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID
+// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID & verification
 app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
   const teacherId = req.params.teacherId;
   const payoutAcc = inMemoryPayoutAccounts[teacherId];
@@ -2371,12 +2621,23 @@ app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
   const mentorName = user?.name || payoutAcc?.accountHolderName || 'Mentor';
   const cleanMentorHandle = mentorName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'mentor';
   const upiId = payoutAcc?.upiId || user?.upiId || `${cleanMentorHandle}@okhdfcbank`;
+  const upiQrImage = user?.upiQrImage || payoutAcc?.upiQrImage || null;
+  const officialIdType = user?.officialIdType || payoutAcc?.officialIdType || null;
+  const officialIdNumber = user?.officialIdNumber || payoutAcc?.officialIdNumber || null;
+  const officialIdDocument = user?.officialIdDocument || payoutAcc?.officialIdDocument || null;
+  const officialIdStatus = user?.officialIdStatus || payoutAcc?.officialIdStatus || (officialIdDocument || officialIdNumber ? 'verified' : 'unverified');
+  const isIdVerified = officialIdStatus === 'verified';
   
   res.json({
     success: true,
     teacherId,
     mentorName,
     upiId,
+    upiQrImage,
+    officialIdType,
+    officialIdNumber,
+    officialIdStatus,
+    isIdVerified,
     isCustomUpi: Boolean(payoutAcc?.upiId || user?.upiId)
   });
 });
@@ -2509,7 +2770,7 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
     io.emit('session-payment-confirmed', paymentBroadcastPayload);
     io.emit('network-sessions-updated', inMemorySessions);
     io.emit('network-transactions-updated', inMemoryTransactions);
-    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     res.json({
       success: true,
@@ -2540,28 +2801,55 @@ app.get('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
   res.json(account);
 });
 
-// POST /api/wallet/payout-account — Save or update teacher's bank/UPI payout settings
+// POST /api/wallet/payout-account — Save or update teacher's bank/UPI payout settings & Official ID
 app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
-  const { accountHolderName, accountNumber, ifscCode, bankName, upiId, payoutMethod } = req.body;
+  const { 
+    accountHolderName, 
+    accountNumber, 
+    ifscCode, 
+    bankName, 
+    upiId, 
+    payoutMethod,
+    upiQrImage,
+    officialIdType,
+    officialIdNumber,
+    officialIdDocument,
+    officialIdStatus
+  } = req.body;
   const targetUser = req.userId; // Authenticated user ID ONLY
 
+  const existingAcc = inMemoryPayoutAccounts[targetUser] || {};
+  const determinedStatus = officialIdStatus || (officialIdDocument || officialIdNumber ? 'verified' : (existingAcc.officialIdStatus || 'unverified'));
+
   inMemoryPayoutAccounts[targetUser] = {
-    accountHolderName: accountHolderName || 'Mentor Beneficiary',
-    accountNumber: accountNumber ? `••••••••${accountNumber.slice(-4)}` : '',
-    ifscCode: (ifscCode || '').toUpperCase().trim(),
-    bankName: bankName || 'Bank of India',
-    upiId: (upiId || '').toLowerCase().trim(),
-    payoutMethod: payoutMethod || 'upi',
+    ...existingAcc,
+    accountHolderName: accountHolderName || existingAcc.accountHolderName || 'Mentor Beneficiary',
+    accountNumber: accountNumber ? `••••••••${accountNumber.slice(-4)}` : (existingAcc.accountNumber || ''),
+    ifscCode: (ifscCode || existingAcc.ifscCode || '').toUpperCase().trim(),
+    bankName: bankName || existingAcc.bankName || 'Bank of India',
+    upiId: (upiId || existingAcc.upiId || '').toLowerCase().trim(),
+    payoutMethod: payoutMethod || existingAcc.payoutMethod || 'upi',
+    upiQrImage: upiQrImage !== undefined ? upiQrImage : existingAcc.upiQrImage,
+    officialIdType: officialIdType !== undefined ? officialIdType : existingAcc.officialIdType,
+    officialIdNumber: officialIdNumber !== undefined ? officialIdNumber : existingAcc.officialIdNumber,
+    officialIdDocument: officialIdDocument !== undefined ? officialIdDocument : existingAcc.officialIdDocument,
+    officialIdStatus: determinedStatus,
     isVerified: true,
     updatedAt: new Date().toISOString()
   };
 
   const user = inMemoryUsers.find(u => u.id === targetUser);
-  if (user && upiId) {
-    user.upiId = (upiId || '').toLowerCase().trim();
+  if (user) {
+    if (upiId) user.upiId = (upiId || '').toLowerCase().trim();
+    if (upiQrImage !== undefined) user.upiQrImage = upiQrImage;
+    if (officialIdType !== undefined) user.officialIdType = officialIdType;
+    if (officialIdNumber !== undefined) user.officialIdNumber = officialIdNumber;
+    if (officialIdDocument !== undefined) user.officialIdDocument = officialIdDocument;
+    user.officialIdStatus = determinedStatus;
   }
 
   saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   res.json({ success: true, message: 'Bank account & payout details updated successfully!', account: inMemoryPayoutAccounts[targetUser] });
 });
 
@@ -2611,7 +2899,7 @@ app.post('/api/wallet/withdraw', requireAuth, (req: any, res: any) => {
   }
 
   io.emit('network-transactions-updated', inMemoryTransactions);
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   const responseBody = {
     success: true,
@@ -2797,23 +3085,26 @@ function consolidateGroupSessions() {
   }
 }
 
-// POST /api/sessions — book a new session request (Requires Teacher Approval)
+// POST /api/sessions — book a new session request (Requires Teacher Approval or Peer Swap Approval)
 app.post('/api/sessions', async (req, res) => {
   consolidateGroupSessions();
 
-  const { title, teacherId, studentId, skillId, scheduledAt, durationMin, maxCapacity, pricePerStudent, students } = req.body;
+  const { title, teacherId, studentId, skillId, scheduledAt, durationMin, maxCapacity, pricePerStudent, students, isSwap, giveSkill, takeSkill, proposerId } = req.body;
   
   const finalTeacherId = teacherId || 'teacher-default';
   const finalStudentId = studentId || (req as any).userId || 'user-alex';
+  const finalProposerId = proposerId || (req as any).userId || finalStudentId;
   const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || { id: finalTeacherId, name: 'Teacher', hourlyRate: 499 };
   const studentObj = inMemoryUsers.find(u => u.id === finalStudentId) || { id: finalStudentId, name: 'Student' };
 
+  const isSwapSession = Boolean(isSwap || (title && title.includes('↔')));
+
   const teacherRole = (teacherObj.role || '').toLowerCase().trim();
-  if (teacherRole === 'student') {
+  if (!isSwapSession && teacherRole === 'student') {
     return res.status(400).json({ error: 'Cannot book a session with a profile registered as student. Mentoring sessions can only be booked with teachers or profiles with both role.' });
   }
   const maxCap = Math.min(Math.max(parseInt(maxCapacity, 10) || 1, 1), 5);
-  const seatPrice = pricePerStudent ? parseInt(pricePerStudent, 10) : teacherObj.hourlyRate || 499;
+  const seatPrice = isSwapSession ? 0 : (pricePerStudent ? parseInt(pricePerStudent, 10) : teacherObj.hourlyRate || 499);
   const reqTime = new Date(scheduledAt || Date.now()).getTime();
 
   // 1. Check if student chose Shared / Group Lecture Format (maxCap > 1) and an open group session already exists for this teacher at this slot or same day/topic
@@ -2843,7 +3134,7 @@ app.post('/api/sessions', async (req, res) => {
           name: studentObj.name,
           avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
           enrolledAt: new Date().toISOString(),
-          paymentStatus: 'pending',
+          paymentStatus: isSwapSession ? 'swap' : 'pending',
           amountPaid: 0,
           amountDue: seatPrice
         });
@@ -2856,7 +3147,7 @@ app.post('/api/sessions', async (req, res) => {
 
   // 2. Check for slot collision with existing sessions for this teacher
   const conflictingSession = inMemorySessions.find(s => {
-    if (!s || s.status === 'declined' || s.status === 'completed') return false;
+    if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
     const tId = s.teacherId || s.teacher?.id;
     if (tId !== finalTeacherId) return false;
     const sTime = new Date(s.scheduledAt).getTime();
@@ -2876,12 +3167,16 @@ app.post('/api/sessions', async (req, res) => {
     });
   }
 
-  // 3. Create new booking request defaulting to 'pending' (Teacher Approval Required)
-  const newSession = {
+  // 3. Create new booking / swap request defaulting to 'pending'
+  const newSession: any = {
     id: 'session-' + Date.now(),
-    title: title || 'Mentoring Session',
+    title: title || (isSwapSession ? 'Skill Swap Exchange' : 'Mentoring Session'),
     teacherId: finalTeacherId,
     studentId: finalStudentId,
+    proposerId: finalProposerId,
+    isSwap: isSwapSession,
+    giveSkill: giveSkill || null,
+    takeSkill: takeSkill || null,
     teacher: teacherObj,
     student: studentObj,
     maxCapacity: maxCap,
@@ -2893,13 +3188,13 @@ app.post('/api/sessions', async (req, res) => {
         name: studentObj.name,
         avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
         enrolledAt: new Date().toISOString(),
-        paymentStatus: 'pending',
+        paymentStatus: isSwapSession ? 'swap' : 'pending',
         amountPaid: 0,
         amountDue: seatPrice
       }
     ],
-    status: 'pending', // Requires Teacher Approval
-    paymentStatus: 'pending',
+    status: 'pending', // Requires Recipient Approval
+    paymentStatus: isSwapSession ? 'swap' : 'pending',
     scheduledAt: scheduledAt || new Date().toISOString(),
     durationMin: durationMin ? parseInt(durationMin, 10) : 60
   };
@@ -2916,10 +3211,34 @@ app.post('/api/sessions', async (req, res) => {
   inMemorySessions.push(newSession);
   saveDb();
 
+  try {
+    if (process.env.DATABASE_URL && prisma) {
+      await prisma.session.create({
+        data: {
+          id: newSession.id,
+          title: newSession.title,
+          teacherId: newSession.teacherId,
+          studentId: newSession.studentId,
+          isSwap: newSession.isSwap,
+          giveSkill: newSession.giveSkill,
+          takeSkill: newSession.takeSkill,
+          proposerId: newSession.proposerId,
+          pricePerStudent: newSession.pricePerStudent,
+          amount: newSession.amount,
+          maxCapacity: newSession.maxCapacity,
+          status: newSession.status,
+          paymentStatus: newSession.paymentStatus,
+          scheduledAt: new Date(newSession.scheduledAt),
+          durationMin: newSession.durationMin
+        }
+      }).catch((err: any) => console.error('Prisma session create error:', err));
+    }
+  } catch {}
+
   if (teacherObj?.email) {
     sendBookingNotificationEmail({
       to: teacherObj.email,
-      name: teacherObj.name || 'Mentor',
+      name: teacherObj.name || (isSwapSession ? 'Peer' : 'Mentor'),
       title: newSession.title,
       scheduledAt: newSession.scheduledAt,
       status: 'pending'
@@ -2928,6 +3247,7 @@ app.post('/api/sessions', async (req, res) => {
 
   sendSessionsToParticipants(newSession);
   notifySessionParticipants(newSession, 'session-request-created', newSession);
+  io.emit('network-sessions-updated', inMemorySessions);
   res.status(201).json(newSession);
 });
 
@@ -3048,16 +3368,37 @@ app.get('/api/transactions', async (req: any, res) => {
 });
 
 // PATCH /api/sessions/:id — approve / decline / update status / paymentStatus
-app.patch('/api/sessions/:id', async (req, res) => {
+app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
   const { id } = req.params;
-  const { status, paymentStatus, paymentId, studentId, scheduledAt, reason } = req.body;
+  const { status, paymentStatus, paymentId, studentId, scheduledAt, reason, studyNotes, utrNumber, rating, review } = req.body;
 
   const memSess = inMemorySessions.find(s => s.id === id);
+  if (!memSess) {
+    return res.status(404).json({ error: 'Session not found.' });
+  }
+
+  const isTeacher = memSess.teacherId === req.userId || memSess.teacher?.id === req.userId;
+  const isStudent = memSess.studentId === req.userId || memSess.student?.id === req.userId;
+  const isInCohort = Array.isArray(memSess.students) && memSess.students.some((st: any) => st.id === req.userId);
+  const isAdmin = req.userRole === 'admin';
+
+  if (!isTeacher && !isStudent && !isInCohort && !isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: You are not authorized to update this session.' });
+  }
+
+  // Only the session teacher or admin can mark paymentStatus as 'paid'
+  if (paymentStatus === 'paid' && !isTeacher && !isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: Only the session mentor or an admin can confirm payment status.' });
+  }
+
   if (memSess) {
     const prevStatus = memSess.status;
-    if (status) {
-      memSess.status = status;
-    }
+    if (status) memSess.status = status;
+    if (paymentStatus) memSess.paymentStatus = paymentStatus;
+    if (studyNotes !== undefined) memSess.studyNotes = studyNotes;
+    if (utrNumber !== undefined) memSess.utrNumber = utrNumber;
+    if (rating !== undefined) memSess.rating = rating;
+    if (review !== undefined) memSess.review = review;
 
     // Handle rescheduling / schedule timing updates
     if (scheduledAt && scheduledAt !== memSess.scheduledAt) {
@@ -3152,29 +3493,42 @@ app.patch('/api/sessions/:id', async (req, res) => {
       }
       saveDb();
       io.emit('network-rewards-updated', inMemoryRedemptions);
-      io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+      io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
     }
 
-    if (status && status !== prevStatus && (status === 'confirmed' || status === 'declined' || status === 'rejected')) {
-      const studentEmail = memSess.student?.email;
-      const teacherObj = inMemoryUsers.find(u => u.id === memSess.teacherId) || memSess.teacher;
+    const isSwap = Boolean(memSess.isSwap || (memSess.title && memSess.title.includes('↔')) || memSess.paymentStatus === 'swap');
 
-      if (studentEmail) {
+    if (isSwap && status === 'confirmed') {
+      memSess.paymentStatus = 'swap';
+    }
+
+    if (status && status !== prevStatus && (status === 'confirmed' || status === 'declined' || status === 'rejected' || status === 'cancelled')) {
+      const studentEmail = memSess.student?.email;
+      const teacherEmail = memSess.teacher?.email;
+      const teacherObj = inMemoryUsers.find(u => u.id === memSess.teacherId) || memSess.teacher;
+      const studentObj = inMemoryUsers.find(u => u.id === memSess.studentId) || memSess.student;
+
+      const notifyEmail = req.userId === memSess.teacherId ? studentEmail : teacherEmail;
+      const notifyName = req.userId === memSess.teacherId ? (studentObj?.name || 'Learner') : (teacherObj?.name || 'Peer');
+      const peerName = req.userId === memSess.teacherId ? (teacherObj?.name || 'Peer') : (studentObj?.name || 'Peer');
+
+      if (notifyEmail) {
         sendBookingNotificationEmail({
-          to: studentEmail,
-          name: memSess.student?.name || 'Learner',
-          title: memSess.title || 'Mentoring Session',
+          to: notifyEmail,
+          name: notifyName,
+          title: memSess.title || 'Skill Exchange Session',
           scheduledAt: memSess.scheduledAt || new Date().toISOString(),
-          status: status === 'confirmed' ? 'confirmed' : 'rejected',
+          status: status === 'confirmed' ? 'confirmed' : 'declined',
           sessionId: memSess.id,
-          peerName: teacherObj?.name || 'Mentor',
-          peerRole: 'Mentor'
+          peerName: peerName,
+          peerRole: isSwap ? 'Swap Partner' : 'Mentor'
         }).catch(err => console.error('Session update email error:', err));
       }
     }
 
     saveDb();
     sendSessionsToParticipants(memSess);
+    io.emit('network-sessions-updated', inMemorySessions);
   }
 
   try {
@@ -3185,13 +3539,16 @@ app.patch('/api/sessions/:id', async (req, res) => {
       });
 
       if (session) {
+        const updateData: any = { status };
+        if (paymentStatus) updateData.paymentStatus = paymentStatus;
         const updated = await prisma.session.update({
           where: { id },
-          data: { status },
+          data: updateData,
           include: { teacher: true, student: true }
         });
 
         sendSessionsToParticipants(updated);
+        io.emit('network-sessions-updated', inMemorySessions);
         return res.json(updated);
       }
     }
@@ -3202,11 +3559,21 @@ app.patch('/api/sessions/:id', async (req, res) => {
   res.json(memSess || { id, status });
 });
 
-// PATCH /api/users/:id — Edit user details / profile / availability / streak
-app.patch('/api/users/:id', async (req: any, res: any) => {
+// PATCH /api/users/:id — Edit user details / profile / availability / streak / official ID & UPI QR
+app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
   const { id } = req.params;
-  const { password, name, email, role, hourlyRate, batchPricing, trustScore, tokenBalance, rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills, upiId } = req.body;
+  const { 
+    password, name, email, role, hourlyRate, batchPricing, trustScore, tokenBalance, 
+    rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio, 
+    avatar, skillsTaught, skillsLearned, userSkills, upiId, upiQrImage, 
+    officialIdType, officialIdNumber, officialIdDocument, officialIdStatus, isPublic 
+  } = req.body;
   if (!id) return res.status(400).json({ error: 'User ID is required' });
+
+  // Security check: Users can only modify their own profile unless they are an admin
+  if (req.userId !== id && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: You can only edit your own profile.' });
+  }
 
   // Security check: Only admins can assign or modify the 'admin' role
   if (role !== undefined) {
@@ -3218,15 +3585,17 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
     }
   }
 
-  // Security check: Users can only modify their own profile unless they are an admin
-  if (req.userId && req.userId !== id && req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: You can only edit your own profile.' });
+  // Security check: Financial balances, trust scores, and official verification statuses can only be modified by administrators
+  if ((tokenBalance !== undefined || rewardPoints !== undefined || trustScore !== undefined || officialIdStatus !== undefined) && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Financial balances, trust scores, and verification statuses can only be modified by administrators.' });
   }
 
   let hashedPassword: string | undefined = undefined;
   if (password !== undefined && password !== '') {
     hashedPassword = await bcrypt.hash(password, 10);
   }
+
+  const determinedStatus = officialIdStatus || (officialIdDocument || officialIdNumber ? 'verified' : undefined);
 
   if (process.env.DATABASE_URL && prisma) {
     try {
@@ -3239,6 +3608,7 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
       if (batchPricing !== undefined) updateData.batchPricing = batchPricing;
       if (bio !== undefined) updateData.bio = bio;
       if (avatar !== undefined) updateData.avatar = avatar;
+      if (isPublic !== undefined) updateData.isPublic = Boolean(isPublic);
       if (trustScore !== undefined) updateData.trustScore = parseFloat(trustScore);
       if (tokenBalance !== undefined) updateData.tokenBalance = parseInt(tokenBalance, 10);
       if (rewardPoints !== undefined) updateData.rewardPoints = parseInt(rewardPoints, 10);
@@ -3261,26 +3631,43 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
         if (badges !== undefined) user.badges = badges;
         if (bio !== undefined) user.bio = bio;
         if (avatar !== undefined) user.avatar = avatar;
+        if (isPublic !== undefined) user.isPublic = Boolean(isPublic);
         if (skillsTaught !== undefined) user.skillsTaught = skillsTaught;
         if (skillsLearned !== undefined) user.skillsLearned = skillsLearned;
         if (userSkills !== undefined) user.userSkills = userSkills;
-        if (upiId !== undefined) {
-          user.upiId = String(upiId).toLowerCase().trim();
-          inMemoryPayoutAccounts[id] = {
-            ...(inMemoryPayoutAccounts[id] || {}),
-            upiId: user.upiId,
-            payoutMethod: 'upi',
-            accountHolderName: user.name || 'Mentor Beneficiary',
-            isVerified: true
-          };
-        }
+        if (upiId !== undefined) user.upiId = String(upiId).toLowerCase().trim();
+        if (upiQrImage !== undefined) user.upiQrImage = upiQrImage;
+        if (officialIdType !== undefined) user.officialIdType = officialIdType;
+        if (officialIdNumber !== undefined) user.officialIdNumber = officialIdNumber;
+        if (officialIdDocument !== undefined) user.officialIdDocument = officialIdDocument;
+        if (determinedStatus !== undefined) user.officialIdStatus = determinedStatus;
+
+        inMemoryPayoutAccounts[id] = {
+          ...(inMemoryPayoutAccounts[id] || {}),
+          ...(user.upiId ? { upiId: user.upiId } : {}),
+          ...(upiQrImage !== undefined ? { upiQrImage } : {}),
+          ...(officialIdType !== undefined ? { officialIdType } : {}),
+          ...(officialIdNumber !== undefined ? { officialIdNumber } : {}),
+          ...(officialIdDocument !== undefined ? { officialIdDocument } : {}),
+          ...(determinedStatus !== undefined ? { officialIdStatus: determinedStatus } : {}),
+          accountHolderName: user.name || 'Mentor Beneficiary',
+          isVerified: true
+        };
       } else {
-        const copy = { ...dbUser, hourlyRate: hourlyRate !== undefined ? parseInt(hourlyRate, 10) : dbUser.hourlyRate, batchPricing, availability, isAvailableNow, streak, lastActiveDate, badges, bio, avatar, skillsTaught, skillsLearned, userSkills, upiId: upiId ? String(upiId).toLowerCase().trim() : undefined };
+        const copy = { 
+          ...dbUser, 
+          hourlyRate: hourlyRate !== undefined ? parseInt(hourlyRate, 10) : dbUser.hourlyRate, 
+          batchPricing, availability, isAvailableNow, streak, lastActiveDate, badges, bio, 
+          avatar, isPublic: isPublic !== undefined ? Boolean(isPublic) : (dbUser.isPublic !== undefined ? dbUser.isPublic : true),
+          skillsTaught, skillsLearned, userSkills, 
+          upiId: upiId ? String(upiId).toLowerCase().trim() : undefined,
+          upiQrImage, officialIdType, officialIdNumber, officialIdDocument, officialIdStatus: determinedStatus
+        };
         if (hashedPassword) copy.password = hashedPassword;
         inMemoryUsers.push(copy);
       }
       saveDb();
-      io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+      io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
       return res.json({ success: true, message: `User ${id} updated successfully`, user: toPublicUser(user || dbUser) });
     } catch (err: any) {
       logger.error({ err, id }, 'Database error during user patch');
@@ -3307,22 +3694,31 @@ app.patch('/api/users/:id', async (req: any, res: any) => {
   if (badges !== undefined) user.badges = badges;
   if (bio !== undefined) user.bio = bio;
   if (avatar !== undefined) user.avatar = avatar;
+  if (isPublic !== undefined) user.isPublic = Boolean(isPublic);
   if (skillsTaught !== undefined) user.skillsTaught = skillsTaught;
   if (skillsLearned !== undefined) user.skillsLearned = skillsLearned;
   if (userSkills !== undefined) user.userSkills = userSkills;
-  if (upiId !== undefined) {
-    user.upiId = String(upiId).toLowerCase().trim();
-    inMemoryPayoutAccounts[id] = {
-      ...(inMemoryPayoutAccounts[id] || {}),
-      upiId: user.upiId,
-      payoutMethod: 'upi',
-      accountHolderName: user.name || 'Mentor Beneficiary',
-      isVerified: true
-    };
-  }
+  if (upiId !== undefined) user.upiId = String(upiId).toLowerCase().trim();
+  if (upiQrImage !== undefined) user.upiQrImage = upiQrImage;
+  if (officialIdType !== undefined) user.officialIdType = officialIdType;
+  if (officialIdNumber !== undefined) user.officialIdNumber = officialIdNumber;
+  if (officialIdDocument !== undefined) user.officialIdDocument = officialIdDocument;
+  if (determinedStatus !== undefined) user.officialIdStatus = determinedStatus;
+
+  inMemoryPayoutAccounts[id] = {
+    ...(inMemoryPayoutAccounts[id] || {}),
+    ...(user.upiId ? { upiId: user.upiId } : {}),
+    ...(upiQrImage !== undefined ? { upiQrImage } : {}),
+    ...(officialIdType !== undefined ? { officialIdType } : {}),
+    ...(officialIdNumber !== undefined ? { officialIdNumber } : {}),
+    ...(officialIdDocument !== undefined ? { officialIdDocument } : {}),
+    ...(determinedStatus !== undefined ? { officialIdStatus: determinedStatus } : {}),
+    accountHolderName: user.name || 'Mentor Beneficiary',
+    isVerified: true
+  };
 
   saveDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   res.json({ success: true, message: `User ${id} updated successfully`, user: toPublicUser(user) });
 });
@@ -3464,7 +3860,7 @@ app.post('/api/rewards/redeem', requireAuth, async (req: any, res: any) => {
 
   saveDb();
   io.emit('network-rewards-updated', inMemoryRedemptions);
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   return res.json({ success: true, redemption, user: toPublicUser(user) });
 });
@@ -3563,7 +3959,7 @@ app.post('/api/discussions', async (req: any, res: any) => {
   saveDb();
   io.emit('network-discussions-updated', inMemoryDiscussions);
   if (bounty && bounty.amount > 0) {
-    io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   }
 
   res.status(201).json(newDiscussion);
@@ -3606,7 +4002,7 @@ app.post('/api/discussions/:id/comments', async (req: any, res: any) => {
   saveDb();
   io.emit('network-discussions-updated', inMemoryDiscussions);
   io.emit('network-rewards-updated', inMemoryRedemptions);
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   res.status(201).json({ discussion, comment });
 });
@@ -3708,7 +4104,7 @@ app.post('/api/discussions/:id/accept-answer', async (req: any, res: any) => {
   saveDb();
   io.emit('network-discussions-updated', inMemoryDiscussions);
   io.emit('network-rewards-updated', inMemoryRedemptions);
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   res.json({ success: true, discussion });
 });
@@ -3781,7 +4177,7 @@ app.delete('/api/users/:id', requireAdmin, async (req: any, res) => {
   saveDb();
 
   // 8. Emit socket updates across all network clients
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   io.emit('network-sessions-updated', inMemorySessions);
   io.emit('network-messages-updated', inMemoryMessages);
   io.emit('network-reviews-updated', inMemoryReviews);
@@ -3793,10 +4189,223 @@ app.delete('/api/users/:id', requireAdmin, async (req: any, res) => {
 // POST /api/admin/reload-db — Reload in-memory state from db.json (Requires Admin role)
 app.post('/api/admin/reload-db', requireAdmin, (_req: any, res: any) => {
   loadDb();
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   io.emit('network-sessions-updated', inMemorySessions);
   io.emit('network-transactions-updated', inMemoryTransactions);
   res.json({ success: true, count: inMemoryUsers.length, users: toPublicUser(inMemoryUsers) });
+});
+
+// POST /api/admin/verify-teacher-id — Admin approve or reject teacher official ID verification
+app.post('/api/admin/verify-teacher-id', requireAdmin, (req: any, res: any) => {
+  const { teacherId, status, rejectionReason } = req.body;
+  if (!teacherId || !status) {
+    return res.status(400).json({ error: 'teacherId and status are required.' });
+  }
+  const user = inMemoryUsers.find(u => u.id === teacherId);
+  if (!user) return res.status(404).json({ error: 'Teacher not found.' });
+
+  user.officialIdStatus = status; // 'verified', 'rejected', 'pending', 'unverified'
+  if (rejectionReason) user.officialIdRejectionReason = rejectionReason;
+  if (status === 'verified') user.officialIdVerifiedAt = new Date().toISOString();
+
+  if (inMemoryPayoutAccounts[teacherId]) {
+    inMemoryPayoutAccounts[teacherId].officialIdStatus = status;
+    inMemoryPayoutAccounts[teacherId].isVerified = status === 'verified';
+  }
+
+  saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+  res.json({ success: true, message: `Teacher ID verification updated to ${status}`, user: toPublicUser(user) });
+});
+
+// POST /api/sessions/:id/confirm-payment — Teacher 1-click Acknowledgment of UPI Payment
+app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res: any) => {
+  const { id } = req.params;
+  const session = inMemorySessions.find(s => s.id === id);
+  if (!session) return res.status(404).json({ error: 'Session not found.' });
+
+  const isTeacher = session.teacherId === req.userId || session.teacher?.id === req.userId;
+  if (!isTeacher && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Only the teacher of this session or an admin can confirm payment.' });
+  }
+
+  session.paymentStatus = 'paid';
+  session.status = 'confirmed';
+  session.confirmedAt = new Date().toISOString();
+
+  saveDb();
+  sendSessionsToParticipants(session);
+  notifySessionParticipants(session, 'session-payment-confirmed', {
+    sessionId: id,
+    status: 'confirmed',
+    paymentStatus: 'paid'
+  });
+
+  res.json({ success: true, message: 'Payment confirmed by mentor. Classroom access unlocked!', session });
+});
+
+// POST /api/sessions/:id/dispute — Raise a payment dispute
+app.post('/api/sessions/:id/dispute', requireAuth, async (req: any, res: any) => {
+  const { id } = req.params;
+  const { reportedBy, reason, utrNumber } = req.body;
+  const session = inMemorySessions.find(s => s.id === id);
+  if (!session) return res.status(404).json({ error: 'Session not found.' });
+
+  const isTeacher = session.teacherId === req.userId || session.teacher?.id === req.userId;
+  const isStudent = session.studentId === req.userId || session.student?.id === req.userId;
+  const isInCohort = Array.isArray(session.students) && session.students.some((st: any) => st.id === req.userId);
+  const isAdmin = req.userRole === 'admin';
+  if (!isTeacher && !isStudent && !isInCohort && !isAdmin) {
+    return res.status(403).json({ error: 'Forbidden: You are not authorized to raise a dispute for this session.' });
+  }
+
+  const dispute = {
+    id: `disp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+    sessionId: id,
+    sessionTitle: session.title || 'Peer Mentoring Session',
+    reportedBy: reportedBy || 'unknown',
+    teacherId: session.teacherId || session.teacher?.id,
+    teacherName: session.teacher?.name || 'Mentor',
+    studentId: session.studentId || session.student?.id,
+    studentName: session.student?.name || 'Student',
+    amount: session.price || session.hourlyRate || 499,
+    utrNumber: utrNumber || session.utrNumber || 'N/A',
+    reason: reason || 'Payment not received / UTR mismatch',
+    status: 'open',
+    createdAt: new Date().toISOString()
+  };
+
+  inMemoryDisputes.unshift(dispute);
+  session.paymentStatus = 'disputed';
+  saveDb();
+
+  io.emit('network-disputes-updated', inMemoryDisputes);
+  sendSessionsToParticipants(session);
+
+  res.json({ success: true, message: 'Dispute submitted to Admin for verification.', dispute });
+});
+
+// GET /api/admin/disputes — Retrieve all payment disputes for Admin Portal
+app.get('/api/admin/disputes', requireAdmin, (_req: any, res: any) => {
+  res.json(inMemoryDisputes);
+});
+
+// POST /api/admin/disputes/:id/resolve — Admin resolves a payment dispute
+app.post('/api/admin/disputes/:id/resolve', requireAdmin, (req: any, res: any) => {
+  const { id } = req.params;
+  const { resolution, note } = req.body; // resolution: 'verified' | 'rejected'
+  const dispute = inMemoryDisputes.find(d => d.id === id);
+  if (!dispute) return res.status(404).json({ error: 'Dispute not found.' });
+
+  dispute.status = resolution === 'verified' ? 'resolved_verified' : 'resolved_rejected';
+  dispute.resolutionNote = note || '';
+  dispute.resolvedAt = new Date().toISOString();
+
+  const session = inMemorySessions.find(s => s.id === dispute.sessionId);
+  if (session) {
+    if (resolution === 'verified') {
+      session.paymentStatus = 'paid';
+      session.status = 'confirmed';
+    } else {
+      session.paymentStatus = 'failed';
+      session.status = 'declined';
+    }
+    sendSessionsToParticipants(session);
+  }
+
+  saveDb();
+  io.emit('network-disputes-updated', inMemoryDisputes);
+  res.json({ success: true, message: `Dispute ${id} resolved as ${resolution}.`, dispute });
+});
+
+// POST /api/admin/seed-demo — 1-Minute Live Demo Seed for 5th-Sem Presentation
+app.post('/api/admin/seed-demo', (req: any, res: any, next: any) => {
+  if (process.env.NODE_ENV !== 'production') return next();
+  return requireAdmin(req, res, next);
+}, async (_req: any, res: any) => {
+  // Ensure student Aarav exists
+  let student = inMemoryUsers.find(u => u.name === 'Aarav Patel' || u.id === 'user-demo-student');
+  if (!student) {
+    student = {
+      id: 'user-demo-student',
+      name: 'Aarav Patel',
+      email: 'aarav.patel@mindroot.com',
+      password: bcrypt.hashSync('student123', 10),
+      role: 'student',
+      trustScore: 4.95,
+      tokenBalance: 250,
+      rewardPoints: 120,
+      avatar: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=256&q=80',
+      emailVerified: true
+    };
+    inMemoryUsers.push(student);
+  }
+
+  // Ensure mentor Dr. Priya Sharma exists
+  let teacher = inMemoryUsers.find(u => u.name === 'Dr. Priya Sharma' || u.id === 'user-demo-priya-mentor');
+  if (!teacher) {
+    teacher = {
+      id: 'user-demo-priya-mentor',
+      name: 'Dr. Priya Sharma',
+      email: 'priya.sharma@mindroot.com',
+      password: bcrypt.hashSync('mentor123', 10),
+      role: 'teacher',
+      trustScore: 4.98,
+      tokenBalance: 480,
+      hourlyRate: 499,
+      officialIdType: 'faculty_id',
+      officialIdNumber: 'FAC-2026-ENG-849',
+      officialIdStatus: 'verified',
+      upiId: 'priya.sharma@okaxis',
+      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=256&q=80',
+      skillsTaught: ['Data Structures & Algorithms', 'System Design', 'React & Node.js'],
+      emailVerified: true
+    };
+    inMemoryUsers.push(teacher);
+  } else {
+    teacher.officialIdStatus = 'verified';
+    teacher.officialIdType = 'faculty_id';
+    teacher.officialIdNumber = 'FAC-2026-ENG-849';
+    teacher.upiId = teacher.upiId || 'priya.sharma@okaxis';
+  }
+
+  // Seed instant live session scheduled for right now
+  const now = new Date();
+  const demoSessionId = 'demo-sess-live-now';
+  const demoSession = {
+    id: demoSessionId,
+    title: '5th-Sem Capstone: System Design & Microservices Live Lab',
+    subject: 'System Design',
+    scheduledAt: now.toISOString(),
+    durationMin: 60,
+    price: 499,
+    status: 'confirmed',
+    paymentStatus: 'paid',
+    utrNumber: 'UPI-DEMO-987654321',
+    teacherId: teacher.id,
+    teacher: toPublicUser(teacher),
+    studentId: student.id,
+    student: toPublicUser(student),
+    meetingLink: `/live/${demoSessionId}`,
+    studyNotes: `# 5th-Sem Capstone Mentorship Notes\n\n## Topic: Scalable Microservices Architecture\n- **Client**: React 19 + Vite Frontend\n- **Signaling**: WebRTC via Socket.io mesh\n- **P2P Settlement**: Instant UPI QR Handshake (Zero Gateway Fee)\n\n### Action Items for Presentation:\n1. Show live video & audio feed\n2. Collaborate in this shared study scratchpad\n3. Export session to Google Calendar\n4. Download verified mentor certificate`,
+    createdAt: now.toISOString()
+  };
+
+  const existingIdx = inMemorySessions.findIndex(s => s.id === demoSessionId);
+  if (existingIdx >= 0) inMemorySessions[existingIdx] = demoSession;
+  else inMemorySessions.unshift(demoSession);
+
+  saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+  sendSessionsToParticipants(demoSession);
+
+  res.json({
+    success: true,
+    message: '1-Minute Live Demo session successfully seeded!',
+    student: toPublicUser(student),
+    teacher: toPublicUser(teacher),
+    session: demoSession
+  });
 });
 
 // GET /api/messages — all messages involving a user
@@ -3865,16 +4474,32 @@ app.get('/api/reviews', async (req, res) => {
         orderBy: { createdAt: 'desc' }
       });
       if (reviews && reviews.length > 0) {
-        const safeReviews = reviews.map((r: any) => ({
-          ...r,
-          author: toPublicUser(r.author)
-        }));
+        const safeReviews = reviews.map((r: any) => {
+          const isAuthorPublic = r.author?.isPublic !== false;
+          return {
+            ...r,
+            author: isAuthorPublic
+              ? toPublicUser(r.author)
+              : { id: r.author?.id, name: r.author?.name || 'Verified Peer', avatar: r.author?.avatar, isPublic: false }
+          };
+        });
         return res.json(safeReviews);
       }
     }
   } catch {}
 
-  const userRevs = inMemoryReviews.filter(r => r.targetId === targetId);
+  const userRevs = inMemoryReviews.filter(r => r.targetId === targetId).map((r: any) => {
+    if (r.author) {
+      const isAuthorPublic = r.author?.isPublic !== false;
+      return {
+        ...r,
+        author: isAuthorPublic
+          ? toPublicUser(r.author)
+          : { id: r.author?.id, name: r.author?.name || 'Verified Peer', avatar: r.author?.avatar, isPublic: false }
+      };
+    }
+    return r;
+  });
   res.json(userRevs);
 });
 
@@ -3905,7 +4530,7 @@ app.post('/api/reviews', async (req, res) => {
   }
 
   io.emit('network-reviews-updated', inMemoryReviews);
-  io.emit('network-peers-updated', toPublicUser(inMemoryUsers));
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   try {
     if (process.env.DATABASE_URL && prisma) {
@@ -4072,7 +4697,8 @@ app.get('/api/community-champions', async (req: any, res: any) => {
       const users = await prisma.user.findMany({
         where: {
           role: { not: 'admin' },
-          deletedAt: null
+          deletedAt: null,
+          isPublic: true
         },
         include: {
           userSkills: { include: { skill: true } },
@@ -4124,7 +4750,7 @@ app.get('/api/community-champions', async (req: any, res: any) => {
   }
 
   // Fallback to in-memory store
-  const nonAdmins = inMemoryUsers.filter((u: any) => u.role !== 'admin');
+  const nonAdmins = inMemoryUsers.filter((u: any) => u.role !== 'admin' && u.isPublic !== false);
   const rankedMem = nonAdmins.map((u: any) => {
     const totalSessions = inMemorySessions.filter((s: any) => 
       (s.teacherId === u.id || s.studentId === u.id) && 
