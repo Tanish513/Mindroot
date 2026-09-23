@@ -21,7 +21,7 @@ const NAVIGATION_PAGES = [
   { label: 'Schedule & Bookings', icon: 'calendar_month', path: '/schedule', desc: 'View calendar and upcoming classes' },
   { label: 'Match Finder', icon: 'handshake', path: '/match-finder', desc: 'AI skill barter and exchange matches' },
   { label: 'Messages & Chat', icon: 'chat', path: '/messages', desc: 'Direct chat with peers and mentors' },
-  { label: 'Payments & Wallet', icon: 'payments', path: '/wallet', desc: 'Razorpay payment receipts and earnings' },
+  { label: 'Payments & Wallet', icon: 'payments', path: '/wallet', desc: 'Direct UPI payment receipts and earnings' },
   { label: 'Live Studio Room', icon: 'videocam', path: '/live/session-trio-batch-101', desc: 'Join active batch classroom' },
 ];
 

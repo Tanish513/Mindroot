@@ -1252,11 +1252,23 @@ io.on('connection', (socket) => {
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   });
 
-  socket.on('send-message-sync', (msg: any) => {
+  socket.on('send-message-sync', async (msg: any) => {
     if (msg && msg.id && !inMemoryMessages.some(m => m.id === msg.id)) {
       inMemoryMessages.push(msg);
+      saveDb();
     }
     io.emit('network-messages-updated', inMemoryMessages);
+    if (process.env.DATABASE_URL && prisma && msg?.senderId && msg?.receiverId && msg?.text) {
+      try {
+        await prisma.message.create({
+          data: {
+            senderId: msg.senderId,
+            receiverId: msg.receiverId,
+            text: msg.text
+          }
+        });
+      } catch {}
+    }
   });
 
   socket.on('post-discussion-sync', (disc: any) => {
@@ -4413,9 +4425,10 @@ app.get('/api/messages', async (req, res) => {
   const { userId } = req.query;
   if (!userId) return res.status(400).json({ error: 'userId is required' });
 
+  let dbMessages: any[] = [];
   try {
-    if (process.env.DATABASE_URL) {
-      const messages = await prisma.message.findMany({
+    if (process.env.DATABASE_URL && prisma) {
+      dbMessages = await prisma.message.findMany({
         where: {
           OR: [
             { senderId: userId as string },
@@ -4424,14 +4437,25 @@ app.get('/api/messages', async (req, res) => {
         },
         orderBy: { createdAt: 'asc' }
       });
-      return res.json(messages);
     }
-  } catch {}
+  } catch (err) {
+    logger.warn({ err }, 'Prisma error in GET /api/messages, relying on in-memory & db.json');
+  }
 
   const userMsgs = inMemoryMessages.filter(
     m => m.senderId === userId || m.receiverId === userId
   );
-  res.json(userMsgs);
+
+  // Merge in-memory and database messages without duplicates
+  const msgMap = new Map<string, any>();
+  userMsgs.forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+  dbMessages.forEach(m => { if (m && m.id) msgMap.set(m.id, m); });
+
+  const merged = Array.from(msgMap.values()).sort(
+    (a, b) => new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()
+  );
+
+  res.json(merged);
 });
 
 // POST /api/messages — save a new message
@@ -4448,16 +4472,23 @@ app.post('/api/messages', async (req, res) => {
   if (!inMemoryMessages.some(m => m.id === newMsg.id)) {
     inMemoryMessages.push(newMsg);
   }
+  saveDb();
   io.emit('network-messages-updated', inMemoryMessages);
 
   try {
-    if (process.env.DATABASE_URL) {
+    if (process.env.DATABASE_URL && prisma) {
       const msg = await prisma.message.create({
         data: { senderId, receiverId, text }
       });
+      if (msg && msg.id) {
+        newMsg.id = msg.id;
+        saveDb();
+      }
       return res.status(201).json(msg);
     }
-  } catch {}
+  } catch (err) {
+    logger.warn({ err }, 'Prisma error in POST /api/messages, persisted in-memory & db.json');
+  }
 
   res.status(201).json(newMsg);
 });
@@ -4576,9 +4607,9 @@ app.post('/api/ai/chat', async (req, res) => {
   const cleanTokenBalance = parseInt(tokenBalance, 10) || 4;
   const cleanMessage = String(message || '').substring(0, 1000);
 
-  const systemInstructions = `You are the Mindroot AI Assistant. You help users navigate the peer tutoring and skill mentoring platform with integrated Razorpay payments.
+  const systemInstructions = `You are the Mindroot AI Assistant. You help users navigate the peer tutoring and skill mentoring platform with integrated direct peer-to-peer UPI payments (UPI QR scan, mentor VPA / UPI ID, UTR verification, 0% commission, and instant Demo payment mode).
 The user is ${cleanUser}, currently on the ${cleanContext} page.
-Provide interactive, helpful, encouraging responses. Explain how mentors earn INR (₹) and how students can book and pay mentors directly via Razorpay (UPI/Cards). Suggest concrete next actions on the platform (e.g. visiting /marketplace, /match-finder, /schedule, /wallet, or /feedback). Include clear formatting with bullet points when explaining multi-step actions.`;
+Provide interactive, helpful, encouraging responses. Explain how mentors earn INR (₹) directly and how students can book and pay mentors directly via UPI (GPay, PhonePe, Paytm, BHIM, Any UPI app). Suggest concrete next actions on the platform (e.g. visiting /marketplace, /match-finder, /schedule, /wallet, or /feedback). Include clear formatting with bullet points when explaining multi-step actions.`;
 
   if (apiKey && cleanMessage.trim()) {
     try {
@@ -4591,7 +4622,7 @@ Provide interactive, helpful, encouraging responses. Explain how mentors earn IN
       });
       contentsPayload.push({
         role: 'model',
-        parts: [{ text: `Understood! I am ready to assist ${cleanUser} on Mindroot with mentoring and Razorpay payments.` }]
+        parts: [{ text: `Understood! I am ready to assist ${cleanUser} on Mindroot with peer mentoring and direct UPI payments.` }]
       });
 
       // Append conversation history if provided
@@ -4635,11 +4666,11 @@ Provide interactive, helpful, encouraging responses. Explain how mentors earn IN
   const msg = cleanMessage.toLowerCase();
 
   if (msg.includes('hello') || msg.includes('hi') || msg.includes('hey') || msg.includes('yo') || msg.includes('hola')) {
-    reply = `Hello ${cleanUser}! I am your Mindroot AI Assistant. 🌟\n\nI can help you:\n• Find expert mentors & teachers\n• Pay mentors via Razorpay (UPI/Cards)\n• Schedule live interactive classroom sessions\n\nWhat are you looking to learn or teach today?`;
-  } else if (msg.includes('token') || msg.includes('balance') || msg.includes('wallet') || msg.includes('pay') || msg.includes('earn') || msg.includes('spend') || msg.includes('price')) {
-    reply = `💳 **Direct INR Payments via Razorpay**:\n\n• **Pay per Session**: Students pay mentors directly via Razorpay (UPI, GPay, Cards, NetBanking).\n• **Earn Revenue**: Mentors receive their hourly rate (₹) upon session completion.\n• **Receipts**: Track all payment transactions on your [Wallet](/wallet) page!`;
+    reply = `Hello ${cleanUser}! I am your Mindroot AI Assistant. 🌟\n\nI can help you:\n• Find expert mentors & teachers\n• Pay mentors directly via UPI QR / UPI ID with 0% platform fee\n• Schedule live interactive classroom sessions\n\nWhat are you looking to learn or teach today?`;
+  } else if (msg.includes('token') || msg.includes('balance') || msg.includes('wallet') || msg.includes('pay') || msg.includes('earn') || msg.includes('spend') || msg.includes('price') || msg.includes('upi')) {
+    reply = `💳 **Direct Peer-to-Peer UPI Payments**:\n\n• **Direct UPI Scan & Pay**: Students pay mentors directly via any UPI app (GPay, PhonePe, Paytm, BHIM) by scanning the mentor's dynamic QR code or sending to their UPI ID.\n• **Zero Platform Commission**: 100% of the payment goes directly to the mentor!\n• **Instant Demo Mode**: Test booking immediately with 1-click Demo payment mode.\n• **Receipts & Ledgers**: Track all payment transactions on your [Wallet](/wallet) page!`;
   } else if (msg.includes('book') || msg.includes('schedule') || msg.includes('propose') || msg.includes('calendar') || msg.includes('session')) {
-    reply = `📅 **How to Book & Pay Mentors**:\n\n1. Browse mentors on the [Marketplace](/marketplace).\n2. Click **Book Session** on any mentor's card.\n3. Pick your preferred date & time.\n4. Click **Pay with Razorpay** to confirm the session instantly!\n5. View your confirmed sessions on the [Schedule](/schedule) page.`;
+    reply = `📅 **How to Book & Pay Mentors**:\n\n1. Browse mentors on the [Marketplace](/marketplace).\n2. Click **Book Session** on any mentor's card.\n3. Pick your preferred date & time slot.\n4. Scan the mentor's dynamic **UPI QR Code** (or use Instant Demo Payment) to confirm the session instantly!\n5. View your confirmed sessions on the [Schedule](/schedule) page.`;
   } else if (msg.includes('room') || msg.includes('live') || msg.includes('video') || msg.includes('whiteboard') || msg.includes('code') || msg.includes('webrtc')) {
     reply = `🎥 **Mindroot Virtual Classroom**:\n\nOur live session room features:\n• HD Audio/Video call with WebRTC P2P connection\n• Shared Real-time Whiteboard Canvas\n• Interactive Multi-language Code Pad\n• Synchronized Lesson Notes & Hand Raising\n\nYou can launch a room anytime from your [Schedule](/schedule) page!`;
   } else if (msg.includes('match') || msg.includes('partner') || msg.includes('find') || msg.includes('peer') || msg.includes('recommend')) {
@@ -4651,7 +4682,7 @@ Provide interactive, helpful, encouraging responses. Explain how mentors earn IN
   } else if (msg.includes('python') || msg.includes('react') || msg.includes('figma') || msg.includes('ui') || msg.includes('design') || msg.includes('java') || msg.includes('sql')) {
     reply = `🚀 We have active community mentors teaching Python, UI Design, React, Spring Boot, Figma, and SQL.\n\nHead over to the [Marketplace](/marketplace) to connect and book a live mentoring session!`;
   } else if (cleanContext === '/wallet') {
-    reply = `You're currently viewing your **Payments & Earnings Wallet**. All session checkout receipts and mentoring payouts processed via Razorpay are logged here.`;
+    reply = `You're currently viewing your **Payments & Earnings Wallet**. All direct UPI checkout receipts and mentoring payouts are logged here.`;
   } else if (cleanContext === '/marketplace') {
     reply = `You're browsing the **Skill Marketplace**! Filter mentors by category (Software & AI, Design, Languages) and click **Book Session** to pay and schedule.`;
   } else if (cleanContext === '/feedback') {

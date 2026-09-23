@@ -1,9 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
 import { api, onPeersUpdated, onMessagesUpdated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { AISkillMatchBanner } from '../components/chat/AISkillMatchBanner';
+import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
 
 export function Messages() {
   const location = useLocation();
@@ -17,6 +18,9 @@ export function Messages() {
   const [activePeerId, setActivePeerId] = useState<string>(targetPeerId);
   const [inputText, setInputText] = useState('');
   const [loading, setLoading] = useState(true);
+  const [upiSession, setUpiSession] = useState<UpiPaymentSession | null>(null);
+  const [isUpiModalOpen, setIsUpiModalOpen] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (targetPeerId) {
@@ -28,7 +32,9 @@ export function Messages() {
     const activeUser = currentUser || { id: 'user-guest', name: 'Guest' };
     Promise.all([api.getPeers(), api.getMessages(activeUser.id)])
       .then(([peersData, messagesData]) => {
-        const validPeers = Array.isArray(peersData) ? peersData : [];
+        const rawPeers = Array.isArray(peersData) ? peersData : [];
+        // Filter out logged-in user so they do not see themselves in chat contacts
+        const validPeers = rawPeers.filter(p => p && p.id && (!activeUser.id || p.id !== activeUser.id));
         const validMsgs = Array.isArray(messagesData) ? messagesData : [];
         setPeers(validPeers);
         setMessages(prev => {
@@ -36,7 +42,11 @@ export function Messages() {
           const pendingOpt = prev.filter(m => m.status === 'sending' || m.status === 'failed');
           const merged = [...validMsgs];
           pendingOpt.forEach(opt => {
-            if (!merged.some(m => m.id === opt.id)) {
+            const alreadyDelivered = merged.some(m => 
+              m.id === opt.id || 
+              (m.senderId === opt.senderId && m.receiverId === opt.receiverId && m.text === opt.text)
+            );
+            if (!alreadyDelivered) {
               merged.push(opt);
             }
           });
@@ -67,7 +77,11 @@ export function Messages() {
               const pendingOpt = prev.filter(m => m.status === 'sending' || m.status === 'failed');
               const merged = [...data];
               pendingOpt.forEach(opt => {
-                if (!merged.some(m => m.id === opt.id)) {
+                const alreadyDelivered = merged.some(m => 
+                  m.id === opt.id || 
+                  (m.senderId === opt.senderId && m.receiverId === opt.receiverId && m.text === opt.text)
+                );
+                if (!alreadyDelivered) {
                   merged.push(opt);
                 }
               });
@@ -87,7 +101,11 @@ export function Messages() {
               const pendingOpt = prev.filter(m => m.status === 'sending' || m.status === 'failed');
               const merged = [...data];
               pendingOpt.forEach(opt => {
-                if (!merged.some(m => m.id === opt.id)) {
+                const alreadyDelivered = merged.some(m => 
+                  m.id === opt.id || 
+                  (m.senderId === opt.senderId && m.receiverId === opt.receiverId && m.text === opt.text)
+                );
+                if (!alreadyDelivered) {
                   merged.push(opt);
                 }
               });
@@ -114,6 +132,11 @@ export function Messages() {
     const isRecvFromActive = m.senderId === activePeerId && m.receiverId === activeUser.id;
     return isSentToActive || isRecvFromActive;
   });
+
+  // Auto-scroll to bottom of conversation
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentConversation.length, activePeerId]);
 
   const handleSend = (msgTextOverride?: string, failedIdToRemove?: string) => {
     const activeUser = currentUser || { id: 'user-guest', name: 'Guest' };
@@ -174,6 +197,7 @@ export function Messages() {
   };
 
   const filteredPeers = peers.filter(peer => {
+    if (currentUser?.id && peer.id === currentUser.id) return false;
     if (searchQuery.trim() === '') return true;
     const query = searchQuery.toLowerCase();
     const nameMatch = peer.name?.toLowerCase().includes(query);
@@ -248,61 +272,17 @@ export function Messages() {
                   </div>
 
                   <button
-                    onClick={async () => {
-                      try {
-                        const amount = activePeer.hourlyRate || 499;
-                        const orderData = await api.createSessionPaymentOrder({
-                          sessionId: `msg-pay-${Date.now()}`,
-                          mentorId: activePeer.id,
-                          amount
-                        });
-
-                        const options = {
-                          key: import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TUrtuundUxD7Jh',
-                          amount: orderData.amount,
-                          currency: orderData.currency || 'INR',
-                          name: 'Mindroot Skill Exchange',
-                          description: `Payment to ${activePeer.name}`,
-                          image: 'https://cdn-icons-png.flaticon.com/512/3135/3135715.png',
-                          order_id: orderData.orderId,
-                          handler: async (response: any) => {
-                            await api.verifySessionPayment({
-                              razorpay_order_id: response.razorpay_order_id,
-                              razorpay_payment_id: response.razorpay_payment_id,
-                              razorpay_signature: response.razorpay_signature,
-                              amount,
-                              sessionData: {
-                                title: `Mentoring Payment to ${activePeer.name}`,
-                                teacherId: activePeer.id,
-                                teacherName: activePeer.name,
-                                studentId: currentUser?.id || 'alex-id',
-                                studentName: currentUser?.name || 'Alex Chen'
-                              }
-                            });
-
-                            // Post payment confirmation in chat
-                            const payMsg = {
-                              senderId: currentUser?.id || 'alex-id',
-                              receiverId: activePeer.id,
-                              text: `💳 Sent payment of ₹${amount} via Razorpay (Ref: ${response.razorpay_payment_id})`
-                            };
-                            api.postMessage(payMsg).then(m => {
-                              if (m) setMessages(prev => [...prev, m]);
-                            });
-                          },
-                          prefill: {
-                            name: currentUser?.name || 'Alex Chen',
-                            email: currentUser?.email || 'alex@mindroot.edu'
-                          },
-                          theme: { color: '#2563eb' }
-                        };
-
-                        const rzp = new (window as any).Razorpay(options);
-                        rzp.open();
-                      } catch (err) {
-                        console.error('Chat payment error:', err);
-                        alert('Could not start payment. Please try again.');
-                      }
+                    onClick={() => {
+                      setUpiSession({
+                        id: `msg-pay-${Date.now()}`,
+                        title: `Mentoring Session with ${activePeer.name}`,
+                        amount: activePeer.hourlyRate || 499,
+                        teacherId: activePeer.id,
+                        teacherName: activePeer.name,
+                        teacherAvatar: activePeer.avatar,
+                        teacherUpiId: activePeer.upiId
+                      });
+                      setIsUpiModalOpen(true);
                     }}
                     className="px-3.5 py-1.5 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-black flex items-center gap-1.5 shadow-elevation-1 transition-all active:scale-95"
                   >
@@ -372,6 +352,7 @@ export function Messages() {
                       );
                     })
                   )}
+                  <div ref={messagesEndRef} />
                 </div>
 
                 <div className="p-4 border-t border-outline-variant bg-surface shrink-0 flex gap-3 items-center">
@@ -396,6 +377,18 @@ export function Messages() {
           </div>
         </div>
       )}
+
+      {/* Direct UPI Payment Modal in Chat */}
+      <UpiPaymentModal
+        isOpen={isUpiModalOpen}
+        onClose={() => setIsUpiModalOpen(false)}
+        session={upiSession}
+        onSuccess={(details) => {
+          const payMsgText = `💳 Sent UPI payment of ₹${details.amount} (Ref: ${details.utr}${details.isDemo ? ' [Demo Mode]' : ''})`;
+          handleSend(payMsgText);
+          setIsUpiModalOpen(false);
+        }}
+      />
     </div>
   );
 }

@@ -49,21 +49,32 @@ export function Dashboard() {
 
   // Daily Streak Calculation & Sync
   const todayStr = new Date().toISOString().slice(0, 10);
-  const currentStreak = typeof currentUser?.streak === 'number' ? currentUser.streak : 4;
+  const currentStreak = typeof currentUser?.streak === 'number' && currentUser.streak > 0 ? currentUser.streak : 1;
   const lastActive = currentUser?.lastActiveDate || '';
 
   useEffect(() => {
     if (currentUser?.id && lastActive !== todayStr) {
       const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      const nextStreak = lastActive === yesterday ? currentStreak + 1 : (currentStreak || 1);
+      // Increment if active yesterday, otherwise reset streak to 1
+      const nextStreak = lastActive === yesterday ? (Number(currentUser?.streak) || 0) + 1 : 1;
+      const currentPoints = Number(currentUser?.rewardPoints) || 0;
+      const isSevenDayBonus = nextStreak > 0 && nextStreak % 7 === 0;
+      const nextPoints = isSevenDayBonus ? currentPoints + 20 : currentPoints;
+
       api.updateUser(currentUser.id, {
         streak: nextStreak,
-        lastActiveDate: todayStr
+        lastActiveDate: todayStr,
+        ...(isSevenDayBonus ? { rewardPoints: nextPoints } : {})
       }).then(res => {
         if (res && res.user) {
           setCurrentUser(res.user);
         } else {
-          setCurrentUser({ ...currentUser, streak: nextStreak, lastActiveDate: todayStr });
+          setCurrentUser({ 
+            ...currentUser, 
+            streak: nextStreak, 
+            lastActiveDate: todayStr,
+            ...(isSevenDayBonus ? { rewardPoints: nextPoints } : {})
+          });
         }
       }).catch(() => {});
     }
@@ -545,22 +556,42 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Days of Week Tracker */}
+        {/* 7-Day Streak Challenge Tracker */}
         <div className="flex items-center gap-1.5 self-stretch sm:self-auto justify-between sm:justify-start">
-          {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((day, idx) => {
-            const isCompleted = idx < Math.min(7, currentStreak);
+          {[1, 2, 3, 4, 5, 6, 7].map((dayNum, idx) => {
+            const cycleProgress = currentStreak <= 0 ? 0 : (((currentStreak - 1) % 7) + 1);
+            const isCompleted = idx < cycleProgress - 1 || (idx === cycleProgress - 1 && cycleProgress === 7);
+            const isToday = idx === cycleProgress - 1 && cycleProgress < 7;
+            const isGift = dayNum === 7;
+
             return (
-              <div key={idx} className="flex flex-col items-center gap-1">
+              <div key={idx} className="flex flex-col items-center gap-1" title={isGift ? "Day 7: +20 Bonus Points!" : `Day ${dayNum}`}>
                 <div
                   className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${
                     isCompleted
-                      ? 'bg-primary text-on-primary border-primary'
-                      : 'bg-surface text-on-surface-variant border-outline-variant'
+                      ? 'bg-primary text-on-primary border-primary shadow-sm'
+                      : isToday
+                        ? 'bg-primary text-on-primary border-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-surface'
+                        : isGift
+                          ? 'bg-learning-amber/15 text-learning-amber border-learning-amber/30'
+                          : 'bg-surface text-on-surface-variant border-outline-variant'
                   }`}
                 >
-                  {isCompleted ? '✓' : day}
+                  {isCompleted ? (
+                    '✓'
+                  ) : isToday ? (
+                    <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                      local_fire_department
+                    </span>
+                  ) : isGift ? (
+                    '🎁'
+                  ) : (
+                    dayNum
+                  )}
                 </div>
-                <span className="text-[9px] font-medium text-on-surface-variant">Day {idx + 1}</span>
+                <span className={`text-[9px] font-medium ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant'}`}>
+                  {isGift ? 'Bonus' : `Day ${dayNum}`}
+                </span>
               </div>
             );
           })}

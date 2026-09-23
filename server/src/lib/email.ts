@@ -225,13 +225,13 @@ export async function sendPaymentReceiptEmail({
         <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
           <h2 style="color: #065f46; margin: 0 0 6px 0; font-size: 18px;">Payment Confirmed! ✅</h2>
           <p style="color: #047857; font-size: 14px; margin: 0;">
-            Hi ${name}, your Razorpay payment of <strong>₹${amount}</strong> for <strong>"${title}"</strong> was successfully completed.
+            Hi ${name}, your direct UPI payment of <strong>₹${amount}</strong> for <strong>"${title}"</strong> was successfully completed.
           </p>
         </div>
         <div style="background-color: #f8fafc; padding: 16px; border-radius: 10px; margin: 18px 0; font-size: 13px; color: #475569; border: 1px solid #e2e8f0;">
           <p style="margin: 6px 0;"><strong>Session ID:</strong> ${sessionId}</p>
           <p style="margin: 6px 0;"><strong>Amount Paid:</strong> ₹${amount} INR</p>
-          <p style="margin: 6px 0;"><strong>Gateway:</strong> Razorpay Instant Settlement</p>
+          <p style="margin: 6px 0;"><strong>Gateway:</strong> Direct Peer-to-Peer UPI Transfer</p>
         </div>
         <div style="text-align: center; margin-top: 24px;">
           <a href="${getFrontendUrl()}/schedule" style="background-color: #0d9488; color: #ffffff; padding: 11px 22px; font-weight: 700; font-size: 14px; border-radius: 8px; text-decoration: none; display: inline-block;">
@@ -477,7 +477,7 @@ export async function sendTestEmail({ to }: { to: string }) {
         <div style="background-color: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 12px; padding: 16px; margin-bottom: 20px;">
           <h3 style="color: #065f46; margin: 0 0 6px 0;">🎉 Mailing Gateway Connected Successfully!</h3>
           <p style="color: #047857; font-size: 13px; margin: 0;">
-            Your Mindroot server can reliably deliver verification emails, schedule updates, 15-minute lecture reminders, and Razorpay receipts!
+            Your Mindroot server can reliably deliver verification emails, schedule updates, 15-minute lecture reminders, and UPI receipts!
           </p>
         </div>
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; font-size: 12px; color: #475569; line-height: 1.8;">

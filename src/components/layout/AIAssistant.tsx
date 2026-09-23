@@ -9,7 +9,7 @@ const PAGE_PROMPTS: Record<string, string> = {
   '/marketplace': "Hi! Looking for a specific skill or peer? I can help you find the best match.",
   '/schedule': "Need help managing your schedule? I can assist with booking or rescheduling sessions.",
   '/teacher': "Hello, teacher! I can help you manage your curriculum, hourly fee, and session requests.",
-  '/wallet': "Hi! I can help you with your Razorpay payment receipts, tutoring earnings, and transactions.",
+  '/wallet': "Hi! I can help you with your UPI payment receipts, tutoring earnings, and transactions.",
   '/feedback': "I can help you write great feedback or understand your trust score.",
   '/messages': "Need help composing a message or starting a new conversation?",
   '/admin': "Admin panel AI assistant ready. How can I help with platform management?",
@@ -17,7 +17,7 @@ const PAGE_PROMPTS: Record<string, string> = {
 };
 
 const QUICK_CHIPS = [
-  "💳 How does Razorpay payment work?",
+  "💳 How does UPI payment work?",
   "⚡ Find a peer match",
   "📅 How to book & pay a session?",
   "🎥 Virtual Room features",

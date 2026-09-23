@@ -262,7 +262,7 @@ export function AdminPortal() {
 
         <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-2 text-on-surface">
           <div className="flex items-center justify-between text-on-surface-variant">
-            <span className="text-xs font-semibold uppercase tracking-wider">Razorpay Volume</span>
+            <span className="text-xs font-semibold uppercase tracking-wider">Platform UPI Volume</span>
             <span className="material-symbols-outlined text-primary">payments</span>
           </div>
           <p className="text-3xl font-bold text-on-surface">₹{(totalCompletedSessions * 499 + 14990).toLocaleString('en-IN')}</p>

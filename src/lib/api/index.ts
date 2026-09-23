@@ -262,6 +262,10 @@ globalBc.onmessage = (e) => {
     safeSetStorage('mindroot_known_peers', e.data.peers);
     notifyPeerListeners(e.data.peers);
   }
+  if (e.data?.type === 'sync-messages' && Array.isArray(e.data.messages)) {
+    safeSetStorage('mindroot_known_messages', e.data.messages);
+    notifyMessageListeners(e.data.messages);
+  }
   if (e.data?.type === 'sync-rewards') {
     notifyRewardListeners(e.data.rewards);
   }
@@ -1639,12 +1643,12 @@ export const api = {
     } catch {}
     return {
       success: true,
-      message: `₹${data.amount} successfully withdrawn to your bank account via RazorpayX!`,
+      message: `₹${data.amount} successfully transferred to your registered UPI ID!`,
       payout: {
         id: 'tx-payout-' + Date.now(),
         amount: data.amount,
         type: 'SPENT',
-        paymentId: `pout_${Date.now()}_rzpx`,
+        paymentId: `pout_${Date.now()}_upi`,
         status: 'settled',
         createdAt: new Date().toISOString()
       }
