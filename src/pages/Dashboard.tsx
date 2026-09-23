@@ -47,11 +47,23 @@ export function Dashboard() {
     };
   }, [currentUser, setCurrentUser]);
 
-  // Daily Streak & Weekly Calendar Calculation
-  const today = new Date();
-  const todayStr = today.toISOString().slice(0, 10);
+  // Live Daily Streak & Weekly Calendar Calculation
+  const [currentDate, setCurrentDate] = useState(() => new Date());
+
+  // Live midnight rollover monitor: automatically shifts the active day without page reload
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = new Date();
+      if (now.getDate() !== currentDate.getDate()) {
+        setCurrentDate(now);
+      }
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [currentDate]);
+
+  const todayStr = currentDate.toISOString().slice(0, 10);
   // Monday = 0, Tuesday = 1, Wednesday = 2, Thursday = 3, Friday = 4, Saturday = 5, Sunday = 6
-  const currentDayOfWeek = (today.getDay() + 6) % 7;
+  const currentDayOfWeek = (currentDate.getDay() + 6) % 7;
   const calendarDayNumber = currentDayOfWeek + 1; // 1 to 7 (e.g. Wednesday = 3)
 
   // Heal legacy hardcoded 4 streak if on an earlier day of the week (e.g. Wednesday = 3)
