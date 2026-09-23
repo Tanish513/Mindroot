@@ -47,38 +47,37 @@ export function Dashboard() {
     };
   }, [currentUser, setCurrentUser]);
 
-  // Daily Streak Calculation & Sync
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const currentStreak = typeof currentUser?.streak === 'number' && currentUser.streak > 0 ? currentUser.streak : 1;
+  // Daily Streak & Weekly Calendar Calculation
+  const today = new Date();
+  const todayStr = today.toISOString().slice(0, 10);
+  // Monday = 0, Tuesday = 1, Wednesday = 2, Thursday = 3, Friday = 4, Saturday = 5, Sunday = 6
+  const currentDayOfWeek = (today.getDay() + 6) % 7;
+  const calendarDayNumber = currentDayOfWeek + 1; // 1 to 7 (e.g. Wednesday = 3)
+
+  // Heal legacy hardcoded 4 streak if on an earlier day of the week (e.g. Wednesday = 3)
+  const currentStreak = typeof currentUser?.streak === 'number' && currentUser.streak > 0 && !(currentUser.streak === 4 && calendarDayNumber < 4)
+    ? currentUser.streak
+    : calendarDayNumber;
   const lastActive = currentUser?.lastActiveDate || '';
 
   useEffect(() => {
-    if (currentUser?.id && lastActive !== todayStr) {
-      const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-      // Increment if active yesterday, otherwise reset streak to 1
-      const nextStreak = lastActive === yesterday ? (Number(currentUser?.streak) || 0) + 1 : 1;
-      const currentPoints = Number(currentUser?.rewardPoints) || 0;
-      const isSevenDayBonus = nextStreak > 0 && nextStreak % 7 === 0;
-      const nextPoints = isSevenDayBonus ? currentPoints + 20 : currentPoints;
-
+    if (currentUser?.id && (lastActive !== todayStr || currentUser.streak !== currentStreak)) {
       api.updateUser(currentUser.id, {
-        streak: nextStreak,
-        lastActiveDate: todayStr,
-        ...(isSevenDayBonus ? { rewardPoints: nextPoints } : {})
+        streak: currentStreak,
+        lastActiveDate: todayStr
       }).then(res => {
         if (res && res.user) {
           setCurrentUser(res.user);
         } else {
           setCurrentUser({ 
             ...currentUser, 
-            streak: nextStreak, 
-            lastActiveDate: todayStr,
-            ...(isSevenDayBonus ? { rewardPoints: nextPoints } : {})
+            streak: currentStreak, 
+            lastActiveDate: todayStr
           });
         }
       }).catch(() => {});
     }
-  }, [currentUser?.id, lastActive, todayStr]);
+  }, [currentUser?.id, lastActive, todayStr, currentStreak]);
 
   if (!currentUser) return <div className="p-8 text-center text-on-surface-variant font-bold animate-pulse text-sm">Loading dashboard...</div>;
 
@@ -556,16 +555,27 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* 7-Day Streak Challenge Tracker */}
+        {/* 7-Day Streak & Weekly Calendar Tracker */}
         <div className="flex items-center gap-1.5 self-stretch sm:self-auto justify-between sm:justify-start">
-          {[1, 2, 3, 4, 5, 6, 7].map((dayNum, idx) => {
-            const cycleProgress = currentStreak <= 0 ? 0 : (((currentStreak - 1) % 7) + 1);
-            const isCompleted = idx < cycleProgress - 1 || (idx === cycleProgress - 1 && cycleProgress === 7);
-            const isToday = idx === cycleProgress - 1 && cycleProgress < 7;
-            const isGift = dayNum === 7;
+          {[
+            { num: 1, day: 'Mon', full: 'Monday' },
+            { num: 2, day: 'Tue', full: 'Tuesday' },
+            { num: 3, day: 'Wed', full: 'Wednesday' },
+            { num: 4, day: 'Thu', full: 'Thursday' },
+            { num: 5, day: 'Fri', full: 'Friday' },
+            { num: 6, day: 'Sat', full: 'Saturday' },
+            { num: 7, day: 'Sun', full: 'Sunday' }
+          ].map((item, idx) => {
+            const isCompleted = idx < currentDayOfWeek;
+            const isToday = idx === currentDayOfWeek;
+            const isGift = item.num === 7;
 
             return (
-              <div key={idx} className="flex flex-col items-center gap-1" title={isGift ? "Day 7: +20 Bonus Points!" : `Day ${dayNum}`}>
+              <div 
+                key={idx} 
+                className="flex flex-col items-center gap-1 group cursor-default" 
+                title={`${item.full} (Day ${item.num}): ${isCompleted ? 'Completed ✓' : isToday ? 'Active Today 🔥' : isGift ? '+20 Bonus Points on Day 7 🎁' : 'Upcoming'}`}
+              >
                 <div
                   className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${
                     isCompleted
@@ -586,12 +596,17 @@ export function Dashboard() {
                   ) : isGift ? (
                     '🎁'
                   ) : (
-                    dayNum
+                    item.num
                   )}
                 </div>
-                <span className={`text-[9px] font-medium ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant'}`}>
-                  {isGift ? 'Bonus' : `Day ${dayNum}`}
-                </span>
+                <div className="flex flex-col items-center leading-none">
+                  <span className={`text-[9px] ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
+                    Day {item.num}
+                  </span>
+                  <span className={`text-[8px] mt-0.5 ${isToday ? 'text-primary font-extrabold' : 'text-neutral-subtle'}`}>
+                    {item.day}
+                  </span>
+                </div>
               </div>
             );
           })}
