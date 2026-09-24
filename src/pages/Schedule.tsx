@@ -155,10 +155,12 @@ export function Schedule() {
       loadData();
     });
     const interval = setInterval(() => {
-      api.getSessions()
-        .then(setSessions)
-        .catch(console.error);
-    }, 4000);
+      if (typeof window !== 'undefined' && localStorage.getItem('mindroot_auth_token')) {
+        api.getSessions()
+          .then(setSessions)
+          .catch(() => {});
+      }
+    }, 15000);
     return () => {
       unsubSessions();
       unsubPeers();

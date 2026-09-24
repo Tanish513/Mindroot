@@ -85,7 +85,7 @@ const getInitialUser = () => {
 };
 
 const initialUser = getInitialUser();
-if (initialUser) {
+if (initialUser && typeof window !== 'undefined' && localStorage.getItem('mindroot_auth_token')) {
   setTimeout(() => api.syncNetworkUser(initialUser), 500);
 }
 

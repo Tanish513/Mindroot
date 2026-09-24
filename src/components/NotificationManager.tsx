@@ -193,6 +193,8 @@ export function NotificationManager() {
 
     const checkLectureReminders = async () => {
       try {
+        const token = localStorage.getItem('mindroot_auth_token');
+        if (!token) return;
         const sessions = await api.getSessions();
         if (!Array.isArray(sessions)) return;
 
@@ -320,7 +322,7 @@ export function NotificationManager() {
 
     checkLectureReminders();
     const unsub = onSessionsUpdated(() => checkLectureReminders());
-    const interval = setInterval(checkLectureReminders, 5000);
+    const interval = setInterval(checkLectureReminders, 20000);
 
     return () => {
       unsub();

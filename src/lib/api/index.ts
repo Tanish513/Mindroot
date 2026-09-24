@@ -5,8 +5,8 @@ const getBASE = () => getBackendUrl();
 
 export const globalSocket = io(getBackendUrl(), { 
   path: '/socket.io', 
-  transports: ['websocket', 'polling'],
-  reconnectionAttempts: 5,
+  transports: ['polling', 'websocket'],
+  reconnectionAttempts: 10,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 10000,
   randomizationFactor: 0.5
@@ -377,6 +377,13 @@ const getHeaders = () => {
 
 const safeParse = async (r: Response, fallback: any) => {
   try {
+    if (r.status === 401) {
+      const existingToken = localStorage.getItem('mindroot_auth_token');
+      if (existingToken && !existingToken.startsWith('dev-token-')) {
+        console.warn('[API Auth] 401 Unauthorized encountered with invalid/expired token. Clearing stale auth token.');
+        localStorage.removeItem('mindroot_auth_token');
+      }
+    }
     const text = await r.text();
     if (!text || !text.trim()) return fallback;
     return JSON.parse(text);
@@ -429,8 +436,9 @@ export const api = {
       globalSocket.emit('register-user-sync', user);
       globalBc.postMessage({ type: 'sync-peers', peers: list });
 
-      // Automatically persist to API server so database stays synced
-      if (user.id && !user.id.startsWith('peer-')) {
+      // Automatically persist to API server only if authenticated
+      const token = localStorage.getItem('mindroot_auth_token');
+      if (token && user.id && !user.id.startsWith('peer-')) {
         api.updateUser(user.id, {
           name: user.name,
           role: user.role,
@@ -1038,7 +1046,7 @@ export const api = {
   loginAuth: async (data: { email: string; password: string }) => {
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
 
       const r = await fetch(`${getBASE()}/api/auth/login`, {
         method: 'POST',
@@ -1062,7 +1070,7 @@ export const api = {
       if (parsed && parsed.error) throw new Error(parsed.error);
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.warn('[Auth Login] Request timed out after 12s');
+        console.warn('[Auth Login] Request timed out after 45s');
       } else if (err.message && !err.message.includes('fetch')) {
         throw err;
       }
@@ -1104,11 +1112,17 @@ export const api = {
   registerAuthUser: async (data: { name: string; email: string; password: string; role: string; teaches: string[]; learns: string[]; hourlyRate?: number; batchPricing?: Record<number, number> }) => {
     let createdUser: any = null;
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
+
       const r = await fetch(`${getBASE()}/api/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data)
+        body: JSON.stringify(data),
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+
       const parsed = await safeParse(r, null);
       if (r.ok && parsed) {
         if (parsed.token) {
@@ -1120,7 +1134,11 @@ export const api = {
         throw new Error(parsed.error);
       }
     } catch (err: any) {
-      if (err.message && !err.message.includes('fetch')) throw err;
+      if (err.name === 'AbortError') {
+        console.warn('[Auth Register] Request timed out after 45s');
+      } else if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
     }
 
     if (!createdUser) {
@@ -1165,7 +1183,7 @@ export const api = {
     let authRes: any = null;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 12000);
+      const timeoutId = setTimeout(() => controller.abort(), 45000);
 
       const r = await fetch(`${getBASE()}/api/auth/google`, {
         method: 'POST',
@@ -1188,7 +1206,7 @@ export const api = {
       }
     } catch (err: any) {
       if (err.name === 'AbortError') {
-        console.warn('[Google OAuth] Verification request timed out after 12s, checking local fallback');
+        console.warn('[Google OAuth] Verification request timed out after 45s, checking local fallback');
       } else if (err.message && !err.message.includes('fetch') && !credential.includes('.devsig')) {
         throw err;
       }
