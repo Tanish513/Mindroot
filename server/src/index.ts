@@ -631,6 +631,91 @@ async function awardRewardPoints(userId: string, points: number, reason: string,
   }
 }
 
+function getLocalDateStr(d: Date = new Date()): string {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function syncUserStreakStatus(user: any) {
+  if (!user || typeof user.streak !== 'number' || user.streak <= 0) return;
+  const lastActive = user.lastActiveDate;
+  if (!lastActive) {
+    user.streak = 0;
+    return;
+  }
+  const todayStr = getLocalDateStr();
+  if (lastActive === todayStr) return;
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = getLocalDateStr(yesterday);
+
+  if (lastActive === yesterdayStr) return;
+
+  // Lapsed more than 1 day
+  user.streak = 0;
+}
+
+async function recordUserActivity(userId: string, activityType: 'session' | 'discussion' | 'login') {
+  if (!userId) return null;
+  const user = inMemoryUsers.find(u => u.id === userId);
+  if (!user) return null;
+
+  const todayStr = getLocalDateStr();
+  const lastActive = user.lastActiveDate || '';
+
+  if (typeof user.streak !== 'number' || isNaN(user.streak)) {
+    user.streak = 0;
+  }
+  if (!Array.isArray(user.streakHistory)) {
+    user.streakHistory = [];
+  }
+
+  // Calculate day continuity
+  if (!lastActive) {
+    user.streak = 1;
+    user.lastActiveDate = todayStr;
+  } else if (lastActive === todayStr) {
+    if (user.streak === 0) user.streak = 1;
+  } else {
+    const lastDate = new Date(lastActive + 'T00:00:00');
+    const todayDate = new Date(todayStr + 'T00:00:00');
+    const diffTime = todayDate.getTime() - lastDate.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 1) {
+      user.streak += 1;
+      user.lastActiveDate = todayStr;
+    } else if (diffDays > 1) {
+      user.streak = 1;
+      user.lastActiveDate = todayStr;
+    }
+  }
+
+  // Record into streakHistory for today
+  let hist = user.streakHistory.find((h: any) => h.date === todayStr);
+  if (hist) {
+    if (!Array.isArray(hist.activities)) hist.activities = [];
+    if (!hist.activities.includes(activityType)) {
+      hist.activities.push(activityType);
+    }
+  } else {
+    user.streakHistory.push({
+      date: todayStr,
+      activities: [activityType]
+    });
+    if (user.streakHistory.length > 90) {
+      user.streakHistory = user.streakHistory.slice(-90);
+    }
+  }
+
+  saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+  return user;
+}
+
 const DB_FILE = path.join(__dirname, '../db.json');
 
 function saveDb() {
@@ -676,6 +761,21 @@ function loadDb() {
                 u.isPublic = true;
               } else {
                 u.isPublic = Boolean(u.isPublic);
+              }
+              // Normalize streak data and backfill streakHistory if needed
+              if (typeof u.streak === 'number' && u.streak > 0) {
+                if (!Array.isArray(u.streakHistory) || u.streakHistory.length === 0) {
+                  u.streakHistory = [];
+                  const baseDate = u.lastActiveDate ? new Date(u.lastActiveDate + 'T00:00:00') : new Date();
+                  for (let i = 0; i < Math.min(u.streak, 14); i++) {
+                    const d = new Date(baseDate);
+                    d.setDate(baseDate.getDate() - i);
+                    u.streakHistory.unshift({
+                      date: getLocalDateStr(d),
+                      activities: ['session']
+                    });
+                  }
+                }
               }
               inMemoryUsers.push(u);
             }
@@ -1243,6 +1343,10 @@ io.on('connection', (socket) => {
         }
         for (const sid of recipientStudentIds) {
           await awardRewardPoints(sid, sessionRewardPts, `Completed session: ${sess.title || 'Learning Session'}`, sess.id);
+          await recordUserActivity(sid, 'session');
+        }
+        if (tId) {
+          await recordUserActivity(tId, 'session');
         }
         saveDb();
         io.emit('network-rewards-updated', inMemoryRedemptions);
@@ -3519,6 +3623,10 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
       }
       for (const sid of recipientStudentIds) {
         await awardRewardPoints(sid, sessionRewardPts, `Completed session: ${memSess.title || 'Learning Session'}`, memSess.id);
+        await recordUserActivity(sid, 'session');
+      }
+      if (teacherId) {
+        await recordUserActivity(teacherId, 'session');
       }
       saveDb();
       io.emit('network-rewards-updated', inMemoryRedemptions);
@@ -3801,6 +3909,55 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
   res.json({ success: true, message: `User ${id} updated successfully`, user: toPublicUser(user) });
 });
 
+// POST /api/users/:id/claim-streak-reward — Claim 7-day learning streak bonus (+20 points)
+app.post('/api/users/:id/claim-streak-reward', requireAuth, async (req: any, res: any) => {
+  const { id } = req.params;
+  if (!id) return res.status(400).json({ error: 'User ID is required' });
+  if (req.userId !== id && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: You can only claim rewards for your own account.' });
+  }
+
+  const user = inMemoryUsers.find(u => u.id === id);
+  if (!user) return res.status(404).json({ error: 'User not found' });
+
+  const streak = typeof user.streak === 'number' ? user.streak : 0;
+  if (streak < 7) {
+    return res.status(400).json({ error: `You need at least a 7-day streak to claim this bonus. Current streak: ${streak} day(s).` });
+  }
+
+  const currentMilestone = Math.floor(streak / 7);
+  const lastClaimed = user.lastClaimedStreakMilestone || 0;
+  if (lastClaimed >= currentMilestone) {
+    return res.status(400).json({ error: 'You have already claimed your +20 Bonus Points for this 7-day cycle!' });
+  }
+
+  user.lastClaimedStreakMilestone = currentMilestone;
+  await awardRewardPoints(id, 20, `7-Day Learning Streak Bonus (Milestone Cycle ${currentMilestone})`);
+
+  saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+  io.emit('network-rewards-updated', inMemoryRedemptions);
+
+  return res.json({
+    success: true,
+    message: '🎉 Congratulations! +20 Bonus Points claimed successfully!',
+    user: toPublicUser(user),
+    rewardPoints: user.rewardPoints
+  });
+});
+
+// POST /api/users/:id/activity — Record a learning activity (session, discussion, study)
+app.post('/api/users/:id/activity', requireAuth, async (req: any, res: any) => {
+  const { id } = req.params;
+  const { type } = req.body;
+  if (req.userId !== id && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+  const updatedUser = await recordUserActivity(id, type || 'session');
+  if (!updatedUser) return res.status(404).json({ error: 'User not found' });
+  return res.json({ success: true, user: toPublicUser(updatedUser) });
+});
+
 // ==========================================
 // STUDENT REWARD POINTS & LOYALTY STORE ENDPOINTS
 // ==========================================
@@ -4034,6 +4191,7 @@ app.post('/api/discussions', async (req: any, res: any) => {
   };
 
   inMemoryDiscussions.unshift(newDiscussion);
+  await recordUserActivity(effectiveAuthorId, 'discussion');
   saveDb();
   io.emit('network-discussions-updated', inMemoryDiscussions);
   if (bounty && bounty.amount > 0) {
@@ -4076,6 +4234,7 @@ app.post('/api/discussions/:id/comments', async (req: any, res: any) => {
   if (author && author.role === 'student') {
     await awardRewardPoints(author.id, 5, `Replied to discussion: "${discussion.title.slice(0, 30)}..."`);
   }
+  await recordUserActivity(effectiveAuthorId, 'discussion');
 
   saveDb();
   io.emit('network-discussions-updated', inMemoryDiscussions);
@@ -4910,6 +5069,7 @@ app.get('/api/auth/me', async (req: any, res) => {
   if (!memUser) {
     return res.status(404).json({ error: 'User not found' });
   }
+  syncUserStreakStatus(memUser);
   res.json({ user: toPublicUser(memUser) });
 });
 

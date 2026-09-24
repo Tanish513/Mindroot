@@ -1699,6 +1699,31 @@ export const api = {
     return result || { success: true, id, ...data };
   },
 
+  claimStreakReward: async (userId: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/users/${userId}/claim-streak-reward`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      return await safeParse(r, { success: false, error: 'Failed to claim streak reward' });
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Network error' };
+    }
+  },
+
+  recordUserActivity: async (userId: string, type: 'session' | 'discussion' = 'session') => {
+    try {
+      const r = await fetch(`${getBASE()}/api/users/${userId}/activity`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ type })
+      });
+      return await safeParse(r, { success: false });
+    } catch {
+      return { success: false };
+    }
+  },
+
   // Community Discussions endpoints
   getDiscussions: async (params?: { tag?: string; search?: string; sort?: string }) => {
     try {

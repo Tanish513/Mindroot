@@ -5,7 +5,7 @@ import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated } from '.
 import { useNavigate } from 'react-router-dom';
 
 export function Dashboard() {
-  const { currentUser, setCurrentUser, searchQuery, setSearchQuery, role, loginRole } = useAppStore();
+  const { currentUser, setCurrentUser, searchQuery, setSearchQuery, role, loginRole, addNotification } = useAppStore();
   const [sessions, setSessions] = useState<any[]>([]);
   const [peers, setPeers] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -49,6 +49,8 @@ export function Dashboard() {
 
   // Live Daily Streak & Weekly Calendar Calculation
   const [currentDate, setCurrentDate] = useState(() => new Date());
+  const [isClaimingStreak, setIsClaimingStreak] = useState(false);
+  const [streakClaimSuccess, setStreakClaimSuccess] = useState(false);
 
   // Live midnight rollover monitor: automatically shifts the active day without page reload
   useEffect(() => {
@@ -61,35 +63,124 @@ export function Dashboard() {
     return () => clearInterval(timer);
   }, [currentDate]);
 
-  const todayStr = currentDate.toISOString().slice(0, 10);
-  // Monday = 0, Tuesday = 1, Wednesday = 2, Thursday = 3, Friday = 4, Saturday = 5, Sunday = 6
-  const currentDayOfWeek = (currentDate.getDay() + 6) % 7;
-  const calendarDayNumber = currentDayOfWeek + 1; // 1 to 7 (e.g. Wednesday = 3)
+  // Local date formatter (YYYY-MM-DD)
+  const getLocalDateStr = (d: Date = new Date()) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
-  // Heal legacy hardcoded 4 streak if on an earlier day of the week (e.g. Wednesday = 3)
-  const currentStreak = typeof currentUser?.streak === 'number' && currentUser.streak > 0 && !(currentUser.streak === 4 && calendarDayNumber < 4)
-    ? currentUser.streak
-    : calendarDayNumber;
+  const todayStr = getLocalDateStr(currentDate);
+
+  // Real Streak State from authenticated user
+  const rawStreak = typeof currentUser?.streak === 'number' ? currentUser.streak : 0;
   const lastActive = currentUser?.lastActiveDate || '';
+  const isTodayCompleted = lastActive === todayStr;
 
-  useEffect(() => {
-    if (currentUser?.id && (lastActive !== todayStr || currentUser.streak !== currentStreak)) {
-      api.updateUser(currentUser.id, {
-        streak: currentStreak,
-        lastActiveDate: todayStr
-      }).then(res => {
-        if (res && res.user) {
+  // Check if streak has lapsed (more than 1 day missed)
+  const isStreakLapsed = useMemo(() => {
+    if (!lastActive || rawStreak <= 0) return true;
+    if (lastActive === todayStr) return false;
+    const yest = new Date(currentDate);
+    yest.setDate(yest.getDate() - 1);
+    const yesterdayStr = getLocalDateStr(yest);
+    return lastActive !== yesterdayStr;
+  }, [lastActive, rawStreak, todayStr, currentDate]);
+
+  const currentStreak = isStreakLapsed ? (isTodayCompleted ? 1 : 0) : rawStreak;
+
+  // 7-Day Cycle & Milestone Reward Eligibility (+20 Bonus Points every 7 days)
+  const currentMilestone = Math.floor(currentStreak / 7);
+  const lastClaimedMilestone = currentUser?.lastClaimedStreakMilestone || 0;
+  const canClaimBonus = currentStreak >= 7 && lastClaimedMilestone < currentMilestone;
+  const daysUntilBonus = 7 - (currentStreak % 7);
+
+  // Weekly calendar days (Monday to Sunday)
+  const weeklyTrackerDays = useMemo(() => {
+    const now = currentDate;
+    const dayOfWeek = (now.getDay() + 6) % 7; // Monday = 0 ... Sunday = 6
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - dayOfWeek);
+    monday.setHours(0, 0, 0, 0);
+
+    const baseDays = [
+      { num: 1, day: 'Mon', full: 'Monday' },
+      { num: 2, day: 'Tue', full: 'Tuesday' },
+      { num: 3, day: 'Wed', full: 'Wednesday' },
+      { num: 4, day: 'Thu', full: 'Thursday' },
+      { num: 5, day: 'Fri', full: 'Friday' },
+      { num: 6, day: 'Sat', full: 'Saturday' },
+      { num: 7, day: 'Sun', full: 'Sunday' }
+    ];
+
+    const activeDates = new Set<string>();
+    if (Array.isArray(currentUser?.streakHistory)) {
+      currentUser.streakHistory.forEach((h: any) => {
+        if (h && h.date) activeDates.add(h.date);
+      });
+    }
+    if (isTodayCompleted) {
+      activeDates.add(todayStr);
+    }
+    // Also include lastActiveDate if active
+    if (lastActive && !isStreakLapsed) {
+      activeDates.add(lastActive);
+    }
+
+    return baseDays.map((item, idx) => {
+      const d = new Date(monday);
+      d.setDate(monday.getDate() + idx);
+      const dateStr = getLocalDateStr(d);
+
+      const isPast = idx < dayOfWeek;
+      const isToday = idx === dayOfWeek;
+      const isFuture = idx > dayOfWeek;
+      const isGift = item.num === 7;
+      const wasActive = activeDates.has(dateStr);
+
+      return {
+        ...item,
+        dateStr,
+        isPast,
+        isToday,
+        isFuture,
+        isGift,
+        wasActive
+      };
+    });
+  }, [currentDate, currentUser?.streakHistory, isTodayCompleted, todayStr, lastActive, isStreakLapsed]);
+
+  const handleClaimStreakReward = async () => {
+    if (!currentUser?.id || isClaimingStreak || !canClaimBonus) return;
+    setIsClaimingStreak(true);
+    try {
+      const res = await api.claimStreakReward(currentUser.id);
+      if (res?.success) {
+        setStreakClaimSuccess(true);
+        if (res.user) {
           setCurrentUser(res.user);
         } else {
-          setCurrentUser({ 
-            ...currentUser, 
-            streak: currentStreak, 
-            lastActiveDate: todayStr
+          setCurrentUser({
+            ...currentUser,
+            rewardPoints: (currentUser.rewardPoints || 0) + 20,
+            lastClaimedStreakMilestone: currentMilestone
           });
         }
-      }).catch(() => {});
+        addNotification({
+          type: 'reminder',
+          title: '🎉 +20 Bonus Points Unlocked!',
+          body: `You completed your 7-day learning milestone! +20 bonus points added to your loyalty balance.`,
+          link: '/rewards'
+        });
+        setTimeout(() => setStreakClaimSuccess(false), 6000);
+      }
+    } catch (err) {
+      console.error('Failed to claim streak reward:', err);
+    } finally {
+      setIsClaimingStreak(false);
     }
-  }, [currentUser?.id, lastActive, todayStr, currentStreak]);
+  };
 
   if (!currentUser) return <div className="p-8 text-center text-on-surface-variant font-bold animate-pulse text-sm">Loading dashboard...</div>;
 
@@ -547,7 +638,11 @@ export function Dashboard() {
       {/* Daily Streak & Community Momentum Banner */}
       <div className="bg-surface-container border border-outline-variant rounded-2xl p-4 sm:p-5 shadow-elevation-1 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl bg-surface border border-outline-variant text-primary flex items-center justify-center shrink-0">
+          <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${
+            currentStreak > 0
+              ? 'bg-primary/10 border-primary/30 text-primary'
+              : 'bg-surface border-outline-variant text-on-surface-variant'
+          }`}>
             <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
               local_fire_department
             </span>
@@ -555,73 +650,102 @@ export function Dashboard() {
           <div>
             <div className="flex items-center gap-2">
               <h2 className="text-base font-semibold text-on-surface">
-                {currentStreak}-Day Learning Streak
+                {currentStreak > 0 ? `${currentStreak}-Day Learning Streak` : 'Start Your Learning Streak'}
               </h2>
-              <span className="px-2 py-0.5 rounded-full bg-surface border border-outline-variant text-on-surface font-semibold text-[10px] uppercase">
-                Active
-              </span>
+              {isTodayCompleted ? (
+                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-semibold text-[10px] uppercase flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  Active Today
+                </span>
+              ) : currentStreak > 0 ? (
+                <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-semibold text-[10px] uppercase flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                  Action Needed Today
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full bg-surface border border-outline-variant text-on-surface-variant font-semibold text-[10px] uppercase">
+                  Inactive
+                </span>
+              )}
             </div>
             <p className="text-xs text-on-surface-variant font-medium mt-0.5">
-              Keep learning every day. Complete 1 session or answer a discussion question to reach 7 days and claim +20 Bonus Points!
+              {isTodayCompleted
+                ? `🔥 Great job! You completed today's learning goal. ${daysUntilBonus > 0 && daysUntilBonus < 7 ? `${daysUntilBonus} day(s) until your next +20 Bonus Points!` : 'Reach your 7-day milestone to claim +20 Bonus Points!'}`
+                : `Keep learning every day. Complete 1 session or answer a discussion question to reach 7 days and claim +20 Bonus Points!`}
             </p>
           </div>
         </div>
 
         {/* 7-Day Streak & Weekly Calendar Tracker */}
-        <div className="flex items-center gap-1.5 self-stretch sm:self-auto justify-between sm:justify-start">
-          {[
-            { num: 1, day: 'Mon', full: 'Monday' },
-            { num: 2, day: 'Tue', full: 'Tuesday' },
-            { num: 3, day: 'Wed', full: 'Wednesday' },
-            { num: 4, day: 'Thu', full: 'Thursday' },
-            { num: 5, day: 'Fri', full: 'Friday' },
-            { num: 6, day: 'Sat', full: 'Saturday' },
-            { num: 7, day: 'Sun', full: 'Sunday' }
-          ].map((item, idx) => {
-            const isCompleted = idx < currentDayOfWeek;
-            const isToday = idx === currentDayOfWeek;
-            const isGift = item.num === 7;
+        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 self-stretch sm:self-auto justify-between sm:justify-start">
+          <div className="flex items-center gap-1.5">
+            {weeklyTrackerDays.map((item, idx) => {
+              const isFinished = item.wasActive;
+              const isToday = item.isToday;
+              const isGift = item.isGift;
 
-            return (
-              <div 
-                key={idx} 
-                className="flex flex-col items-center gap-1 group cursor-default" 
-                title={`${item.full} (Day ${item.num}): ${isCompleted ? 'Completed ✓' : isToday ? 'Active Today 🔥' : isGift ? '+20 Bonus Points on Day 7 🎁' : 'Upcoming'}`}
-              >
-                <div
-                  className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${
-                    isCompleted
-                      ? 'bg-primary text-on-primary border-primary shadow-sm'
-                      : isToday
-                        ? 'bg-primary text-on-primary border-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-surface'
-                        : isGift
-                          ? 'bg-learning-amber/15 text-learning-amber border-learning-amber/30'
-                          : 'bg-surface text-on-surface-variant border-outline-variant'
-                  }`}
+              return (
+                <div 
+                  key={idx} 
+                  className="flex flex-col items-center gap-1 group cursor-default" 
+                  title={`${item.full} (${item.dateStr}): ${isFinished ? 'Completed ✓' : isToday ? (isTodayCompleted ? 'Completed Today 🔥' : 'Pending: Complete session or reply today!') : isGift ? '+20 Bonus Points on Day 7 🎁' : 'Upcoming'}`}
                 >
-                  {isCompleted ? (
-                    '✓'
-                  ) : isToday ? (
-                    <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                      local_fire_department
+                  <div
+                    className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${
+                      isFinished
+                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                        : isToday
+                          ? isTodayCompleted
+                            ? 'bg-primary text-on-primary border-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-surface'
+                            : 'bg-surface text-amber-600 dark:text-amber-400 border-amber-500/50 ring-2 ring-amber-500/30 ring-offset-1 ring-offset-surface animate-pulse'
+                          : isGift
+                            ? canClaimBonus
+                              ? 'bg-learning-amber text-on-primary border-learning-amber shadow-md animate-bounce cursor-pointer'
+                              : 'bg-learning-amber/15 text-learning-amber border-learning-amber/30'
+                            : 'bg-surface text-on-surface-variant/60 border-outline-variant'
+                    }`}
+                  >
+                    {isFinished ? (
+                      '✓'
+                    ) : isToday ? (
+                      <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                        local_fire_department
+                      </span>
+                    ) : isGift ? (
+                      '🎁'
+                    ) : (
+                      item.num
+                    )}
+                  </div>
+                  <div className="flex flex-col items-center leading-none">
+                    <span className={`text-[9px] ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
+                      Day {item.num}
                     </span>
-                  ) : isGift ? (
-                    '🎁'
-                  ) : (
-                    item.num
-                  )}
+                    <span className={`text-[8px] mt-0.5 ${isToday ? 'text-primary font-extrabold' : 'text-neutral-subtle'}`}>
+                      {item.day}
+                    </span>
+                  </div>
                 </div>
-                <div className="flex flex-col items-center leading-none">
-                  <span className={`text-[9px] ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
-                    Day {item.num}
-                  </span>
-                  <span className={`text-[8px] mt-0.5 ${isToday ? 'text-primary font-extrabold' : 'text-neutral-subtle'}`}>
-                    {item.day}
-                  </span>
-                </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+
+          {/* Interactive Claim Bonus Button when eligible */}
+          {canClaimBonus && (
+            <Button
+              variant="primary"
+              disabled={isClaimingStreak}
+              onClick={handleClaimStreakReward}
+              className="text-xs font-bold py-1.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md animate-pulse shrink-0"
+            >
+              {isClaimingStreak ? 'Claiming...' : '🎁 Claim +20 Pts'}
+            </Button>
+          )}
+          {streakClaimSuccess && (
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 animate-fade-in shrink-0">
+              ✓ +20 Pts Claimed!
+            </span>
+          )}
         </div>
       </div>
 
