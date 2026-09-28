@@ -688,8 +688,8 @@ export function Wallet() {
                       <span className="material-symbols-outlined text-xl">account_balance_wallet</span>
                     </div>
                     <div>
-                      <h3 className="text-base font-black text-on-surface">Withdraw Earnings to Bank</h3>
-                      <p className="text-[11px] text-on-surface-variant">Instant 24x7 IMPS / UPI payout via RazorpayX</p>
+                      <h3 className="text-base font-black text-on-surface">Withdraw Earnings [Simulated Demo Payout]</h3>
+                      <p className="text-[11px] text-on-surface-variant">Instant IMPS / UPI payout via RazorpayX (Demo Simulation)</p>
                     </div>
                   </div>
                   <button 
@@ -792,9 +792,9 @@ export function Wallet() {
                   <span className="material-symbols-outlined text-3xl">check_circle</span>
                 </div>
                 <div>
-                  <h3 className="text-lg font-black text-on-surface">Payout Transferred!</h3>
+                  <h3 className="text-lg font-black text-on-surface">Payout Transferred! [Simulated Demo]</h3>
                   <p className="text-xs text-on-surface-variant mt-1">
-                    Successfully sent <strong className="text-teaching-emerald font-bold">₹{withdrawSuccess.amount}</strong> to your bank/UPI account via RazorpayX.
+                    Successfully simulated transfer of <strong className="text-teaching-emerald font-bold">₹{withdrawSuccess.amount}</strong> to your bank/UPI account via RazorpayX.
                   </p>
                 </div>
                 <div className="p-3.5 bg-surface-container-low border border-outline-variant rounded-xl text-left font-mono text-[11px] text-on-surface-variant space-y-1">

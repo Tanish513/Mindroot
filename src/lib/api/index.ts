@@ -423,16 +423,16 @@ export const api = {
     return null;
   },
 
-  getConfig: async (): Promise<{ demoMode: boolean; failClosed: boolean; singleStoreTarget: string }> => {
+  getConfig: async (): Promise<{ demoMode: boolean }> => {
     try {
       const url = getBackendUrl();
-      if (!url) return { demoMode: false, failClosed: true, singleStoreTarget: 'postgres' };
+      if (!url) return { demoMode: false };
       const r = await fetch(`${url}/api/config`);
-      if (r.ok) return await safeParse(r, { demoMode: false, failClosed: true, singleStoreTarget: 'postgres' });
+      if (r.ok) return await safeParse(r, { demoMode: false });
     } catch (err) {
       console.warn('[Config] Failed to fetch server config:', err);
     }
-    return { demoMode: false, failClosed: true, singleStoreTarget: 'postgres' };
+    return { demoMode: false };
   },
 
   syncNetworkUser: (user: any) => {

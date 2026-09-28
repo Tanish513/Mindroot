@@ -247,13 +247,13 @@ async function runExtendedRaceTests() {
     console.log(`Final Mentor INR Wallet Balance: ₹${payMentor.inrWalletBalance}`);
     console.log(`Final Mentor Total Earned: ₹${payMentor.totalEarned}`);
 
-    assert.strictEqual(payMentor.inrWalletBalance, 499, 'Mentor INR wallet must be credited exactly once (₹499)!');
-    assert.strictEqual(payMentor.totalEarned, 499, 'Mentor totalEarned must be exactly ₹499!');
+    assert.strictEqual(payMentor.totalEarned, 499, 'Mentor totalEarned must be credited exactly once (₹499)!');
+    assert.strictEqual(payMentor.inrWalletBalance, 0, 'Direct UPI settles directly to bank account, inrWalletBalance must remain 0!');
     assert.ok(
       confirmResults[0].alreadyProcessed || confirmResults[1].alreadyProcessed,
       'At least one response should be flagged as alreadyProcessed: true'
     );
-    console.log('✅ TEST 4 PASSED: Idempotent payment confirmation credited wallet exactly once!');
+    console.log('✅ TEST 4 PASSED: Idempotent direct settlement credited totalEarned exactly once without inflating inrWalletBalance!');
 
     console.log('\n====================================================');
     console.log('🎉 ALL EXTENDED CONCURRENCY & RACE TESTS PASSED (4/4)');

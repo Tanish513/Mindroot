@@ -290,11 +290,10 @@ app.use((req: any, _res: any, next: any) => {
 
 const DEMO_MODE = process.env.DEMO_MODE === 'true';
 
-// GET /api/config — Public configuration endpoint
+// GET /api/config — Public configuration endpoint (sanitized to prevent architecture disclosure)
 app.get('/api/config', (_req, res) => {
   res.json({
-    demoMode: DEMO_MODE,
-    turnConfigured: Boolean(process.env.TURN_SERVER_URL)
+    demoMode: DEMO_MODE
   });
 });
 
@@ -370,7 +369,7 @@ try {
 }
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@mindroot.com').toLowerCase().trim();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || 'admin123';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || (DEMO_MODE ? 'admin123' : crypto.randomBytes(16).toString('hex'));
 
 // In-memory fallback arrays for instant multi-laptop network synchronization
 const inMemoryUsers: any[] = [
@@ -667,8 +666,8 @@ async function awardRewardPoints(userId: string, points: number, reason: string,
           rewardPoints: { increment: points }
         }
       });
-    } catch (err) {
-      console.error('Failed to award reward points in Prisma DB:', err);
+    } catch (err: any) {
+      logger.debug({ userId, err: err?.message }, 'Prisma user update skipped in fallback mode');
     }
   }
 }
@@ -1051,8 +1050,8 @@ async function cleanupExpiredTokens() {
 cleanupExpiredTokens();
 setInterval(cleanupExpiredTokens, 24 * 60 * 60 * 1000);
 
-// GET /api/turn-credentials — serve STUN and TURN server credentials for WebRTC NAT traversal
-app.get('/api/turn-credentials', (_req, res) => {
+// GET /api/turn-credentials — serve STUN and TURN server credentials for WebRTC NAT traversal (Protected)
+app.get('/api/turn-credentials', requireAuth, (_req, res) => {
   const turnUrl = process.env.TURN_SERVER_URL;
   const turnUsername = process.env.TURN_USERNAME;
   const turnCredential = process.env.TURN_CREDENTIAL;
@@ -1205,13 +1204,28 @@ io.use((socket, next) => {
   if (token) {
     try {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
-      (socket as any).userId = decoded.userId || decoded.id;
+      const uId = decoded.userId || decoded.id;
+      const memUser = inMemoryUsers.find(u => u.id === uId);
+      if (memUser && typeof memUser.tokenVersion === 'number' && decoded.tokenVersion !== undefined && decoded.tokenVersion < memUser.tokenVersion) {
+        return next(new Error('Authentication error: Token revoked. Stale tokenVersion.'));
+      }
+      (socket as any).userId = uId;
       (socket as any).userRole = decoded.role;
+      socket.data.userId = uId;
+      socket.data.userRole = decoded.role;
+      socket.data.tokenVersion = decoded.tokenVersion;
     } catch {
       if (token.startsWith('dev-token-')) {
-        (socket as any).userId = token.replace('dev-token-', '');
-        const matched = inMemoryUsers.find(u => u.id === (socket as any).userId);
-        if (matched) (socket as any).userRole = matched.role;
+        const uId = token.replace('dev-token-', '');
+        (socket as any).userId = uId;
+        socket.data.userId = uId;
+        const matched = inMemoryUsers.find(u => u.id === uId);
+        if (matched) {
+          (socket as any).userRole = matched.role;
+          socket.data.userRole = matched.role;
+        }
+      } else {
+        return next(new Error('Authentication error: Invalid authentication token.'));
       }
     }
   }
@@ -1302,10 +1316,19 @@ io.on('connection', (socket) => {
     }
   });
 
-  const sendTargetedSignal = (eventName: string, data: any) => {
-    const roomId = data?.roomId || Array.from(socket.rooms).find(r => r !== socket.id);
-    const targetId = data?.targetId;
+  const validateRoomMember = (roomId?: string): boolean => {
+    if (!roomId) return false;
+    const isMember = socket.rooms.has(roomId);
+    const isAuthenticated = Boolean((socket as any).userId || socket.data?.userId);
+    return isMember && isAuthenticated;
+  };
 
+  const sendTargetedSignal = (eventName: string, data: any) => {
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
+    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    if (!validateRoomMember(roomId)) return;
+
+    const targetId = data?.targetId;
     if (roomId) {
       const roomMap = liveRoomRegistry.get(roomId);
       if (roomMap && targetId) {
@@ -1331,10 +1354,24 @@ io.on('connection', (socket) => {
   socket.on('ice-candidate', (data: any) => sendTargetedSignal('ice-candidate', data));
 
   socket.on('room-event', (data: any) => {
-    const roomId = data?.roomId || Array.from(socket.rooms).find(r => r !== socket.id);
-    if (roomId) {
-      socket.to(roomId).emit('room-event', data);
-    }
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
+    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    if (!validateRoomMember(roomId)) return;
+    socket.to(roomId).emit('room-event', data);
+  });
+
+  socket.on('whiteboard-update', (data: any) => {
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
+    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    if (!validateRoomMember(roomId)) return;
+    socket.to(roomId).emit('whiteboard-update', data);
+  });
+
+  socket.on('chat-message', (data: any) => {
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
+    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    if (!validateRoomMember(roomId)) return;
+    socket.to(roomId).emit('chat-message', data);
   });
 
   socket.on('leave-room', (data: any) => {
@@ -2936,15 +2973,34 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       }) || null;
     }
 
+    if (targetSession) {
+      const isStudentParticipant = targetSession.studentId === studentId ||
+        (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === studentId));
+      if (!isStudentParticipant && req.userRole !== 'admin') {
+        return res.status(403).json({ error: 'Forbidden: Only the enrolled student can submit payment for this session.' });
+      }
+    }
+
     const isDemoAllowed = Boolean(isDemo && DEMO_MODE);
     const cleanUtr = String(utr || '').trim();
 
     if (!isDemoAllowed) {
-      if (!cleanUtr) {
-        return res.status(400).json({ error: 'Valid UPI reference number (UTR) is required.' });
+      if (!cleanUtr || cleanUtr.length < 6) {
+        return res.status(400).json({ error: 'Valid UPI reference number (UTR) is required (minimum 6 characters).' });
       }
       if (inMemoryUsedUtrs.has(cleanUtr)) {
         return res.status(409).json({ error: 'This UPI reference (UTR) has already been submitted.' });
+      }
+      if (process.env.DATABASE_URL && prisma) {
+        try {
+          const dbSess = await prisma.session.findFirst({
+            where: { utrNumber: cleanUtr }
+          });
+          if (dbSess) {
+            inMemoryUsedUtrs.add(cleanUtr);
+            return res.status(409).json({ error: 'This UPI reference (UTR) has already been registered in the database.' });
+          }
+        } catch {}
       }
       inMemoryUsedUtrs.add(cleanUtr);
     }
@@ -3196,9 +3252,11 @@ app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
 
     const responseBody = {
       success: true,
-      message: `₹${withdrawAmount} successfully transferred to your ${account?.payoutMethod === 'upi' ? `UPI ID (${account?.upiId})` : `Bank Account (${account?.accountNumber})`} via RazorpayX!`,
+      message: `[SIMULATED PAYOUT DEMO] ₹${withdrawAmount} successfully transferred to your ${account?.payoutMethod === 'upi' ? `UPI ID (${account?.upiId})` : `Bank Account (${account?.accountNumber})`} via RazorpayX (Simulated Demo)!`,
       payout: deductRes.transaction,
-      tokenBalance: deductRes.balanceAfter
+      inrWalletBalance: deductRes.balanceAfter,
+      tokenBalance: deductRes.balanceAfter,
+      isSimulated: true
     };
 
     saveIdempotencyRecord(key, 200, responseBody);
@@ -3773,10 +3831,11 @@ app.delete('/api/sessions/:id', requireAuth, async (req: any, res) => {
     const sess = inMemorySessions[idx];
 
     // Automatic token refund on cancellation of paid sessions
-    if (sess && sess.paymentStatus === 'paid') {
+    if (sess && sess.paymentStatus === 'paid' && !sess.tokenRefunded) {
       const studentId = sess.studentId || (Array.isArray(sess.students) && sess.students[0]?.id);
-      const isTokenPaid = sess.paymentId?.startsWith('tx-token') || Number(sess.amount || sess.pricePerStudent || 0) <= 20;
+      const isTokenPaid = sess.paymentId?.startsWith('tx-token') || sess.currency === 'TOKENS' || (Number(sess.amount || sess.pricePerStudent || 0) <= 20 && !sess.utrNumber);
       if (studentId && isTokenPaid) {
+        sess.tokenRefunded = true;
         const refundTokens = Math.max(1, Number(sess.amount || sess.pricePerStudent || 1));
         try {
           await creditTokensAtomic({
@@ -3795,6 +3854,8 @@ app.delete('/api/sessions/:id', requireAuth, async (req: any, res) => {
         } catch (rErr) {
           logger.error({ rErr }, 'Token refund on session cancellation encountered error');
         }
+      } else if (sess.utrNumber || sess.paymentStatus === 'paid') {
+        sess.paymentStatus = 'cancellation_direct_refund_pending';
       }
     }
 
@@ -4015,6 +4076,38 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
             if (paymentId) st.paymentId = paymentId;
           }
         });
+      }
+    }
+
+    if (status === 'cancelled' && prevStatus !== 'cancelled') {
+      const studentId = memSess.studentId || (Array.isArray(memSess.students) && memSess.students[0]?.id);
+      const isTokenPaid = memSess.paymentId?.startsWith('tx-token') || memSess.currency === 'TOKENS' || (Number(memSess.amount || memSess.pricePerStudent || 0) <= 20 && !memSess.utrNumber);
+
+      if (memSess.paymentStatus === 'paid') {
+        if (isTokenPaid && studentId && !memSess.tokenRefunded) {
+          memSess.tokenRefunded = true;
+          const refundTokens = Math.max(1, Number(memSess.amount || memSess.pricePerStudent || 1));
+          try {
+            await creditTokensAtomic({
+              prisma,
+              inMemoryUsers,
+              inMemorySessions,
+              inMemoryTransactions,
+              saveDb
+            }, {
+              userId: studentId,
+              amount: refundTokens,
+              reason: `Refund: Cancelled session "${memSess.title || id}"`,
+              sessionId: id,
+              currency: 'TOKENS'
+            });
+          } catch (rErr) {
+            logger.error({ rErr }, 'Token refund on session cancellation encountered error');
+          }
+        } else if (memSess.utrNumber || memSess.paymentStatus === 'paid') {
+          // Direct UPI payment: external settlement requires direct refund negotiation
+          memSess.paymentStatus = 'cancellation_direct_refund_pending';
+        }
       }
     }
 
@@ -4533,8 +4626,8 @@ app.post('/api/rewards/redeem', requireAuth, async (req: any, res: any) => {
           where: { id: userId },
           data: updateData
         });
-      } catch (err) {
-        console.error('Failed to update user in DB on reward redemption:', err);
+      } catch (err: any) {
+        logger.debug({ userId, err: err?.message }, 'Prisma update skipped on reward redemption fallback');
       }
     }
 
@@ -4779,6 +4872,11 @@ app.post('/api/discussions/:id/accept-answer', async (req: any, res: any) => {
   const comment = (discussion.comments || []).find((c: any) => c.id === commentId);
   if (!comment) return res.status(404).json({ error: 'Comment not found in this discussion.' });
 
+  // Prevent duplicate bounty awards
+  if (discussion.bountyAwarded) {
+    return res.status(400).json({ error: 'Bounty has already been awarded for this discussion.' });
+  }
+
   // Unmark previous accepted comments
   (discussion.comments || []).forEach((c: any) => { c.isAccepted = false; });
   comment.isAccepted = true;
@@ -4789,6 +4887,7 @@ app.post('/api/discussions/:id/accept-answer', async (req: any, res: any) => {
   const solver = inMemoryUsers.find(u => u.id === comment.authorId);
   if (solver) {
     if (discussion.bounty && discussion.bounty.amount > 0) {
+      discussion.bountyAwarded = true;
       if (discussion.bounty.type === 'points') {
         await awardRewardPoints(solver.id, discussion.bounty.amount, `Bounty won on solved discussion: "${discussion.title.slice(0, 30)}..."`);
       } else if (discussion.bounty.type === 'tokens') {
@@ -4837,6 +4936,16 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
     return res.status(403).json({ error: 'Cannot delete the master System Admin account.' });
   }
 
+  // Active balance check: Block deletion if user has remaining funds
+  const memUser = inMemoryUsers.find(u => u.id === targetId);
+  const tokenBal = memUser?.tokenBalance || 0;
+  const inrBal = memUser?.inrWalletBalance || 0;
+  if (tokenBal > 0 || inrBal > 0) {
+    return res.status(400).json({
+      error: `Cannot delete account with active balance (${tokenBal} tokens, ₹${inrBal} INR). Please spend tokens or withdraw funds before closing your account.`
+    });
+  }
+
   // Active session check: Prevent deletion if user has open sessions
   const hasActiveSessions = inMemorySessions.some(s => 
     (s.status === 'pending' || s.status === 'confirmed' || s.status === 'live') &&
@@ -4847,6 +4956,8 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
       error: 'Cannot delete account with active sessions. Please complete or cancel all pending, confirmed, or live sessions first.'
     });
   }
+
+  const oldName = memUser?.name;
 
   // 1. Soft-delete and anonymize in PostgreSQL
   if (process.env.DATABASE_URL && prisma) {
@@ -4865,19 +4976,33 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
       }).catch(() => {});
       await prisma.emailVerificationToken.deleteMany({ where: { userId: targetId } }).catch(() => {});
       await prisma.passwordResetToken.deleteMany({ where: { userId: targetId } }).catch(() => {});
+      await prisma.payoutAccount.deleteMany({ where: { userId: targetId } }).catch(() => {});
+      await prisma.message.updateMany({
+        where: { senderId: targetId },
+        data: { text: '[Message removed due to account deactivation]' }
+      }).catch(() => {});
+      await prisma.review.updateMany({
+        where: { authorId: targetId },
+        data: { quote: '[Review comment removed due to account deactivation]' }
+      }).catch(() => {});
+      if (oldName) {
+        await prisma.transaction.updateMany({
+          where: { userId: { not: targetId }, peerName: oldName },
+          data: { peerName: 'Deactivated User' }
+        }).catch(() => {});
+      }
     } catch (dbErr: any) {
       logger.error({ dbErr, targetId }, 'Database error soft-deleting user');
     }
   }
 
   // 2. Soft-delete and anonymize in Memory & invalidate JWTs
-  const memUser = inMemoryUsers.find(u => u.id === targetId);
   if (memUser) {
-    memUser.name = 'Deleted User';
+    memUser.name = memUser.role === 'teacher' ? 'Deleted Mentor' : 'Deleted Student';
     memUser.email = `deleted+${targetId}@invalid.mindroot.edu`;
     memUser.password = '';
     memUser.avatar = null;
-    memUser.bio = 'This account has been deleted.';
+    memUser.bio = '';
     memUser.deletedAt = new Date().toISOString();
     memUser.tokenVersion = (memUser.tokenVersion || 0) + 1; // Invalidate active JWTs
     memUser.isPublic = false;
@@ -4886,12 +5011,43 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
   // 3. Delete payout account
   delete inMemoryPayoutAccounts[targetId];
 
-  // NOTE: Transaction ledger records are PRESERVED intentionally to maintain financial audit integrity.
+  // 4. Disconnect active Socket.io instances for this user
+  for (const [_, socket] of io.sockets.sockets) {
+    if ((socket as any).userId === targetId || socket.data?.userId === targetId) {
+      socket.disconnect(true);
+    }
+  }
 
-  // 4. Save persistence
+  // 5. Scrub deleted user's name from other users' transaction records (keep financial amounts intact)
+  if (oldName) {
+    inMemoryTransactions.forEach(tx => {
+      if (tx.userId !== targetId) {
+        if (tx.peerName === oldName) tx.peerName = 'Deactivated User';
+        if (tx.title && tx.title.includes(oldName)) {
+          tx.title = tx.title.replace(new RegExp(oldName, 'g'), 'Deactivated User');
+        }
+      }
+    });
+  }
+
+  // 6. Blank messages and review quotes
+  inMemoryMessages.forEach(msg => {
+    if (msg.senderId === targetId) {
+      msg.text = '[Message removed due to account deactivation]';
+      if (msg.content) msg.content = '[Message removed due to account deactivation]';
+    }
+  });
+  inMemoryReviews.forEach(rev => {
+    if (rev.authorId === targetId || rev.studentId === targetId) {
+      rev.quote = '[Review comment removed due to account deactivation]';
+      rev.comment = '[Review comment removed due to account deactivation]';
+    }
+  });
+
+  // 7. Save persistence
   saveDb();
 
-  // 5. Emit socket updates across all network clients
+  // 8. Emit socket updates across all network clients
   io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   io.emit('network-sessions-updated', inMemorySessions);
   io.emit('network-messages-updated', inMemoryMessages);
@@ -4961,15 +5117,33 @@ app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res:
       });
     }
 
-    // Credit mentor INR wallet & trust score
+    // Direct P2P UPI Settlement:
+    // Funds were deposited directly to the mentor's personal UPI/bank account outside platform escrow.
+    // Mentor's totalEarned increases for revenue reporting and analytics,
+    // but inrWalletBalance is NOT credited (preventing simulated double-liability on the platform).
     const finalTeacherId = session.teacherId || session.teacher?.id;
     const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
     const finalAmount = Number(session.amount || session.pricePerStudent || teacherUser?.hourlyRate || 499);
     if (teacherUser) {
-      teacherUser.inrWalletBalance = (teacherUser.inrWalletBalance || 0) + finalAmount;
       teacherUser.totalEarned = (teacherUser.totalEarned || 0) + finalAmount;
       teacherUser.rewardPoints = (teacherUser.rewardPoints || 0) + 50;
       teacherUser.trustScore = Math.min(5.0, Number(((teacherUser.trustScore || 4.8) + 0.05).toFixed(2)));
+
+      const directTx = {
+        id: `tx-settle-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        userId: teacherUser.id,
+        peerId: session.studentId || session.student?.id || 'peer-student',
+        peerName: session.student?.name || 'Student',
+        amount: finalAmount,
+        type: 'DIRECT_UPI_SETTLEMENT',
+        currency: 'INR',
+        status: 'paid',
+        title: `Direct UPI Settlement: ${session.title || 'Mentoring Session'}`,
+        description: `Direct UPI payment acknowledged by mentor (UTR: ${session.utrNumber || 'Direct Transfer'}). Funds deposited directly to mentor external bank/UPI account.`,
+        sessionId: session.id,
+        createdAt: new Date().toISOString()
+      };
+      inMemoryTransactions.unshift(directTx);
     }
 
     if (process.env.DATABASE_URL && prisma) {
@@ -5069,16 +5243,31 @@ app.post('/api/admin/disputes/:id/resolve', requireAdmin, (req: any, res: any) =
 
 // POST /api/admin/seed-demo — 1-Minute Live Demo Seed for 5th-Sem Presentation
 app.post('/api/admin/seed-demo', (req: any, res: any, next: any) => {
-  if (DEMO_MODE) return next();
-  return requireAdmin(req, res, next);
+  const demoSeedKey = process.env.DEMO_SEED_KEY;
+  const providedKey = req.headers['x-demo-seed-key'];
+  let keyValid = false;
+
+  if (demoSeedKey && typeof providedKey === 'string' && providedKey.length === demoSeedKey.length) {
+    try {
+      keyValid = crypto.timingSafeEqual(Buffer.from(providedKey), Buffer.from(demoSeedKey));
+    } catch {
+      keyValid = false;
+    }
+  }
+
+  if (keyValid || req.userRole === 'admin') {
+    return next();
+  }
+
+  return res.status(403).json({ error: 'Forbidden: Admin authorization or valid DEMO_SEED_KEY required.' });
 }, async (_req: any, res: any) => {
-  // Ensure student Aarav exists
-  let student = inMemoryUsers.find(u => u.name === 'Aarav Patel' || u.id === 'user-demo-student');
+  // Ensure student Aarav exists with dedicated demo email
+  let student = inMemoryUsers.find(u => u.email === 'student.demo@mindroot.edu' || u.id === 'user-demo-student');
   if (!student) {
     student = {
       id: 'user-demo-student',
       name: 'Aarav Patel',
-      email: 'aarav.patel@mindroot.com',
+      email: 'student.demo@mindroot.edu',
       password: bcrypt.hashSync('student123', 10),
       role: 'student',
       trustScore: 4.95,
@@ -5088,15 +5277,18 @@ app.post('/api/admin/seed-demo', (req: any, res: any, next: any) => {
       emailVerified: true
     };
     inMemoryUsers.push(student);
+  } else {
+    student.email = 'student.demo@mindroot.edu';
+    student.password = bcrypt.hashSync('student123', 10);
   }
 
-  // Ensure mentor Dr. Priya Sharma exists
-  let teacher = inMemoryUsers.find(u => u.name === 'Dr. Priya Sharma' || u.id === 'user-demo-priya-mentor');
+  // Ensure mentor Dr. Priya Sharma exists with dedicated demo email
+  let teacher = inMemoryUsers.find(u => u.email === 'mentor.demo@mindroot.edu' || u.id === 'user-demo-priya-mentor');
   if (!teacher) {
     teacher = {
       id: 'user-demo-priya-mentor',
       name: 'Dr. Priya Sharma',
-      email: 'priya.sharma@mindroot.com',
+      email: 'mentor.demo@mindroot.edu',
       password: bcrypt.hashSync('mentor123', 10),
       role: 'teacher',
       trustScore: 4.98,
@@ -5112,6 +5304,8 @@ app.post('/api/admin/seed-demo', (req: any, res: any, next: any) => {
     };
     inMemoryUsers.push(teacher);
   } else {
+    teacher.email = 'mentor.demo@mindroot.edu';
+    teacher.password = bcrypt.hashSync('mentor123', 10);
     teacher.officialIdStatus = 'verified';
     teacher.officialIdType = 'faculty_id';
     teacher.officialIdNumber = 'FAC-2026-ENG-849';
@@ -5343,13 +5537,13 @@ app.post('/api/reviews', requireAuth, async (req: any, res) => {
       });
 
       const allReviews = await prisma.review.findMany({
-        where: { targetId }
+        where: { targetId: resolvedTargetId }
       });
 
-      if (allReviews.length > 0) {
+      if (allReviews.length > 0 && resolvedTargetId) {
         const avgRating = allReviews.reduce((sum: number, r: any) => sum + r.rating, 0) / allReviews.length;
         await prisma.user.update({
-          where: { id: targetId },
+          where: { id: resolvedTargetId },
           data: { trustScore: parseFloat(avgRating.toFixed(2)) }
         });
       }
@@ -5759,6 +5953,12 @@ export {
   inMemoryUsers,
   inMemorySessions,
   inMemoryTransactions,
+  inMemoryMessages,
+  inMemoryDiscussions,
+  inMemoryReviews,
+  inMemoryPayoutAccounts,
+  inMemoryRedemptions,
+  inMemoryUsedUtrs,
   saveDb,
   syncWithDatabasePromise
 };

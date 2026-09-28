@@ -529,7 +529,7 @@ export function Login() {
                     <button
                       type="button"
                       onClick={() => {
-                        setSignInEmail('tanish5131k@gmail.com');
+                        setSignInEmail('student.demo@mindroot.edu');
                         setSignInPassword('student123');
                         setSignInError('');
                       }}
@@ -541,7 +541,7 @@ export function Login() {
                     <button
                       type="button"
                       onClick={() => {
-                        setSignInEmail('sarah.chen@stanford.edu');
+                        setSignInEmail('mentor.demo@mindroot.edu');
                         setSignInPassword('mentor123');
                         setSignInError('');
                       }}

@@ -47,6 +47,11 @@ type RoomEvent =
 
 import { getBackendUrl } from '../lib/env';
 
+const isForcedRelay = typeof window !== 'undefined' && (
+  new URLSearchParams(window.location.search).get('forceRelay') === '1' ||
+  new URLSearchParams(window.location.search).get('forceRelay') === 'true'
+);
+
 const defaultRtcConfig: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -55,7 +60,8 @@ const defaultRtcConfig: RTCConfiguration = {
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:global.stun.twilio.com:3478' }
-  ]
+  ],
+  ...(isForcedRelay ? { iceTransportPolicy: 'relay' } : {})
 };
 
 const toolTabs: { id: Workspace; icon: string; label: string }[] = [
@@ -318,7 +324,10 @@ export function LiveRoom() {
     api.getTurnCredentials().then(res => {
       if (active && res?.iceServers && res.iceServers.length > 0) {
         console.log('📡 Dynamic TURN credentials loaded successfully:', res.iceServers.length, 'servers.');
-        activeRtcConfigRef.current = { iceServers: res.iceServers };
+        activeRtcConfigRef.current = {
+          iceServers: res.iceServers,
+          ...(isForcedRelay ? { iceTransportPolicy: 'relay' } : {})
+        };
       }
     }).catch(err => {
       console.warn('⚠️ Failed to load TURN credentials, using default STUN fallback:', err);
