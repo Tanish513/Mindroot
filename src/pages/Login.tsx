@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleLogin, useGoogleOneTapLogin } from '@react-oauth/google';
 import { Button } from '../components/ui/Button';
@@ -7,6 +7,17 @@ import { useAppStore } from '../store/useAppStore';
 
 export function Login() {
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
+  const [demoMode, setDemoMode] = useState<boolean>(false);
+
+  useEffect(() => {
+    let mounted = true;
+    api.getConfig().then(cfg => {
+      if (mounted && cfg) {
+        setDemoMode(Boolean(cfg.demoMode));
+      }
+    }).catch(() => {});
+    return () => { mounted = false; };
+  }, []);
 
   // Sign In states
   const [signInEmail, setSignInEmail] = useState('');
@@ -510,36 +521,38 @@ export function Login() {
                 </Button>
               </div>
 
-              {/* Quick Fill Credentials for Fast Testing */}
-              <div className="pt-3 border-t border-outline-variant/60 text-center">
-                <p className="text-[11px] font-semibold text-on-surface-variant mb-2">Quick Sign-In Portals:</p>
-                <div className="flex items-center justify-center gap-2 flex-wrap">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSignInEmail('admin@mindroot.com');
-                      setSignInPassword('admin123');
-                      setSignInError('');
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-all flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
-                    Admin (admin@mindroot.com)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSignInEmail('tanish5131k@gmail.com');
-                      setSignInPassword('');
-                      setSignInError('');
-                    }}
-                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-outline-variant bg-surface text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-1"
-                  >
-                    <span className="material-symbols-outlined text-[14px]">school</span>
-                    Tanish (Student)
-                  </button>
+              {/* Quick Fill Credentials for Fast Testing - strictly gated behind DEMO_MODE, NO public admin button */}
+              {demoMode && (
+                <div className="pt-3 border-t border-outline-variant/60 text-center">
+                  <p className="text-[11px] font-semibold text-on-surface-variant mb-2">Demo Quick Sign-In:</p>
+                  <div className="flex items-center justify-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSignInEmail('tanish5131k@gmail.com');
+                        setSignInPassword('student123');
+                        setSignInError('');
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-outline-variant bg-surface text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">school</span>
+                      Demo Student
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSignInEmail('sarah.chen@stanford.edu');
+                        setSignInPassword('mentor123');
+                        setSignInError('');
+                      }}
+                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-teaching-emerald/30 bg-teaching-emerald/10 text-teaching-emerald hover:bg-teaching-emerald/20 transition-all flex items-center gap-1"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">psychology</span>
+                      Demo Mentor
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </form>
           ) : (
             /* Sign Up / Registration Form */

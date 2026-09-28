@@ -56,6 +56,18 @@ export class KeyedMutex {
 
 export const userMutex = new KeyedMutex();
 
+/**
+ * Acquire multiple keyed locks in consistent lexicographical order to prevent deadlocks.
+ */
+export async function withOrderedLocks<T>(keys: string[], fn: () => Promise<T>): Promise<T> {
+  const sorted = [...new Set(keys.filter(Boolean))].sort();
+  const acquire = async (idx: number): Promise<T> => {
+    if (idx >= sorted.length) return fn();
+    return userMutex.runExclusive(sorted[idx], () => acquire(idx + 1));
+  };
+  return acquire(0);
+}
+
 export interface TokenOperationDependencies {
   prisma: any;
   inMemoryUsers: any[];
@@ -205,7 +217,16 @@ export async function bookSessionWithTokens(
         if (err instanceof InsufficientTokensError || err instanceof ConcurrencyConflictError) {
           throw err;
         }
-        logger.warn({ err }, 'Prisma $transaction booking fallback to inMemory synchronization');
+        logger.error({ err }, 'Prisma $transaction booking failed');
+        if (process.env.DATABASE_URL) {
+          if (process.env.ALLOW_UNSAFE_IN_MEMORY_FAILOVER === 'true') {
+            logger.warn('⚠️ UNSAFE FAILOVER: Falling back to in-memory store because ALLOW_UNSAFE_IN_MEMORY_FAILOVER=true');
+          } else {
+            const dbError: any = new Error('Database service unavailable. Operation aborted to protect ledger integrity.');
+            dbError.statusCode = 503;
+            throw dbError;
+          }
+        }
       }
     }
 
@@ -385,7 +406,16 @@ export async function deductTokensAtomic(
         });
       } catch (err: any) {
         if (err instanceof InsufficientTokensError) throw err;
-        logger.warn({ err }, 'Prisma deductTokensAtomic fallback to inMemory');
+        logger.error({ err }, 'Prisma deductTokensAtomic failed');
+        if (process.env.DATABASE_URL) {
+          if (process.env.ALLOW_UNSAFE_IN_MEMORY_FAILOVER === 'true') {
+            logger.warn('⚠️ UNSAFE FAILOVER: Falling back to in-memory store because ALLOW_UNSAFE_IN_MEMORY_FAILOVER=true');
+          } else {
+            const dbError: any = new Error('Database service unavailable. Operation aborted to protect ledger integrity.');
+            dbError.statusCode = 503;
+            throw dbError;
+          }
+        }
       }
     }
 
@@ -394,9 +424,11 @@ export async function deductTokensAtomic(
       if (!memUser) {
         throw new Error(`User with ID "${userId}" not found.`);
       }
-      const current = typeof memUser.tokenBalance === 'number' ? memUser.tokenBalance : 0;
+      const current = currency === 'INR'
+        ? (typeof memUser.inrWalletBalance === 'number' ? memUser.inrWalletBalance : 0)
+        : (typeof memUser.tokenBalance === 'number' ? memUser.tokenBalance : 0);
       if (current < amount) {
-        throw new InsufficientTokensError(`Insufficient token balance (Available: ${current}, Required: ${amount})`, current, amount);
+        throw new InsufficientTokensError(`Insufficient balance (Available: ${current}, Required: ${amount})`, current, amount);
       }
       balanceBefore = current;
       balanceAfter = current - amount;
@@ -406,7 +438,11 @@ export async function deductTokensAtomic(
     }
 
     if (memUser) {
-      memUser.tokenBalance = balanceAfter;
+      if (currency === 'INR') {
+        memUser.inrWalletBalance = balanceAfter;
+      } else {
+        memUser.tokenBalance = balanceAfter;
+      }
     }
 
     const txRecord = {
@@ -507,18 +543,36 @@ export async function creditTokensAtomic(
           }
         });
       } catch (err: any) {
-        logger.warn({ err }, 'Prisma creditTokensAtomic fallback to inMemory');
+        logger.error({ err }, 'Prisma creditTokensAtomic failed');
+        if (process.env.DATABASE_URL) {
+          if (process.env.ALLOW_UNSAFE_IN_MEMORY_FAILOVER === 'true') {
+            logger.warn('⚠️ UNSAFE FAILOVER: Falling back to in-memory store because ALLOW_UNSAFE_IN_MEMORY_FAILOVER=true');
+          } else {
+            const dbError: any = new Error('Database service unavailable. Operation aborted to protect ledger integrity.');
+            dbError.statusCode = 503;
+            throw dbError;
+          }
+        }
       }
     }
 
     const memUser = deps.inMemoryUsers.find(u => u.id === userId);
     if (balanceBefore === 0 && balanceAfter === 0 && memUser) {
-      balanceBefore = typeof memUser.tokenBalance === 'number' ? memUser.tokenBalance : 50;
+      if (currency === 'INR') {
+        balanceBefore = typeof memUser.inrWalletBalance === 'number' ? memUser.inrWalletBalance : 0;
+      } else {
+        balanceBefore = typeof memUser.tokenBalance === 'number' ? memUser.tokenBalance : 50;
+      }
       balanceAfter = balanceBefore + amount;
     }
 
     if (memUser) {
-      memUser.tokenBalance = balanceAfter;
+      if (currency === 'INR') {
+        memUser.inrWalletBalance = balanceAfter;
+        memUser.totalEarned = (memUser.totalEarned || 0) + amount;
+      } else {
+        memUser.tokenBalance = balanceAfter;
+      }
     }
 
     const txRecord = {

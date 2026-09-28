@@ -219,6 +219,7 @@ async function runTests() {
       } catch {}
     }
     serverInstance.close();
+    process.exit(0);
   }
 }
 

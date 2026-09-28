@@ -327,8 +327,19 @@ export function LiveRoom() {
   }, []);
 
   // Multi-participant states (Mesh WebRTC)
+  type IceStatus = 'Connecting...' | 'Direct P2P' | 'TURNS Relay 443' | 'Connection Failed' | 'SIMULATED PLAYBACK (DEMO)';
+  const [iceDiagnostic, setIceDiagnostic] = useState<IceStatus>('Connecting...');
   const [remoteParticipants, setRemoteParticipants] = useState<Participant[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+
+  // Synchronize simulated stream state to ICE diagnostics
+  useEffect(() => {
+    if (remoteParticipants.length > 0 && remoteParticipants.every(p => p.isSimulated)) {
+      setIceDiagnostic('SIMULATED PLAYBACK (DEMO)');
+    } else if (remoteParticipants.length === 0) {
+      setIceDiagnostic('Connecting...');
+    }
+  }, [remoteParticipants]);
 
   const localVideo = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -626,6 +637,7 @@ export function LiveRoom() {
       const state = peer.iceConnectionState;
       console.log(`[WebRTC] Peer ${remotePeerId} ICE connection state: ${state}`);
       if (state === 'failed' || state === 'disconnected') {
+        setIceDiagnostic('Connection Failed');
         setIsReconnecting(true);
         // Automatic renegotiation path for failure recovery
         (async () => {
@@ -647,6 +659,26 @@ export function LiveRoom() {
         }, 10000);
       } else if (state === 'connected' || state === 'completed') {
         setIsReconnecting(false);
+        (async () => {
+          try {
+            const stats = await peer.getStats();
+            let isRelay = false;
+            stats.forEach((report: any) => {
+              if (report.type === 'candidate-pair' && (report.state === 'succeeded' || report.nominated) && (report.selected || report.nominated)) {
+                const localCand = stats.get(report.localCandidateId);
+                const remoteCand = stats.get(report.remoteCandidateId);
+                if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
+                  isRelay = true;
+                }
+              }
+            });
+            setIceDiagnostic(isRelay ? 'TURNS Relay 443' : 'Direct P2P');
+          } catch {
+            setIceDiagnostic('Direct P2P');
+          }
+        })();
+      } else if (state === 'checking') {
+        setIceDiagnostic('Connecting...');
       }
     };
 
@@ -797,7 +829,11 @@ export function LiveRoom() {
 
     // 2. Socket.io: backend URL resolved from shared env helper
     const socketUrl = getBackendUrl();
-    const socket = io(socketUrl, { transports: ['websocket', 'polling'] });
+    const token = localStorage.getItem('mindroot_auth_token');
+    const socket = io(socketUrl, { 
+      transports: ['websocket', 'polling'],
+      auth: { token }
+    });
     socketRef.current = socket;
 
     type SignalData = {
@@ -1872,6 +1908,9 @@ export function LiveRoom() {
 
   const totalParticipantsCount = 1 + remoteParticipants.length;
   const batchCapacity = currentSession?.maxCapacity || 3;
+  const maxVideoPeers = 3; // 3 remote + 1 local = 4 total video tiles max
+  const videoRemoteParticipants = remoteParticipants.slice(0, maxVideoPeers);
+  const overflowAudioParticipants = remoteParticipants.slice(maxVideoPeers);
 
   return (
     <div className="flex flex-col h-[calc(100vh-105px)] min-h-[620px] w-full max-w-[1600px] mx-auto overflow-hidden rounded-3xl bg-background border border-outline-variant shadow-elevation-2 text-on-surface p-2.5 sm:p-3.5 relative transition-all duration-300 select-none">
@@ -1913,9 +1952,25 @@ export function LiveRoom() {
                   {batchCapacity > 1 ? `${batchCapacity}-Student Batch` : '1-on-1'}
                 </span>
               </div>
-              <p className="text-[11px] text-on-surface-variant font-bold truncate">
-                Room: <span className="text-on-surface font-extrabold">{roomId.slice(0, 16)}</span> · <span className="text-teaching-emerald font-black">● {totalParticipantsCount} Live</span>
-              </p>
+              <div className="flex items-center gap-2 mt-0.5">
+                <p className="text-[11px] text-on-surface-variant font-bold truncate">
+                  Room: <span className="text-on-surface font-extrabold">{roomId.slice(0, 16)}</span> · <span className="text-teaching-emerald font-black">● {totalParticipantsCount} Live</span>
+                </p>
+                <div 
+                  title="WebRTC ICE Connection Status"
+                  className={clsx(
+                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border shadow-xs transition-all shrink-0",
+                    iceDiagnostic === 'Direct P2P' && "bg-teaching-emerald/10 text-teaching-emerald border-teaching-emerald/30",
+                    iceDiagnostic === 'TURNS Relay 443' && "bg-sky-500/10 text-sky-400 border-sky-500/30",
+                    iceDiagnostic === 'Connecting...' && "bg-learning-amber/10 text-learning-amber border-learning-amber/30 animate-pulse",
+                    iceDiagnostic === 'Connection Failed' && "bg-alert-rose/10 text-alert-rose border-alert-rose/30",
+                    iceDiagnostic === 'SIMULATED PLAYBACK (DEMO)' && "bg-amber-500/10 text-amber-400 border-amber-500/30"
+                  )}
+                >
+                  <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-current animate-pulse" />
+                  <span>ICE: {iceDiagnostic}</span>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -2043,8 +2098,8 @@ export function LiveRoom() {
                 className="h-full w-full"
               />
 
-              {/* Remote Participants */}
-              {remoteParticipants.map(p => (
+              {/* Remote Participants (up to 3 video streams in mesh) */}
+              {videoRemoteParticipants.map(p => (
                 <VideoTile 
                   key={p.id}
                   stream={p.stream} 
@@ -2053,11 +2108,29 @@ export function LiveRoom() {
                   muted={false} 
                   waiting={false} 
                   raised={p.handRaised} 
+                  isSimulated={p.isSimulated}
                   accent={p.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
                   isRemote
                   onUnlockAudio={unlockAudio}
                   className="h-full w-full"
                 />
+              ))}
+
+              {/* Overflow Mesh Participants as Audio-only Avatar Tiles */}
+              {overflowAudioParticipants.map(p => (
+                <div 
+                  key={p.id}
+                  className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center shadow-sm h-full w-full"
+                  title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
+                >
+                  <div className="h-12 w-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-sm mb-2">
+                    {p.name.slice(0, 1).toUpperCase()}
+                  </div>
+                  <div className="text-xs font-bold text-white truncate max-w-[140px]">{p.name}</div>
+                  <span className="text-[10px] text-amber-400 font-bold mt-1.5 flex items-center gap-1 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+                    <span className="material-symbols-outlined text-[13px]">volume_up</span> Audio-Only (Mesh Cap)
+                  </span>
+                </div>
               ))}
 
               {/* Waiting Slots when alone */}
@@ -2115,8 +2188,8 @@ export function LiveRoom() {
                   className="h-full w-full"
                 />
 
-                {/* Remote Participants Cards */}
-                {remoteParticipants.map(participant => (
+                {/* Remote Participants Cards (Max 3 Video Mesh Streams) */}
+                {videoRemoteParticipants.map(participant => (
                   <VideoTile 
                     key={participant.id}
                     stream={participant.stream} 
@@ -2125,11 +2198,29 @@ export function LiveRoom() {
                     muted={false} 
                     waiting={false} 
                     raised={participant.handRaised} 
+                    isSimulated={participant.isSimulated}
                     accent={participant.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
                     isRemote
                     onUnlockAudio={unlockAudio}
                     className="h-full w-full"
                   />
+                ))}
+
+                {/* Overflow Mesh Participants as Audio-only Avatar Tiles */}
+                {overflowAudioParticipants.map(participant => (
+                  <div 
+                    key={participant.id} 
+                    className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-2.5 flex flex-col items-center justify-center text-center shadow-sm h-full w-full"
+                    title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
+                  >
+                    <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs mb-1">
+                      {participant.name.slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="text-[11px] font-bold text-white truncate max-w-[120px]">{participant.name}</div>
+                    <span className="text-[9px] text-amber-400 font-bold mt-0.5 flex items-center gap-1 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">
+                      <span className="material-symbols-outlined text-[11px]">volume_up</span> Audio-Only
+                    </span>
+                  </div>
                 ))}
 
                 {/* Companion Placeholder Card when alone */}
@@ -2606,8 +2697,8 @@ export function LiveRoom() {
                     className="h-28 w-full"
                   />
 
-                  {/* Remote participants in PiP */}
-                  {remoteParticipants.map(p => (
+                  {/* Remote participants in PiP (Max 3 Video Mesh Streams) */}
+                  {videoRemoteParticipants.map(p => (
                     <VideoTile 
                       key={p.id}
                       stream={p.stream} 
@@ -2616,11 +2707,27 @@ export function LiveRoom() {
                       muted={false} 
                       waiting={false} 
                       raised={p.handRaised} 
+                      isSimulated={p.isSimulated}
                       accent={p.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
                       isRemote
                       onUnlockAudio={unlockAudio}
                       className="h-28 w-full"
                     />
+                  ))}
+                  {overflowAudioParticipants.map(p => (
+                    <div 
+                      key={p.id} 
+                      className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-2 flex flex-col items-center justify-center text-center shadow-sm h-28 w-full"
+                      title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
+                    >
+                      <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs mb-1">
+                        {p.name.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="text-[10px] font-bold text-white truncate max-w-[90px]">{p.name}</div>
+                      <span className="text-[8px] text-amber-400 font-bold mt-1 flex items-center gap-0.5 bg-amber-400/10 px-1 py-0.5 rounded-full border border-amber-400/20">
+                        <span className="material-symbols-outlined text-[9px]">volume_up</span> Audio Cap
+                      </span>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -3483,6 +3590,7 @@ function VideoTile({
   hasMultipleCameras,
   isRemote,
   onUnlockAudio,
+  isSimulated,
   className
 }: { 
   stream: MediaStream | null; 
@@ -3499,6 +3607,7 @@ function VideoTile({
   isHardware?: boolean;
   isRemote?: boolean;
   onUnlockAudio?: () => void;
+  isSimulated?: boolean;
   className?: string;
 }) {
   const [, setTrackVersion] = useState(0);
@@ -3548,6 +3657,13 @@ function VideoTile({
         onUnlockAudio={onUnlockAudio}
         className="h-full w-full bg-slate-950 object-cover"
       />
+
+      {isSimulated && (
+        <div className="absolute top-2 right-2 bg-amber-500/95 text-slate-950 font-black px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider shadow-md backdrop-blur-md z-30 flex items-center gap-1 border border-amber-300">
+          <span className="material-symbols-outlined text-[12px]">smart_display</span>
+          <span>Simulated Playback (Demo)</span>
+        </div>
+      )}
 
       {hasMultipleCameras && onSwitchCamera && (
         <button

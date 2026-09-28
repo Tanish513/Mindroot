@@ -29,7 +29,8 @@ import {
   deductTokensAtomic,
   creditTokensAtomic,
   InsufficientTokensError,
-  userMutex
+  userMutex,
+  withOrderedLocks
 } from './lib/tokenService';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
@@ -287,6 +288,16 @@ app.use((req: any, _res: any, next: any) => {
   next();
 });
 
+const DEMO_MODE = process.env.DEMO_MODE === 'true';
+
+// GET /api/config — Public configuration endpoint
+app.get('/api/config', (_req, res) => {
+  res.json({
+    demoMode: DEMO_MODE,
+    turnConfigured: Boolean(process.env.TURN_SERVER_URL)
+  });
+});
+
 const requireAuth = (req: any, res: any, next: any) => {
   if (!req.userId) {
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token.' });
@@ -303,6 +314,19 @@ const requireAdmin = (req: any, res: any, next: any) => {
   }
   next();
 };
+
+const requireUserOwnershipOrAdmin = (req: any, res: any, next: any) => {
+  if (!req.userId) {
+    return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token.' });
+  }
+  const targetId = req.params.id || req.body?.userId;
+  if (targetId && targetId !== 'me' && req.userId !== targetId && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: You can only access your own profile.' });
+  }
+  next();
+};
+
+const inMemoryUsedUtrs = new Set<string>();
 
 let prisma: any = null;
 try {
@@ -747,7 +771,8 @@ function saveDb() {
       payoutAccounts: inMemoryPayoutAccounts,
       redemptions: inMemoryRedemptions,
       discussions: inMemoryDiscussions,
-      disputes: inMemoryDisputes
+      disputes: inMemoryDisputes,
+      usedUtrs: Array.from(inMemoryUsedUtrs)
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
   } catch (err) {
@@ -884,6 +909,10 @@ function loadDb() {
         if (data.payoutAccounts && typeof data.payoutAccounts === 'object') {
           Object.keys(inMemoryPayoutAccounts).forEach(k => delete inMemoryPayoutAccounts[k]);
           Object.assign(inMemoryPayoutAccounts, data.payoutAccounts);
+        }
+        if (Array.isArray(data.usedUtrs)) {
+          inMemoryUsedUtrs.clear();
+          data.usedUtrs.forEach((u: string) => inMemoryUsedUtrs.add(u));
         }
       }
     }
@@ -1170,6 +1199,25 @@ function notifySessionParticipants(session: any, eventName: string, payload: any
   });
 }
 
+// Socket.io Handshake Authentication Middleware
+io.use((socket, next) => {
+  const token = socket.handshake.auth?.token || (socket.handshake.headers?.authorization && socket.handshake.headers.authorization.startsWith('Bearer ') ? socket.handshake.headers.authorization.split(' ')[1] : null);
+  if (token) {
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      (socket as any).userId = decoded.userId || decoded.id;
+      (socket as any).userRole = decoded.role;
+    } catch {
+      if (token.startsWith('dev-token-')) {
+        (socket as any).userId = token.replace('dev-token-', '');
+        const matched = inMemoryUsers.find(u => u.id === (socket as any).userId);
+        if (matched) (socket as any).userRole = matched.role;
+      }
+    }
+  }
+  next();
+});
+
 // Socket.io WebRTC signaling & real-time multi-laptop sync
 io.on('connection', (socket) => {
   console.log(`🔌 Socket connected: ${socket.id}`);
@@ -1197,8 +1245,26 @@ io.on('connection', (socket) => {
     const senderId = typeof data === 'object' ? (data.senderId || socket.id) : socket.id;
     const userName = typeof data === 'object' ? data.userName : undefined;
     const userRole = typeof data === 'object' ? data.userRole : undefined;
+    const callerId = (socket as any).userId || (typeof data === 'object' ? data.userId : null);
 
     if (roomId) {
+      // Membership validation for session rooms
+      const targetSession = inMemorySessions.find(s => s.id === roomId || s.meetingLink === `/live/${roomId}` || s.meetingLink === roomId);
+      if (targetSession && !DEMO_MODE) {
+        const isParticipant = (
+          (socket as any).userRole === 'admin' ||
+          targetSession.teacherId === callerId ||
+          targetSession.teacher?.id === callerId ||
+          targetSession.studentId === callerId ||
+          targetSession.student?.id === callerId ||
+          (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === callerId))
+        );
+        if (!isParticipant && callerId) {
+          socket.emit('room-error', { error: 'Unauthorized: You are not an enrolled participant of this session.' });
+          return;
+        }
+      }
+
       socket.join(roomId);
 
       if (!liveRoomRegistry.has(roomId)) {
@@ -2870,28 +2936,44 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       }) || null;
     }
 
+    const isDemoAllowed = Boolean(isDemo && DEMO_MODE);
+    const cleanUtr = String(utr || '').trim();
+
+    if (!isDemoAllowed) {
+      if (!cleanUtr) {
+        return res.status(400).json({ error: 'Valid UPI reference number (UTR) is required.' });
+      }
+      if (inMemoryUsedUtrs.has(cleanUtr)) {
+        return res.status(409).json({ error: 'This UPI reference (UTR) has already been submitted.' });
+      }
+      inMemoryUsedUtrs.add(cleanUtr);
+    }
+
     const finalTeacherId = teacherId || targetSession?.teacherId || targetSession?.teacher?.id;
     const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
 
     const finalAmount = Number(amount || targetSession?.pricePerStudent || targetSession?.amount || teacherObj.hourlyRate || 499);
-    const generatedPaymentId = isDemo 
+    const generatedPaymentId = isDemoAllowed 
       ? `pay_demo_${Date.now()}` 
-      : `pay_upi_${utr || Date.now()}`;
-    const generatedUtr = utr || (isDemo ? `DEMO_UTR_${Math.floor(100000000000 + Math.random() * 900000000000)}` : `UPI_${Date.now()}`);
+      : `pay_upi_${cleanUtr || Date.now()}`;
+    const generatedUtr = cleanUtr || (isDemoAllowed ? `DEMO_UTR_${Math.floor(100000000000 + Math.random() * 900000000000)}` : `UPI_${Date.now()}`);
     const sessionTitle = title || targetSession?.title || 'Cohort Mentoring Session';
+
+    const targetPaymentStatus = isDemoAllowed ? 'paid' : 'pending_mentor_confirmation';
 
     // 1. Update session payment status
     if (targetSession) {
+      targetSession.utrNumber = generatedUtr;
       if (!Array.isArray(targetSession.students)) {
         targetSession.students = targetSession.studentId ? [{ id: targetSession.studentId, name: targetSession.student?.name || studentObj.name, enrolledAt: new Date().toISOString(), paymentStatus: targetSession.paymentStatus || 'pending' }] : [];
       }
       
       const existingStudentIdx = targetSession.students.findIndex((s: any) => s.id === studentId || (s.name && studentObj.name && s.name.toLowerCase() === studentObj.name.toLowerCase()));
       if (existingStudentIdx >= 0) {
-        targetSession.students[existingStudentIdx].paymentStatus = 'paid';
+        targetSession.students[existingStudentIdx].paymentStatus = targetPaymentStatus;
         targetSession.students[existingStudentIdx].paymentId = generatedPaymentId;
-        targetSession.students[existingStudentIdx].amountPaid = finalAmount;
-        targetSession.students[existingStudentIdx].amountDue = 0;
+        targetSession.students[existingStudentIdx].amountPaid = isDemoAllowed ? finalAmount : 0;
+        targetSession.students[existingStudentIdx].amountDue = isDemoAllowed ? 0 : finalAmount;
       } else {
         targetSession.students.push({
           id: studentId,
@@ -2899,44 +2981,48 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
           avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
           enrolledAt: new Date().toISOString(),
           paymentId: generatedPaymentId,
-          paymentStatus: 'paid',
-          amountPaid: finalAmount,
-          amountDue: 0
+          paymentStatus: targetPaymentStatus,
+          amountPaid: isDemoAllowed ? finalAmount : 0,
+          amountDue: isDemoAllowed ? 0 : finalAmount
         });
       }
 
-      const allPaid = targetSession.students.every((st: any) => st.paymentStatus === 'paid');
-      if (allPaid) {
-        targetSession.paymentStatus = 'paid';
+      targetSession.paymentStatus = targetPaymentStatus;
+      if (isDemoAllowed) {
         targetSession.paymentId = generatedPaymentId;
+        targetSession.status = 'confirmed';
       }
       
       if (process.env.DATABASE_URL && prisma) {
         try {
           await prisma.session.update({
             where: { id: targetSession.id },
-            data: { paymentStatus: targetSession.paymentStatus }
+            data: { 
+              paymentStatus: targetSession.paymentStatus,
+              status: isDemoAllowed ? 'confirmed' : undefined
+            }
           });
         } catch {}
       }
     }
 
-    // 2. Credit Teacher Wallet & Trust Score
-    const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
-    if (teacherUser) {
-      teacherUser.tokenBalance = (teacherUser.tokenBalance || 0) + finalAmount;
-      teacherUser.totalEarned = (teacherUser.totalEarned || 0) + finalAmount;
-      teacherUser.rewardPoints = (teacherUser.rewardPoints || 0) + 50; // +50 platform reward points
-      teacherUser.trustScore = Math.min(5.0, Number(((teacherUser.trustScore || 4.8) + 0.05).toFixed(2)));
+    // 2. Only credit mentor wallet immediately in demo mode; real UPI requires mentor confirmation
+    if (isDemoAllowed) {
+      const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
+      if (teacherUser) {
+        teacherUser.inrWalletBalance = (teacherUser.inrWalletBalance || 0) + finalAmount;
+        teacherUser.totalEarned = (teacherUser.totalEarned || 0) + finalAmount;
+        teacherUser.rewardPoints = (teacherUser.rewardPoints || 0) + 50; // +50 platform reward points
+        teacherUser.trustScore = Math.min(5.0, Number(((teacherUser.trustScore || 4.8) + 0.05).toFixed(2)));
+      }
+
+      const studentUser = inMemoryUsers.find(u => u.id === studentId);
+      if (studentUser) {
+        studentUser.rewardPoints = (studentUser.rewardPoints || 0) + 50;
+      }
     }
 
-    // 3. Award Student Platform Reward Points
-    const studentUser = inMemoryUsers.find(u => u.id === studentId);
-    if (studentUser) {
-      studentUser.rewardPoints = (studentUser.rewardPoints || 0) + 50; // +50 platform reward points
-    }
-
-    // 4. Create Transaction Record
+    // 3. Create Transaction Record
     const newTransaction = {
       id: 'tx-upi-' + Date.now(),
       userId: studentId,
@@ -2945,12 +3031,12 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       title: `Peer UPI Payment: ${sessionTitle}`,
       amount: finalAmount,
       currency: 'INR',
-      status: 'COMPLETED',
-      paymentMethod: isDemo ? 'Mindroot Instant Demo' : 'Direct UPI Transfer',
+      status: isDemoAllowed ? 'COMPLETED' : 'PENDING_CONFIRMATION',
+      paymentMethod: isDemoAllowed ? 'Mindroot Instant Demo' : 'Direct UPI Transfer',
       paymentId: generatedPaymentId,
       orderId: `upi_${generatedUtr}`,
       utr: generatedUtr,
-      isDemo: Boolean(isDemo),
+      isDemo: Boolean(isDemoAllowed),
       createdAt: new Date(),
       peerName: teacherObj.name,
       teacherName: teacherObj.name,
@@ -3173,43 +3259,59 @@ app.get('/api/sessions', async (req: any, res: any) => {
 });
 
 // POST /api/sessions/:id/join — join an existing open group session (Reserve now, Pay after lecture)
-app.post('/api/sessions/:id/join', async (req: any, res) => {
+app.post('/api/sessions/:id/join', requireAuth, async (req: any, res) => {
   const { id } = req.params;
-  const session = inMemorySessions.find(s => s.id === id);
-  if (!session) {
-    return res.status(404).json({ error: 'Session not found' });
-  }
+  const studentId = req.userId;
 
-  const studentId = req.body?.studentId || req.userId || 'user-alex';
-  const studentObj = inMemoryUsers.find(u => u.id === studentId) || { id: studentId, name: 'Student' };
-  const maxCap = session.maxCapacity || 5;
+  return withOrderedLocks([id], async () => {
+    const session = inMemorySessions.find(s => s.id === id);
+    if (!session) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
 
-  if (!Array.isArray(session.students)) {
-    session.students = session.studentId ? [{ id: session.studentId, name: session.student?.name || 'Student' }] : [];
-  }
+    const studentObj = inMemoryUsers.find(u => u.id === studentId) || { id: studentId, name: 'Student' };
+    const maxCap = session.maxCapacity || 5;
 
-  if (session.students.length >= maxCap) {
-    return res.status(400).json({ error: 'This group lecture is already at maximum capacity (5 students).' });
-  }
+    if (!Array.isArray(session.students)) {
+      session.students = session.studentId ? [{ id: session.studentId, name: session.student?.name || 'Student' }] : [];
+    }
 
-  const enrollee = {
-    id: studentId,
-    name: studentObj.name,
-    avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
-    enrolledAt: new Date().toISOString(),
-    paymentStatus: req.body?.paymentStatus || 'pending',
-    amountPaid: 0,
-    amountDue: session.pricePerStudent || session.amount || 249
-  };
+    if (session.students.length >= maxCap) {
+      return res.status(400).json({ error: `This session is already at maximum capacity (${maxCap} students).` });
+    }
 
-  if (!session.students.some((s: any) => s.id === studentId)) {
-    session.students.push(enrollee);
-  }
-  session.status = 'confirmed';
-  saveDb();
+    const enrollee = {
+      id: studentId,
+      name: studentObj.name,
+      avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
+      enrolledAt: new Date().toISOString(),
+      paymentStatus: req.body?.paymentStatus || 'pending',
+      amountPaid: 0,
+      amountDue: session.pricePerStudent || session.amount || 249
+    };
 
-  sendSessionsToParticipants(session);
-  res.json({ success: true, session });
+    if (!session.students.some((s: any) => s.id === studentId)) {
+      session.students.push(enrollee);
+    }
+    session.status = 'confirmed';
+
+    if (process.env.DATABASE_URL && prisma) {
+      try {
+        await prisma.session.update({
+          where: { id },
+          data: {
+            students: session.students,
+            status: 'confirmed'
+          }
+        });
+      } catch {}
+    }
+
+    saveDb();
+
+    sendSessionsToParticipants(session);
+    res.json({ success: true, session });
+  });
 });
 
 // Helper: Calculate nearest available time slot for a teacher when requested slot is booked
@@ -3669,6 +3771,33 @@ app.delete('/api/sessions/:id', requireAuth, async (req: any, res) => {
   const idx = inMemorySessions.findIndex(s => s.id === id);
   if (idx >= 0) {
     const sess = inMemorySessions[idx];
+
+    // Automatic token refund on cancellation of paid sessions
+    if (sess && sess.paymentStatus === 'paid') {
+      const studentId = sess.studentId || (Array.isArray(sess.students) && sess.students[0]?.id);
+      const isTokenPaid = sess.paymentId?.startsWith('tx-token') || Number(sess.amount || sess.pricePerStudent || 0) <= 20;
+      if (studentId && isTokenPaid) {
+        const refundTokens = Math.max(1, Number(sess.amount || sess.pricePerStudent || 1));
+        try {
+          await creditTokensAtomic({
+            prisma,
+            inMemoryUsers,
+            inMemorySessions,
+            inMemoryTransactions,
+            saveDb
+          }, {
+            userId: studentId,
+            amount: refundTokens,
+            reason: `Refund: Cancelled session "${sess.title || id}"`,
+            sessionId: id,
+            currency: 'TOKENS'
+          });
+        } catch (rErr) {
+          logger.error({ rErr }, 'Token refund on session cancellation encountered error');
+        }
+      }
+    }
+
     inMemorySessions.splice(idx, 1);
     saveDb();
     sendSessionsToParticipants(sess);
@@ -3785,6 +3914,46 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
 
   if (!isTeacher && !isStudent && !isInCohort && !isAdmin) {
     return res.status(403).json({ error: 'Forbidden: You are not authorized to update this session.' });
+  }
+
+  // Session status state machine validation
+  if (status && status !== memSess.status) {
+    const allowedTransitions: Record<string, string[]> = {
+      pending: ['confirmed', 'declined', 'cancelled'],
+      confirmed: ['live', 'completed', 'cancelled'],
+      live: ['completed', 'cancelled'],
+      declined: [],
+      cancelled: [],
+      completed: []
+    };
+
+    const validNextStates = allowedTransitions[memSess.status] || [];
+    if (!validNextStates.includes(status) && !isAdmin) {
+      return res.status(400).json({
+        error: `Invalid status transition: Cannot move session from "${memSess.status}" to "${status}".`
+      });
+    }
+
+    if (status === 'confirmed' || status === 'declined') {
+      if (!isTeacher && !isAdmin) {
+        return res.status(403).json({ error: 'Forbidden: Only the mentor can confirm or decline sessions.' });
+      }
+    }
+
+    if (status === 'completed') {
+      if (!isTeacher && !isAdmin) {
+        return res.status(403).json({ error: 'Forbidden: Only the mentor or admin can mark a session as completed.' });
+      }
+      if (memSess.paymentStatus !== 'paid' && memSess.paymentStatus !== 'swap' && !isAdmin) {
+        return res.status(400).json({ error: 'Cannot complete an unpaid session. Payment must be confirmed first.' });
+      }
+    }
+
+    if (status === 'cancelled') {
+      if (!isTeacher && !isStudent && !isAdmin) {
+        return res.status(403).json({ error: 'Forbidden: Only session participants or admin can cancel.' });
+      }
+    }
   }
 
   // Only the session teacher or admin can mark paymentStatus as 'paid'
@@ -3980,19 +4149,21 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
     return res.status(403).json({ error: 'Forbidden: You can only edit your own profile.' });
   }
 
-  // Security check: Only admins can assign or modify the 'admin' role
-  if (role !== undefined) {
-    if (role === 'admin' && req.userRole !== 'admin') {
-      return res.status(403).json({ error: 'Forbidden: Only administrators can assign the admin role.' });
-    }
-    if (!['student', 'teacher', 'both', 'admin'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role provided. Must be student, teacher, or both.' });
-    }
-  }
+  // Strict field allowlist enforcement for non-administrators
+  if (req.userRole !== 'admin') {
+    const allowedFields = new Set([
+      'name', 'bio', 'avatar', 'hourlyRate', 'batchPricing',
+      'skillsTaught', 'skillsLearned', 'userSkills', 'upiId', 'upiQrImage',
+      'isPublic', 'availability', 'isAvailableNow'
+    ]);
 
-  // Security check: Financial balances, trust scores, and official verification statuses can only be modified by administrators
-  if ((tokenBalance !== undefined || rewardPoints !== undefined || trustScore !== undefined || officialIdStatus !== undefined) && req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: Financial balances, trust scores, and verification statuses can only be modified by administrators.' });
+    for (const key of Object.keys(req.body)) {
+      if (!allowedFields.has(key)) {
+        return res.status(403).json({
+          error: `Forbidden: Field "${key}" cannot be modified by standard users. Only profile information can be edited.`
+        });
+      }
+    }
   }
 
   if (hourlyRate !== undefined && hourlyRate !== null) {
@@ -4194,32 +4365,34 @@ app.post('/api/users/:id/claim-streak-reward', requireAuth, async (req: any, res
     return res.status(403).json({ error: 'Forbidden: You can only claim rewards for your own account.' });
   }
 
-  const user = inMemoryUsers.find(u => u.id === id);
-  if (!user) return res.status(404).json({ error: 'User not found' });
+  return withOrderedLocks([id], async () => {
+    const user = inMemoryUsers.find(u => u.id === id);
+    if (!user) return res.status(404).json({ error: 'User not found' });
 
-  const streak = typeof user.streak === 'number' ? user.streak : 0;
-  if (streak < 7) {
-    return res.status(400).json({ error: `You need at least a 7-day streak to claim this bonus. Current streak: ${streak} day(s).` });
-  }
+    const streak = typeof user.streak === 'number' ? user.streak : 0;
+    if (streak < 7) {
+      return res.status(400).json({ error: `You need at least a 7-day streak to claim this bonus. Current streak: ${streak} day(s).` });
+    }
 
-  const currentMilestone = Math.floor(streak / 7);
-  const lastClaimed = user.lastClaimedStreakMilestone || 0;
-  if (lastClaimed >= currentMilestone) {
-    return res.status(400).json({ error: 'You have already claimed your +20 Bonus Points for this 7-day cycle!' });
-  }
+    const currentMilestone = Math.floor(streak / 7);
+    const lastClaimed = user.lastClaimedStreakMilestone || 0;
+    if (lastClaimed >= currentMilestone) {
+      return res.status(400).json({ error: 'You have already claimed your +20 Bonus Points for this 7-day cycle!' });
+    }
 
-  user.lastClaimedStreakMilestone = currentMilestone;
-  await awardRewardPoints(id, 20, `7-Day Learning Streak Bonus (Milestone Cycle ${currentMilestone})`);
+    user.lastClaimedStreakMilestone = currentMilestone;
+    await awardRewardPoints(id, 20, `7-Day Learning Streak Bonus (Milestone Cycle ${currentMilestone})`);
 
-  saveDb();
-  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
-  io.emit('network-rewards-updated', inMemoryRedemptions);
+    saveDb();
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+    io.emit('network-rewards-updated', inMemoryRedemptions);
 
-  return res.json({
-    success: true,
-    message: '🎉 Congratulations! +20 Bonus Points claimed successfully!',
-    user: toPublicUser(user),
-    rewardPoints: user.rewardPoints
+    return res.json({
+      success: true,
+      message: '🎉 Congratulations! +20 Bonus Points claimed successfully!',
+      user: toPublicUser(user),
+      rewardPoints: user.rewardPoints
+    });
   });
 });
 
@@ -4261,114 +4434,116 @@ app.post('/api/rewards/redeem', requireAuth, async (req: any, res: any) => {
     return res.status(400).json({ error: 'Reward ID is required' });
   }
 
-  const reward = REWARD_CATALOG.find(r => r.id === rewardId);
-  if (!reward) {
-    return res.status(404).json({ error: 'Reward not found in catalog' });
-  }
+  return withOrderedLocks([userId], async () => {
+    const reward = REWARD_CATALOG.find(r => r.id === rewardId);
+    if (!reward) {
+      return res.status(404).json({ error: 'Reward not found in catalog' });
+    }
 
-  const user = inMemoryUsers.find(u => u.id === userId);
-  if (!user) {
-    return res.status(404).json({ error: 'User not found' });
-  }
+    const user = inMemoryUsers.find(u => u.id === userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
 
-  const currentPoints = user.rewardPoints || 0;
-  if (currentPoints < reward.cost) {
-    return res.status(400).json({
-      error: `Insufficient reward points. You have ${currentPoints} points, but this reward costs ${reward.cost} points.`
-    });
-  }
+    const currentPoints = user.rewardPoints || 0;
+    if (currentPoints < reward.cost) {
+      return res.status(400).json({
+        error: `Insufficient reward points. You have ${currentPoints} points, but this reward costs ${reward.cost} points.`
+      });
+    }
 
-  // Deduct reward points
-  user.rewardPoints = currentPoints - reward.cost;
+    // Deduct reward points
+    user.rewardPoints = currentPoints - reward.cost;
 
-  // Apply the reward's effect
-  if (reward.type === 'wallet_credit') {
-    const creditAmount = typeof reward.value === 'number' ? reward.value : 5;
-    await creditTokensAtomic({
-      prisma,
-      inMemoryUsers,
-      inMemorySessions,
-      inMemoryTransactions,
-      saveDb
-    }, {
+    // Apply the reward's effect
+    if (reward.type === 'wallet_credit') {
+      const creditAmount = typeof reward.value === 'number' ? reward.value : 5;
+      await creditTokensAtomic({
+        prisma,
+        inMemoryUsers,
+        inMemorySessions,
+        inMemoryTransactions,
+        saveDb
+      }, {
+        userId: user.id,
+        amount: creditAmount,
+        reason: `Redeemed ${reward.title} for ${reward.cost} reward points`,
+        peerName: 'Rewards Store',
+        currency: 'TOKENS'
+      });
+      io.emit('network-transactions-updated', inMemoryTransactions);
+    } else if (reward.type === 'badge') {
+      if (!Array.isArray(user.badges)) {
+        user.badges = [];
+      }
+      const badgeName = String(reward.value || reward.title);
+      if (!user.badges.includes(badgeName)) {
+        user.badges.push(badgeName);
+      }
+    } else if (reward.type === 'voucher') {
+      if (!Array.isArray(user.vouchers)) {
+        user.vouchers = [];
+      }
+      const isPct = reward.id.includes('pct');
+      const voucher = {
+        id: 'vouch-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
+        code: `MR-${isPct ? '20PCT' : '100OFF'}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
+        title: reward.title,
+        rewardId: reward.id,
+        discountValue: typeof reward.value === 'number' ? reward.value : 100,
+        discountType: isPct ? 'percent' : 'flat',
+        isUsed: false,
+        createdAt: new Date().toISOString()
+      };
+      user.vouchers.push(voucher);
+    } else if (reward.type === 'featured_mentor') {
+      user.isFeatured = true;
+      user.featuredUntil = new Date(Date.now() + (Number(reward.value) || 7) * 24 * 60 * 60 * 1000).toISOString();
+    } else if (reward.type === 'zero_fee_pass') {
+      user.zeroFeePasses = (user.zeroFeePasses || 0) + (Number(reward.value) || 2);
+    } else if (reward.type === 'doubt_pass') {
+      user.doubtPasses = (user.doubtPasses || 0) + (Number(reward.value) || 1);
+    }
+
+    // Record redemption ledger entry
+    const redemption = {
+      id: 'rd-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
       userId: user.id,
-      amount: creditAmount,
-      reason: `Redeemed ${reward.title} for ${reward.cost} reward points`,
-      peerName: 'Rewards Store',
-      currency: 'TOKENS'
-    });
-    io.emit('network-transactions-updated', inMemoryTransactions);
-  } else if (reward.type === 'badge') {
-    if (!Array.isArray(user.badges)) {
-      user.badges = [];
-    }
-    const badgeName = String(reward.value || reward.title);
-    if (!user.badges.includes(badgeName)) {
-      user.badges.push(badgeName);
-    }
-  } else if (reward.type === 'voucher') {
-    if (!Array.isArray(user.vouchers)) {
-      user.vouchers = [];
-    }
-    const isPct = reward.id.includes('pct');
-    const voucher = {
-      id: 'vouch-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6),
-      code: `MR-${isPct ? '20PCT' : '100OFF'}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`,
-      title: reward.title,
       rewardId: reward.id,
-      discountValue: typeof reward.value === 'number' ? reward.value : 100,
-      discountType: isPct ? 'percent' : 'flat',
-      isUsed: false,
+      rewardTitle: reward.title,
+      rewardType: reward.type,
+      cost: reward.cost,
+      points: -reward.cost,
+      kind: 'redeem',
+      status: reward.type === 'perk' ? 'pending_fulfillment' : 'completed',
       createdAt: new Date().toISOString()
     };
-    user.vouchers.push(voucher);
-  } else if (reward.type === 'featured_mentor') {
-    user.isFeatured = true;
-    user.featuredUntil = new Date(Date.now() + (Number(reward.value) || 7) * 24 * 60 * 60 * 1000).toISOString();
-  } else if (reward.type === 'zero_fee_pass') {
-    user.zeroFeePasses = (user.zeroFeePasses || 0) + (Number(reward.value) || 2);
-  } else if (reward.type === 'doubt_pass') {
-    user.doubtPasses = (user.doubtPasses || 0) + (Number(reward.value) || 1);
-  }
+    inMemoryRedemptions.unshift(redemption);
 
-  // Record redemption ledger entry
-  const redemption = {
-    id: 'rd-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7),
-    userId: user.id,
-    rewardId: reward.id,
-    rewardTitle: reward.title,
-    rewardType: reward.type,
-    cost: reward.cost,
-    points: -reward.cost,
-    kind: 'redeem',
-    status: reward.type === 'perk' ? 'pending_fulfillment' : 'completed',
-    createdAt: new Date().toISOString()
-  };
-  inMemoryRedemptions.unshift(redemption);
-
-  // Update Prisma if DATABASE_URL is set
-  if (process.env.DATABASE_URL && prisma) {
-    try {
-      const updateData: any = {
-        rewardPoints: user.rewardPoints
-      };
-      if (reward.type === 'wallet_credit') {
-        updateData.tokenBalance = user.tokenBalance;
+    // Update Prisma if DATABASE_URL is set
+    if (process.env.DATABASE_URL && prisma) {
+      try {
+        const updateData: any = {
+          rewardPoints: user.rewardPoints
+        };
+        if (reward.type === 'wallet_credit') {
+          updateData.tokenBalance = user.tokenBalance;
+        }
+        await prisma.user.update({
+          where: { id: userId },
+          data: updateData
+        });
+      } catch (err) {
+        console.error('Failed to update user in DB on reward redemption:', err);
       }
-      await prisma.user.update({
-        where: { id: userId },
-        data: updateData
-      });
-    } catch (err) {
-      console.error('Failed to update user in DB on reward redemption:', err);
     }
-  }
 
-  saveDb();
-  io.emit('network-rewards-updated', inMemoryRedemptions);
-  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+    saveDb();
+    io.emit('network-rewards-updated', inMemoryRedemptions);
+    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
-  return res.json({ success: true, redemption, user: toPublicUser(user) });
+    return res.json({ success: true, redemption, user: toPublicUser(user) });
+  });
 });
 
 // ==========================================
@@ -4662,78 +4837,68 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
     return res.status(403).json({ error: 'Cannot delete the master System Admin account.' });
   }
 
+  // Active session check: Prevent deletion if user has open sessions
+  const hasActiveSessions = inMemorySessions.some(s => 
+    (s.status === 'pending' || s.status === 'confirmed' || s.status === 'live') &&
+    (s.teacherId === targetId || s.studentId === targetId || (Array.isArray(s.students) && s.students.some((st: any) => (typeof st === 'string' ? st : st?.id) === targetId)))
+  );
+  if (hasActiveSessions) {
+    return res.status(400).json({
+      error: 'Cannot delete account with active sessions. Please complete or cancel all pending, confirmed, or live sessions first.'
+    });
+  }
+
+  // 1. Soft-delete and anonymize in PostgreSQL
   if (process.env.DATABASE_URL && prisma) {
     try {
-      await prisma.$transaction([
-        prisma.userSkill.deleteMany({ where: { userId: targetId } }),
-        prisma.message.deleteMany({ where: { OR: [{ senderId: targetId }, { receiverId: targetId }] } }),
-        prisma.review.deleteMany({ where: { OR: [{ authorId: targetId }, { targetId: targetId }] } }),
-        prisma.transaction.deleteMany({ where: { userId: targetId } }),
-        prisma.session.deleteMany({ where: { OR: [{ teacherId: targetId }, { studentId: targetId }] } }),
-        prisma.emailVerificationToken.deleteMany({ where: { userId: targetId } }),
-        prisma.passwordResetToken.deleteMany({ where: { userId: targetId } }),
-        prisma.user.delete({ where: { id: targetId } })
-      ]);
+      await prisma.user.update({
+        where: { id: targetId },
+        data: {
+          name: 'Deleted User',
+          email: `deleted+${targetId}@invalid.mindroot.edu`,
+          password: null,
+          avatar: null,
+          bio: 'This account has been deleted.',
+          deletedAt: new Date(),
+          isPublic: false
+        }
+      }).catch(() => {});
+      await prisma.emailVerificationToken.deleteMany({ where: { userId: targetId } }).catch(() => {});
+      await prisma.passwordResetToken.deleteMany({ where: { userId: targetId } }).catch(() => {});
     } catch (dbErr: any) {
-      if (dbErr?.code !== 'P2025') {
-        logger.error({ dbErr, targetId }, 'Database error deleting user');
-        return res.status(500).json({ error: `Database failed to delete user ${targetId}.` });
-      }
+      logger.error({ dbErr, targetId }, 'Database error soft-deleting user');
     }
   }
 
-  // 1. Remove from inMemoryUsers
-  const userIdx = inMemoryUsers.findIndex(u => u.id === targetId);
-  if (userIdx !== -1) {
-    inMemoryUsers.splice(userIdx, 1);
+  // 2. Soft-delete and anonymize in Memory & invalidate JWTs
+  const memUser = inMemoryUsers.find(u => u.id === targetId);
+  if (memUser) {
+    memUser.name = 'Deleted User';
+    memUser.email = `deleted+${targetId}@invalid.mindroot.edu`;
+    memUser.password = '';
+    memUser.avatar = null;
+    memUser.bio = 'This account has been deleted.';
+    memUser.deletedAt = new Date().toISOString();
+    memUser.tokenVersion = (memUser.tokenVersion || 0) + 1; // Invalidate active JWTs
+    memUser.isPublic = false;
   }
 
-  // 2. Cascade delete inMemorySessions
-  for (let i = inMemorySessions.length - 1; i >= 0; i--) {
-    const s = inMemorySessions[i];
-    if (s.teacherId === targetId || s.studentId === targetId || (Array.isArray(s.students) && s.students.some((st: any) => (typeof st === 'string' ? st : st?.id) === targetId))) {
-      inMemorySessions.splice(i, 1);
-    }
-  }
-
-  // 3. Cascade delete inMemoryMessages
-  for (let i = inMemoryMessages.length - 1; i >= 0; i--) {
-    const m = inMemoryMessages[i];
-    if (m.senderId === targetId || m.receiverId === targetId) {
-      inMemoryMessages.splice(i, 1);
-    }
-  }
-
-  // 4. Cascade delete inMemoryReviews
-  for (let i = inMemoryReviews.length - 1; i >= 0; i--) {
-    const r = inMemoryReviews[i];
-    if (r.authorId === targetId || r.targetId === targetId) {
-      inMemoryReviews.splice(i, 1);
-    }
-  }
-
-  // 5. Cascade delete inMemoryTransactions
-  for (let i = inMemoryTransactions.length - 1; i >= 0; i--) {
-    const t = inMemoryTransactions[i];
-    if (t.userId === targetId) {
-      inMemoryTransactions.splice(i, 1);
-    }
-  }
-
-  // 6. Delete payout account
+  // 3. Delete payout account
   delete inMemoryPayoutAccounts[targetId];
 
-  // 7. Save persistence
+  // NOTE: Transaction ledger records are PRESERVED intentionally to maintain financial audit integrity.
+
+  // 4. Save persistence
   saveDb();
 
-  // 8. Emit socket updates across all network clients
+  // 5. Emit socket updates across all network clients
   io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   io.emit('network-sessions-updated', inMemorySessions);
   io.emit('network-messages-updated', inMemoryMessages);
   io.emit('network-reviews-updated', inMemoryReviews);
   io.emit('network-transactions-updated', inMemoryTransactions);
 
-  res.json({ success: true, message: `User ${targetId} removed successfully.` });
+  res.json({ success: true, message: `User ${targetId} account deactivated and anonymized successfully.` });
 });
 
 // POST /api/admin/reload-db — Reload in-memory state from db.json (Requires Admin role)
@@ -4771,27 +4936,61 @@ app.post('/api/admin/verify-teacher-id', requireAdmin, (req: any, res: any) => {
 // POST /api/sessions/:id/confirm-payment — Teacher 1-click Acknowledgment of UPI Payment
 app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res: any) => {
   const { id } = req.params;
-  const session = inMemorySessions.find(s => s.id === id);
-  if (!session) return res.status(404).json({ error: 'Session not found.' });
+  return withOrderedLocks([id], async () => {
+    const session = inMemorySessions.find(s => s.id === id);
+    if (!session) return res.status(404).json({ error: 'Session not found.' });
 
-  const isTeacher = session.teacherId === req.userId || session.teacher?.id === req.userId;
-  if (!isTeacher && req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: Only the teacher of this session or an admin can confirm payment.' });
-  }
+    const isTeacher = session.teacherId === req.userId || session.teacher?.id === req.userId;
+    if (!isTeacher && req.userRole !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Only the teacher of this session or an admin can confirm payment.' });
+    }
 
-  session.paymentStatus = 'paid';
-  session.status = 'confirmed';
-  session.confirmedAt = new Date().toISOString();
+    // Idempotency check: Double clicks or retries do not credit twice
+    if (session.paymentStatus === 'paid') {
+      return res.json({ success: true, message: 'Payment already confirmed.', session, alreadyProcessed: true });
+    }
 
-  saveDb();
-  sendSessionsToParticipants(session);
-  notifySessionParticipants(session, 'session-payment-confirmed', {
-    sessionId: id,
-    status: 'confirmed',
-    paymentStatus: 'paid'
+    session.paymentStatus = 'paid';
+    session.status = 'confirmed';
+    session.confirmedAt = new Date().toISOString();
+
+    if (Array.isArray(session.students)) {
+      session.students.forEach((st: any) => {
+        st.paymentStatus = 'paid';
+        st.amountDue = 0;
+      });
+    }
+
+    // Credit mentor INR wallet & trust score
+    const finalTeacherId = session.teacherId || session.teacher?.id;
+    const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
+    const finalAmount = Number(session.amount || session.pricePerStudent || teacherUser?.hourlyRate || 499);
+    if (teacherUser) {
+      teacherUser.inrWalletBalance = (teacherUser.inrWalletBalance || 0) + finalAmount;
+      teacherUser.totalEarned = (teacherUser.totalEarned || 0) + finalAmount;
+      teacherUser.rewardPoints = (teacherUser.rewardPoints || 0) + 50;
+      teacherUser.trustScore = Math.min(5.0, Number(((teacherUser.trustScore || 4.8) + 0.05).toFixed(2)));
+    }
+
+    if (process.env.DATABASE_URL && prisma) {
+      try {
+        await prisma.session.update({
+          where: { id },
+          data: { paymentStatus: 'paid', status: 'confirmed' }
+        });
+      } catch {}
+    }
+
+    saveDb();
+    sendSessionsToParticipants(session);
+    notifySessionParticipants(session, 'session-payment-confirmed', {
+      sessionId: id,
+      status: 'confirmed',
+      paymentStatus: 'paid'
+    });
+
+    res.json({ success: true, message: 'Payment confirmed by mentor. Classroom access unlocked!', session });
   });
-
-  res.json({ success: true, message: 'Payment confirmed by mentor. Classroom access unlocked!', session });
 });
 
 // POST /api/sessions/:id/dispute — Raise a payment dispute
@@ -4870,7 +5069,7 @@ app.post('/api/admin/disputes/:id/resolve', requireAdmin, (req: any, res: any) =
 
 // POST /api/admin/seed-demo — 1-Minute Live Demo Seed for 5th-Sem Presentation
 app.post('/api/admin/seed-demo', (req: any, res: any, next: any) => {
-  if (process.env.NODE_ENV !== 'production') return next();
+  if (DEMO_MODE) return next();
   return requireAdmin(req, res, next);
 }, async (_req: any, res: any) => {
   // Ensure student Aarav exists
@@ -5073,15 +5272,44 @@ app.get('/api/reviews', async (req, res) => {
 });
 
 // POST /api/reviews — write review, calculate target trust score dynamically
-app.post('/api/reviews', async (req, res) => {
-  const { authorId, targetId, topic, rating, quote, chips } = req.body;
-  const numRating = parseInt(rating, 10) || 5;
+app.post('/api/reviews', requireAuth, async (req: any, res) => {
+  const authorId = req.userId || req.body.authorId;
+  const { sessionId, targetId, topic, rating, quote, chips } = req.body;
+  const numRating = Math.max(1, Math.min(5, parseInt(rating, 10) || 5));
+
+  if (!sessionId) {
+    return res.status(400).json({ error: 'sessionId is required to submit a verified review.' });
+  }
+
+  const targetSession = inMemorySessions.find(s => s.id === sessionId);
+  if (!targetSession || targetSession.status !== 'completed') {
+    return res.status(400).json({ error: 'Reviews can only be submitted for completed sessions.' });
+  }
+
+  const isParticipant = (
+    targetSession.teacherId === authorId ||
+    targetSession.teacher?.id === authorId ||
+    targetSession.studentId === authorId ||
+    targetSession.student?.id === authorId ||
+    (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === authorId))
+  );
+  if (!isParticipant && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'You can only review sessions you participated in.' });
+  }
+
+  const alreadyReviewed = inMemoryReviews.some(r => r.sessionId === sessionId && r.authorId === authorId);
+  if (alreadyReviewed) {
+    return res.status(400).json({ error: 'You have already submitted a review for this session.' });
+  }
+
+  const resolvedTargetId = targetId || (targetSession.teacherId === authorId ? targetSession.studentId : targetSession.teacherId);
 
   const newRev = {
     id: 'review-' + Date.now(),
+    sessionId,
     authorId,
-    targetId,
-    topic: topic || 'Peer Exchange',
+    targetId: resolvedTargetId,
+    topic: topic || targetSession.title || 'Peer Mentoring Session',
     rating: numRating,
     quote: quote || '',
     chips: Array.isArray(chips) ? chips : [],
@@ -5091,9 +5319,9 @@ app.post('/api/reviews', async (req, res) => {
   inMemoryReviews.push(newRev);
 
   // Recalculate in-memory target user trustScore
-  const targetUser = inMemoryUsers.find(u => u.id === targetId);
+  const targetUser = inMemoryUsers.find(u => u.id === resolvedTargetId);
   if (targetUser) {
-    const userRevs = inMemoryReviews.filter(r => r.targetId === targetId);
+    const userRevs = inMemoryReviews.filter(r => r.targetId === resolvedTargetId);
     const avg = userRevs.reduce((sum, r) => sum + r.rating, 0) / userRevs.length;
     targetUser.trustScore = parseFloat(avg.toFixed(2));
   }
@@ -5106,10 +5334,10 @@ app.post('/api/reviews', async (req, res) => {
       const review = await prisma.review.create({
         data: {
           authorId,
-          targetId,
-          topic,
+          targetId: resolvedTargetId,
+          topic: newRev.topic,
           rating: numRating,
-          quote,
+          quote: newRev.quote,
           chips: Array.isArray(chips) ? chips : []
         }
       });
