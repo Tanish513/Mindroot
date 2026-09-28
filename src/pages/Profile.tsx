@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { ChangeEvent } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../lib/api';
 
@@ -15,6 +16,8 @@ const PRESET_AVATARS = [
 export function Profile() {
   const { currentUser, setCurrentUser, role, loginRole, toggleRole } = useAppStore();
   const loginAction = useAppStore(state => state.login);
+  const logout = useAppStore(state => state.logout);
+  const navigate = useNavigate();
 
   const [accountRole, setAccountRole] = useState<'student' | 'teacher' | 'both'>(
     (currentUser?.role as any) || (loginRole as any) || 'student'
@@ -22,7 +25,7 @@ export function Profile() {
   const [name, setName] = useState(currentUser?.name || '');
   const [email, setEmail] = useState(currentUser?.email || '');
   const [bio, setBio] = useState(currentUser?.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
-  const [hourlyRate, setHourlyRate] = useState(currentUser?.hourlyRate || 499);
+  const [hourlyRate, setHourlyRate] = useState<number>(typeof currentUser?.hourlyRate === 'number' ? currentUser.hourlyRate : 499);
   const [upiId, setUpiId] = useState(currentUser?.upiId || '');
   const [upiQrImage, setUpiQrImage] = useState<string>(currentUser?.upiQrImage || '');
   const [officialIdType, setOfficialIdType] = useState<string>(currentUser?.officialIdType || 'college_id');
@@ -30,11 +33,15 @@ export function Profile() {
   const [officialIdDocument, setOfficialIdDocument] = useState<string>(currentUser?.officialIdDocument || '');
   const [officialIdStatus, setOfficialIdStatus] = useState<string>(currentUser?.officialIdStatus || (currentUser?.officialIdDocument ? 'verified' : 'unverified'));
 
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   const [batchPricing, setBatchPricing] = useState<Record<number, number>>(() => {
     if (currentUser?.batchPricing && typeof currentUser.batchPricing === 'object') {
       return { ...currentUser.batchPricing };
     }
-    const base = currentUser?.hourlyRate || 499;
+    const base = typeof currentUser?.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
     return {
       1: base,
       2: Math.round(base * 0.8),
@@ -71,7 +78,7 @@ export function Profile() {
       if (currentUser.role === 'student' || currentUser.role === 'teacher' || currentUser.role === 'both') {
         setAccountRole(currentUser.role);
       }
-      const base = currentUser.hourlyRate || 499;
+      const base = typeof currentUser.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
       setHourlyRate(base);
       setUpiId(currentUser.upiId || '');
       setUpiQrImage(currentUser.upiQrImage || '');
@@ -129,16 +136,36 @@ export function Profile() {
   };
 
   const handleHourlyRateChange = (val: number) => {
-    const safeVal = Math.max(50, val || 50);
+    const safeVal = Math.max(0, isNaN(val) ? 0 : Math.round(val));
     setHourlyRate(safeVal);
     setBatchPricing(prev => ({
       ...prev,
       1: safeVal,
-      2: prev[2] ? prev[2] : Math.round(safeVal * 0.8),
-      3: prev[3] ? prev[3] : Math.round(safeVal * 0.7),
-      4: prev[4] ? prev[4] : Math.round(safeVal * 0.6),
-      5: prev[5] ? prev[5] : Math.round(safeVal * 0.5),
+      2: prev[2] !== undefined ? prev[2] : Math.round(safeVal * 0.8),
+      3: prev[3] !== undefined ? prev[3] : Math.round(safeVal * 0.7),
+      4: prev[4] !== undefined ? prev[4] : Math.round(safeVal * 0.6),
+      5: prev[5] !== undefined ? prev[5] : Math.round(safeVal * 0.5),
     }));
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!currentUser?.id) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await api.deleteUser(currentUser.id);
+      if (res && res.error) {
+        setDeleteError(res.error);
+        setIsDeleting(false);
+        return;
+      }
+      setShowDeleteModal(false);
+      logout();
+      navigate('/login');
+    } catch (err: any) {
+      setDeleteError(err?.message || 'Failed to delete account. Please try again.');
+      setIsDeleting(false);
+    }
   };
 
   // Handle local image file uploads (JPEG, PNG, WebP)
@@ -220,6 +247,14 @@ export function Profile() {
     const isTeacherOrBoth = accountRole === 'teacher' || accountRole === 'both';
     const isStudentOrBoth = accountRole === 'student' || accountRole === 'both';
 
+    if (isTeacherOrBoth) {
+      if (isNaN(Number(hourlyRate)) || Number(hourlyRate) < 0) {
+        alert('Please enter a valid non-negative teaching rate.');
+        return;
+      }
+    }
+    const cleanRate = isTeacherOrBoth ? Math.round(Number(hourlyRate)) : undefined;
+
     const updatedUser: any = {
       ...(currentUser || {}),
       id: currentUser?.id || 'user-' + Date.now(),
@@ -228,7 +263,7 @@ export function Profile() {
       bio,
       role: accountRole,
       isPublic,
-      hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
+      hourlyRate: cleanRate,
       upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
       upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
       officialIdType: isTeacherOrBoth ? officialIdType : undefined,
@@ -257,7 +292,7 @@ export function Profile() {
           bio,
           role: accountRole,
           isPublic,
-          hourlyRate: isTeacherOrBoth ? Number(hourlyRate) : undefined,
+          hourlyRate: cleanRate,
           upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
           upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
           officialIdType: isTeacherOrBoth ? officialIdType : undefined,
@@ -362,7 +397,7 @@ export function Profile() {
               {(accountRole === 'teacher' || accountRole === 'both') && (
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-surface-container rounded-xl text-xs font-semibold text-on-surface">
                   <span className="material-symbols-outlined text-teaching-emerald text-base">payments</span>
-                  <span>₹{hourlyRate || 499}/hr Teaching Rate</span>
+                  <span>₹{typeof hourlyRate === 'number' ? hourlyRate : 499}/hr Teaching Rate</span>
                 </div>
               )}
               {accountRole === 'student' && (
@@ -643,9 +678,9 @@ export function Profile() {
                     <label className="block text-xs font-bold text-on-surface mb-1">Teaching Base Rate (1-on-1 ₹/Hour)</label>
                     <input 
                       type="number" 
-                      min={50}
+                      min={0}
                       max={10000}
-                      step={50}
+                      step={25}
                       value={hourlyRate} 
                       onChange={(e) => handleHourlyRateChange(Number(e.target.value))}
                       className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
@@ -721,7 +756,7 @@ export function Profile() {
                               <span className="absolute left-2 top-1.5 text-xs font-bold text-on-surface-variant">₹</span>
                               <input 
                                 type="number"
-                                min={25}
+                                min={0}
                                 max={10000}
                                 step={25}
                                 value={price}
@@ -1075,6 +1110,39 @@ export function Profile() {
               Save & Synchronize Profile
             </button>
           </div>
+
+          {/* Danger Zone: Account Deletion */}
+          <div className="bg-surface rounded-2xl p-6 border border-alert-rose/30 shadow-elevation-1 space-y-4">
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-xl bg-alert-rose/10 text-alert-rose flex items-center justify-center font-bold">
+                <span className="material-symbols-outlined text-2xl">warning</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-extrabold text-alert-rose">Danger Zone</h3>
+                <p className="text-xs text-on-surface-variant">Irreversible account actions and data removal</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 rounded-xl bg-alert-rose/5 border border-alert-rose/20">
+              <div className="space-y-1">
+                <h4 className="text-xs font-bold text-on-surface">Delete Account & Profile</h4>
+                <p className="text-[11px] text-on-surface-variant max-w-md leading-relaxed">
+                  Permanently remove your account, profile, scheduled sessions, messages, and reviews from the platform. This action cannot be undone.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  setShowDeleteModal(true);
+                }}
+                className="px-4 py-2.5 bg-alert-rose/10 hover:bg-alert-rose text-alert-rose hover:text-white border border-alert-rose/30 hover:border-alert-rose rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 self-start sm:self-center shrink-0 shadow-xs cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-base">delete_forever</span>
+                <span>Delete Account</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Right Column: Achievements & Activity Summary */}
@@ -1123,7 +1191,7 @@ export function Profile() {
               <span className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant">Direct Mentoring Fee</span>
               <span className="material-symbols-outlined text-teaching-emerald">payments</span>
             </div>
-            <div className="text-3xl font-black text-teaching-emerald">₹{hourlyRate || 499} / hr</div>
+            <div className="text-3xl font-black text-teaching-emerald">₹{typeof hourlyRate === 'number' ? hourlyRate : 499} / hr</div>
             <p className="text-xs text-on-surface-variant leading-relaxed">
               Set your custom hourly rate in rupees. Students pay securely via direct UPI (GPay, PhonePe, Paytm, QR) to your verified account when booking sessions with you.
             </p>
@@ -1217,6 +1285,61 @@ export function Profile() {
               >
                 <span className="material-symbols-outlined text-sm">share</span>
                 <span>Copy LinkedIn Summary</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Account Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-surface border-2 border-alert-rose/40 rounded-3xl w-full max-w-md shadow-elevation-4 overflow-hidden p-6 sm:p-7 relative space-y-5">
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-alert-rose/15 text-alert-rose flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">error</span>
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-on-surface tracking-tight">Delete Your Account?</h3>
+                <p className="text-xs text-on-surface-variant font-medium mt-1 leading-relaxed">
+                  Are you sure you want to delete your account? This action cannot be undone. All your profile information, teaching sessions, chat messages, and reviews will be permanently deleted.
+                </p>
+              </div>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 bg-alert-rose/10 border border-alert-rose/30 rounded-xl text-xs font-semibold text-alert-rose flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm shrink-0">error</span>
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-outline-variant/60">
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={() => setShowDeleteModal(false)}
+                className="px-4 py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={isDeleting}
+                onClick={handleDeleteAccount}
+                className="px-5 py-2.5 bg-alert-rose hover:bg-alert-rose/90 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
+              >
+                {isDeleting ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Deleting…</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="material-symbols-outlined text-sm">delete_forever</span>
+                    <span>Yes, Delete Account</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

@@ -24,6 +24,7 @@ model User {
   bio              String?
   avatar           String?
   isPublic         Boolean                  @default(true)
+  version          Int                      @default(0)
   deletedAt        DateTime?
   taughtSessions   Session[]                @relation("TeacherSessions")
   learnedSessions  Session[]                @relation("StudentSessions")
@@ -117,6 +118,8 @@ model Transaction {
   title       String?
   peerName    String?
   type        String // 'EARNED' or 'SPENT'
+  balanceBefore Int?
+  balanceAfter  Int?
   paymentId   String?
   orderId     String?
   currency    String    @default("INR")

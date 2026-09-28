@@ -1,0 +1,26 @@
+# Changes Log
+
+- **2026-09-24**:
+  - **Task**: FIX 1 — Teacher price setting acceptance & FIX 2 — Profile account deletion feature.
+  - **Files Changed**:
+    - `server/src/index.ts`:
+      - Validated `hourlyRate` in `POST /api/auth/register` and `PATCH /api/users/:id` to reject negatives and non-numerics with clear 400 error while accepting non-negative numbers (including 0).
+      - Converted `hourlyRate` via `Math.round()` to satisfy Prisma schema integer requirement (`Int @default(499)`).
+      - Fixed `batchPricing` tier extraction from falsy `||` fallback to explicitly accept 0.
+      - Updated user deletion route `DELETE ['/api/users/me', '/api/users/:id']` to require `requireAuth` and allow users to delete their own account or admins to delete any account (protecting `user-admin`). Added cascading Prisma `$transaction` deletion of `userSkill`, `message`, `review`, `transaction`, `session`, `emailVerificationToken`, `passwordResetToken` before `user.delete`.
+    - `src/lib/api/index.ts`:
+      - Updated `calculateSeatPrice` and `sanitizePeer` to accept non-negative rates (`>= 0`) instead of rejecting 0 (`> 0`).
+    - `src/pages/Login.tsx`:
+      - Updated `handleBaseRateChange` to allow `safeRate >= 0` instead of clamping to 50 (`Math.max(50, ...)`).
+      - Added non-negative validation in `handleSignUpSubmit`.
+      - Updated `handleOnboardingSubmit` to be async and await `api.updateUser(pendingUser.id, ...)` so onboarding prices and roles persist to backend DB.
+      - Changed input `min` attributes from `50`/`25` to `0`.
+    - `src/pages/Profile.tsx`:
+      - Replaced `hourlyRate || 499` with `typeof hourlyRate === 'number' ? hourlyRate : 499` across state initializers, `useEffect`, and UI badges to preserve 0.
+      - Added Danger Zone card with "Delete Account" button.
+      - Added Delete Account confirmation modal with loading indicator and cancellation.
+      - Hooked up `handleDeleteAccount` to `api.deleteUser(currentUser.id)`, Zustand `logout()`, and navigation to `/login`.
+    - `src/pages/TeacherPortal.tsx`:
+      - Replaced `hourlyRate || 499` with `typeof ... === 'number'` in state, data loading, and `handleSaveRates`.
+      - Changed tier price input `min` to `0`.
+  - **Verification**: `npx tsc --noEmit`, `server` `npm run typecheck`, and root `npm run build` all passed with code 0.

@@ -41,7 +41,7 @@ export function TeacherPortal() {
     if (currentUser?.batchPricing && typeof currentUser.batchPricing === 'object') {
       return { ...currentUser.batchPricing };
     }
-    const base = currentUser?.hourlyRate || 499;
+    const base = typeof currentUser?.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
     return {
       1: base,
       2: Math.round(base * 0.8),
@@ -65,7 +65,7 @@ export function TeacherPortal() {
         }
         if (user?.batchPricing && typeof user.batchPricing === 'object') {
           setPortalRates({ ...user.batchPricing });
-        } else if (user?.hourlyRate) {
+        } else if (typeof user?.hourlyRate === 'number') {
           const base = user.hourlyRate;
           setPortalRates({
             1: base,
@@ -85,7 +85,7 @@ export function TeacherPortal() {
       }
       if (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') {
         setPortalRates({ ...currentUser.batchPricing });
-      } else if (currentUser.hourlyRate) {
+      } else if (typeof currentUser.hourlyRate === 'number') {
         const base = currentUser.hourlyRate;
         setPortalRates({
           1: base,
@@ -104,7 +104,7 @@ export function TeacherPortal() {
     if (!currentUser?.id) return;
     setSavingRates(true);
     try {
-      const base1on1 = portalRates[1] || currentUser.hourlyRate || 499;
+      const base1on1 = typeof portalRates[1] === 'number' ? portalRates[1] : (typeof currentUser.hourlyRate === 'number' ? currentUser.hourlyRate : 499);
       await api.updateUser(currentUser.id, {
         hourlyRate: base1on1,
         batchPricing: portalRates
@@ -310,7 +310,8 @@ export function TeacherPortal() {
             { cap: 4, label: 'Small Cohort', icon: 'diversity_3', desc: '4 Students' },
             { cap: 5, label: 'Masterclass Batch', icon: 'school', desc: '5 Students (Max)' },
           ].map(tier => {
-            const price = portalRates[tier.cap] ?? (tier.cap === 1 ? (currentUser?.hourlyRate || 499) : Math.round((currentUser?.hourlyRate || 499) * (1 - tier.cap * 0.1)));
+            const teacherBaseRate = typeof currentUser?.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
+            const price = portalRates[tier.cap] ?? (tier.cap === 1 ? teacherBaseRate : Math.round(teacherBaseRate * (1 - tier.cap * 0.1)));
             const totalHour = price * tier.cap;
             return (
               <div key={tier.cap} className="p-3 bg-surface-container-low rounded-xl border border-outline-variant flex flex-col justify-between space-y-2 hover:border-primary/40 transition-all">
@@ -326,7 +327,7 @@ export function TeacherPortal() {
                     <span className="absolute left-2.5 top-1.5 text-xs font-bold text-on-surface-variant">₹</span>
                     <input 
                       type="number"
-                      min={25}
+                      min={0}
                       max={10000}
                       step={25}
                       value={price}

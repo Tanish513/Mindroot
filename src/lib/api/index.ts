@@ -285,15 +285,17 @@ export function calculateSeatPrice(peerOrBaseRate: any, capacity: number = 1): n
     const bp = peerOrBaseRate.batchPricing;
     if (bp && typeof bp === 'object') {
       const customPrice = bp[cap] ?? bp[String(cap)];
-      if (typeof customPrice === 'number' && !isNaN(customPrice) && customPrice > 0) {
+      if (typeof customPrice === 'number' && !isNaN(customPrice) && customPrice >= 0) {
         return customPrice;
       }
     }
-    const base = Number(peerOrBaseRate.hourlyRate) || 499;
+    const base = (peerOrBaseRate.hourlyRate !== undefined && !isNaN(Number(peerOrBaseRate.hourlyRate)) && Number(peerOrBaseRate.hourlyRate) >= 0)
+      ? Number(peerOrBaseRate.hourlyRate)
+      : 499;
     return calculateSeatPrice(base, cap);
   }
 
-  const base = typeof peerOrBaseRate === 'number' && !isNaN(peerOrBaseRate) && peerOrBaseRate > 0 ? peerOrBaseRate : 499;
+  const base = typeof peerOrBaseRate === 'number' && !isNaN(peerOrBaseRate) && peerOrBaseRate >= 0 ? peerOrBaseRate : 499;
   if (cap <= 1) return base;
   if (cap === 2) return Math.round(base * 0.8); // 20% discount (e.g. ₹399)
   if (cap === 3) return Math.round(base * 0.7); // 30% discount (e.g. ₹349)
@@ -534,22 +536,22 @@ export const api = {
             ...learns.filter(Boolean).map((lName: string) => ({ id: 's-' + lName, type: 'wants_to_learn', skill: { id: 's-' + lName, name: lName, category: 'Software & AI' } }))
           ];
 
-      const baseRate = typeof p.hourlyRate === 'number' && !isNaN(p.hourlyRate) && p.hourlyRate > 0 ? p.hourlyRate : 499;
-      const batchPricing = p.batchPricing && typeof p.batchPricing === 'object'
-        ? {
-            1: Number(p.batchPricing[1] || p.batchPricing['1'] || baseRate),
-            2: Number(p.batchPricing[2] || p.batchPricing['2'] || Math.round(baseRate * 0.8)),
-            3: Number(p.batchPricing[3] || p.batchPricing['3'] || Math.round(baseRate * 0.7)),
-            4: Number(p.batchPricing[4] || p.batchPricing['4'] || Math.round(baseRate * 0.6)),
-            5: Number(p.batchPricing[5] || p.batchPricing['5'] || Math.round(baseRate * 0.5)),
-          }
-        : {
-            1: baseRate,
-            2: Math.round(baseRate * 0.8),
-            3: Math.round(baseRate * 0.7),
-            4: Math.round(baseRate * 0.6),
-            5: Math.round(baseRate * 0.5),
-          };
+      const baseRate = typeof p.hourlyRate === 'number' && !isNaN(p.hourlyRate) && p.hourlyRate >= 0 ? Math.round(p.hourlyRate) : 499;
+      const getBatchTier = (cap: number, ratio: number) => {
+        if (p.batchPricing && typeof p.batchPricing === 'object') {
+          const val = p.batchPricing[cap] !== undefined ? p.batchPricing[cap] : p.batchPricing[String(cap)];
+          if (typeof val === 'number' && !isNaN(val) && val >= 0) return Math.round(val);
+          if (typeof val === 'string' && val.trim() !== '' && !isNaN(Number(val)) && Number(val) >= 0) return Math.round(Number(val));
+        }
+        return Math.round(baseRate * ratio);
+      };
+      const batchPricing = {
+        1: getBatchTier(1, 1),
+        2: getBatchTier(2, 0.8),
+        3: getBatchTier(3, 0.7),
+        4: getBatchTier(4, 0.6),
+        5: getBatchTier(5, 0.5),
+      };
 
       return {
         ...p,
@@ -833,10 +835,20 @@ export const api = {
       const parsed = await safeParse(r, null);
       if (r.status === 409 || (parsed && parsed.conflict)) {
         conflictRes = parsed;
+      } else if (!r.ok && parsed && (parsed.error || parsed.insufficientBalance)) {
+        const err = new Error(parsed.error || 'Booking failed.');
+        if (parsed.insufficientBalance) (err as any).insufficientBalance = true;
+        if (parsed.available !== undefined) (err as any).available = parsed.available;
+        if (parsed.required !== undefined) (err as any).required = parsed.required;
+        throw err;
       } else if (r.ok && parsed) {
         createdSession = parsed;
       }
-    } catch {}
+    } catch (e: any) {
+      if (e.insufficientBalance || (e.message && e.message.includes('Insufficient token balance'))) {
+        throw e;
+      }
+    }
 
     if (conflictRes) {
       const err = new Error(conflictRes.error || 'This slot is already booked.');
@@ -1884,6 +1896,21 @@ export const api = {
       console.warn('API confirmSessionPayment error:', err);
     }
     return { success: true, sessionId, status: 'confirmed', paymentStatus: 'paid' };
+  },
+
+  paySessionWithTokens: async (sessionId: string, tokenCost?: number) => {
+    const r = await fetch(`${getBASE()}/api/sessions/${sessionId}/pay-tokens`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify({ tokenCost })
+    });
+    const parsed = await safeParse(r, null);
+    if (!r.ok) {
+      const err = new Error(parsed?.error || 'Failed to pay session with tokens.');
+      if (parsed?.insufficientBalance) (err as any).insufficientBalance = true;
+      throw err;
+    }
+    return parsed;
   },
 
   raisePaymentDispute: async (sessionId: string, reason: string, utrNumber?: string, reportedBy?: string) => {

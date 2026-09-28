@@ -57,7 +57,7 @@ export function Login() {
   const [onboardLearns, setOnboardLearns] = useState('Python');
 
   const handleBaseRateChange = (rate: number, isOnboard = false) => {
-    const safeRate = Math.max(50, rate || 50);
+    const safeRate = Math.max(0, isNaN(rate) ? 0 : Math.round(rate));
     const updated = {
       1: safeRate,
       2: Math.round(safeRate * 0.8),
@@ -252,6 +252,13 @@ export function Login() {
       return;
     }
 
+    if (signUpRole === 'teacher' || signUpRole === 'both') {
+      if (isNaN(signUpHourlyRate) || signUpHourlyRate < 0) {
+        setSignUpError('Please enter a valid non-negative hourly rate.');
+        return;
+      }
+    }
+
     setSignUpLoading(true);
     setSignUpError('');
 
@@ -302,18 +309,29 @@ export function Login() {
   };
 
   // Handle Google Onboarding submission for new accounts
-  const handleOnboardingSubmit = (e: React.FormEvent) => {
+  const handleOnboardingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!pendingUser) return;
+
+    if (onboardRole === 'teacher' || onboardRole === 'both') {
+      if (isNaN(onboardHourlyRate) || onboardHourlyRate < 0) {
+        alert('Please enter a valid non-negative mentoring rate.');
+        return;
+      }
+    }
 
     const teachesArray = onboardTeaches.split(',').map(s => s.trim()).filter(Boolean);
     const learnsArray = onboardLearns.split(',').map(s => s.trim()).filter(Boolean);
 
+    const isTeacher = onboardRole === 'teacher' || onboardRole === 'both';
+    const rateToSave = isTeacher ? Math.round(onboardHourlyRate) : undefined;
+    const batchPricingToSave = isTeacher ? onboardBatchPricing : undefined;
+
     const updatedUser = {
       ...pendingUser,
       role: onboardRole,
-      hourlyRate: onboardHourlyRate,
-      batchPricing: onboardBatchPricing,
+      hourlyRate: rateToSave !== undefined ? rateToSave : pendingUser.hourlyRate,
+      batchPricing: batchPricingToSave,
       upiId: onboardUpiId.trim() || undefined,
       officialIdNumber: onboardOfficialId.trim() || undefined,
       officialIdStatus: onboardOfficialId.trim() ? 'verified' : undefined,
@@ -328,6 +346,24 @@ export function Login() {
     loginAction(updatedUser, onboardRole);
     setCurrentUser(updatedUser);
     api.syncNetworkUser(updatedUser);
+
+    if (pendingUser.id && !pendingUser.id.startsWith('peer-')) {
+      try {
+        await api.updateUser(pendingUser.id, {
+          role: onboardRole,
+          hourlyRate: rateToSave,
+          batchPricing: batchPricingToSave,
+          upiId: onboardUpiId.trim() || undefined,
+          officialIdNumber: onboardOfficialId.trim() || undefined,
+          officialIdStatus: onboardOfficialId.trim() ? 'verified' : undefined,
+          skillsTaught: teachesArray,
+          skillsLearned: learnsArray
+        });
+      } catch (err) {
+        console.warn('Failed to persist onboarding update to backend:', err);
+      }
+    }
+
     setShowNewUserModal(false);
 
     if (onboardRole === 'teacher') {
@@ -473,6 +509,37 @@ export function Login() {
                   {signInLoading ? 'Authenticating...' : 'Sign In to Mindroot'}
                 </Button>
               </div>
+
+              {/* Quick Fill Credentials for Fast Testing */}
+              <div className="pt-3 border-t border-outline-variant/60 text-center">
+                <p className="text-[11px] font-semibold text-on-surface-variant mb-2">Quick Sign-In Portals:</p>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInEmail('admin@mindroot.com');
+                      setSignInPassword('admin123');
+                      setSignInError('');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-all flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">admin_panel_settings</span>
+                    Admin (admin@mindroot.com)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInEmail('tanish5131k@gmail.com');
+                      setSignInPassword('');
+                      setSignInError('');
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-outline-variant bg-surface text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">school</span>
+                    Tanish (Student)
+                  </button>
+                </div>
+              </div>
             </form>
           ) : (
             /* Sign Up / Registration Form */
@@ -587,9 +654,9 @@ export function Login() {
                           <span className="absolute left-3.5 top-2.5 font-bold text-on-surface-variant text-sm">₹</span>
                           <input 
                             type="number" 
-                            min={50}
+                            min={0}
                             max={10000}
-                            step={50}
+                            step={25}
                             placeholder="e.g. 499"
                             className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-outline-variant bg-surface text-sm font-bold text-on-surface placeholder:text-neutral-subtle outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-elevation-1 transition-all"
                             value={signUpHourlyRate}
@@ -646,8 +713,8 @@ export function Login() {
                                   <div className="relative flex-1">
                                     <span className="absolute left-2.5 top-1.5 font-bold text-on-surface-variant text-xs">₹</span>
                                     <input 
-                                      type="number"
-                                      min={25}
+                                      type="number" 
+                                      min={0}
                                       max={10000}
                                       step={25}
                                       value={seatPrice}
@@ -792,9 +859,9 @@ export function Login() {
                     <label className="block text-xs font-semibold text-on-surface">Base Mentoring Rate (1-on-1 ₹/Hour)</label>
                     <input
                       type="number"
-                      min={50}
+                      min={0}
                       max={10000}
-                      step={50}
+                      step={25}
                       value={onboardHourlyRate}
                       onChange={(e) => handleBaseRateChange(Number(e.target.value), true)}
                       className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2.5 outline-none focus:border-primary"
@@ -828,7 +895,7 @@ export function Login() {
                               <span className="absolute left-2 top-1 text-xs font-bold text-on-surface-variant">₹</span>
                               <input 
                                 type="number"
-                                min={25}
+                                min={0}
                                 max={10000}
                                 step={25}
                                 value={seatPrice}
