@@ -24,6 +24,10 @@ model User {
   bio              String?
   avatar           String?
   isPublic         Boolean                  @default(true)
+  upiId            String?
+  upiQrImage       String?
+  vpaVerified      Boolean                  @default(false)
+  vpaVerifiedAt    DateTime?
   version          Int                      @default(0)
   deletedAt        DateTime?
   taughtSessions   Session[]                @relation("TeacherSessions")

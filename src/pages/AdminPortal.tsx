@@ -1044,8 +1044,44 @@ export function AdminPortal() {
                             </span>
                           </div>
 
-                          <div className="text-xs text-on-surface-variant">
-                            <strong>UPI ID (VPA):</strong> <span className="font-mono font-bold text-on-surface">{inspectUser.upiId || `${(inspectUser.name || 'mentor').toLowerCase().replace(/[^a-z0-9]/g, '')}@okhdfcbank`}</span>
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-surface-container rounded-xl border border-outline-variant/60">
+                            <div className="text-xs text-on-surface-variant">
+                              <span className="font-bold">UPI ID (VPA):</span>{' '}
+                              <span className="font-mono font-bold text-on-surface">
+                                {inspectUser.upiId || 'Not Configured'}
+                              </span>
+                              {inspectUser.vpaVerified ? (
+                                <span className="ml-2 text-[10px] font-bold text-teaching-emerald bg-teaching-emerald/10 border border-teaching-emerald/20 px-2 py-0.5 rounded">
+                                  Verified
+                                </span>
+                              ) : inspectUser.upiId ? (
+                                <span className="ml-2 text-[10px] font-bold text-learning-amber bg-learning-amber/10 border border-learning-amber/20 px-2 py-0.5 rounded">
+                                  Unverified
+                                </span>
+                              ) : null}
+                            </div>
+                            {inspectUser.upiId && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    const nextStatus = !inspectUser.vpaVerified;
+                                    await api.updateUser(inspectUser.id, { vpaVerified: nextStatus });
+                                    setInspectUser((prev: any) => ({ ...prev, vpaVerified: nextStatus }));
+                                    setUsers(prev => prev.map(u => u.id === inspectUser.id ? { ...u, vpaVerified: nextStatus } : u));
+                                    setActionMessage(`VPA verification status updated to ${nextStatus ? 'Verified' : 'Unverified'} for ${inspectUser.name}.`);
+                                  } catch (err: any) {
+                                    alert('Failed to update VPA verification status: ' + (err?.message || 'Unknown error'));
+                                  }
+                                }}
+                                className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all shrink-0 ${
+                                  inspectUser.vpaVerified
+                                    ? 'bg-alert-rose/10 text-alert-rose border-alert-rose/20 hover:bg-alert-rose/20'
+                                    : 'bg-teaching-emerald/10 text-teaching-emerald border-teaching-emerald/20 hover:bg-teaching-emerald/20'
+                                }`}
+                              >
+                                {inspectUser.vpaVerified ? 'Revoke VPA Verification' : 'Verify Mentor VPA'}
+                              </button>
+                            )}
                           </div>
 
                           {inspectUser.upiQrImage ? (
@@ -1059,7 +1095,7 @@ export function AdminPortal() {
                           ) : (
                             <div className="h-36 border border-dashed border-outline-variant rounded-xl flex flex-col items-center justify-center text-on-surface-variant gap-1">
                               <span className="material-symbols-outlined text-2xl text-teaching-emerald">qr_code</span>
-                              <span className="text-xs">Using Auto-Generated UPI QR</span>
+                              <span className="text-xs font-semibold">{inspectUser.upiId ? 'Dynamic Generated QR' : 'UPI Not Configured'}</span>
                             </div>
                           )}
                         </div>

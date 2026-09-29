@@ -254,6 +254,16 @@ export function Profile() {
       }
     }
     const cleanRate = isTeacherOrBoth ? Math.round(Number(hourlyRate)) : undefined;
+    const cleanUpiId = upiId.trim().toLowerCase();
+    if (isTeacherOrBoth && cleanUpiId) {
+      const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+      if (!vpaRegex.test(cleanUpiId)) {
+        alert('Invalid UPI ID / VPA format. Must be formatted like name@bank (e.g. username@okhdfcbank or mobile@paytm).');
+        return;
+      }
+    }
+    const upiChanged = cleanUpiId !== (currentUser?.upiId || '');
+    const currentVpaVerified = upiChanged ? false : (currentUser?.vpaVerified ?? false);
 
     const updatedUser: any = {
       ...(currentUser || {}),
@@ -264,7 +274,8 @@ export function Profile() {
       role: accountRole,
       isPublic,
       hourlyRate: cleanRate,
-      upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
+      upiId: isTeacherOrBoth ? (cleanUpiId || undefined) : undefined,
+      vpaVerified: isTeacherOrBoth ? currentVpaVerified : undefined,
       upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
       officialIdType: isTeacherOrBoth ? officialIdType : undefined,
       officialIdNumber: isTeacherOrBoth ? officialIdNumber : undefined,
@@ -688,7 +699,20 @@ export function Profile() {
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-on-surface mb-1 flex items-center justify-between">
-                      <span>Personal UPI ID (GPay / PhonePe / Paytm)</span>
+                      <span className="flex items-center gap-1.5">
+                        <span>Personal UPI ID (VPA)</span>
+                        {currentUser?.vpaVerified && upiId.trim().toLowerCase() === currentUser?.upiId?.toLowerCase() ? (
+                          <span className="text-[10px] text-teaching-emerald font-bold uppercase tracking-wider flex items-center gap-0.5 bg-teaching-emerald/10 px-1.5 py-0.5 rounded">
+                            <span className="material-symbols-outlined text-xs">verified</span> Verified
+                          </span>
+                        ) : upiId.trim() ? (
+                          <span className="text-[10px] text-learning-amber font-bold uppercase tracking-wider flex items-center gap-0.5 bg-learning-amber/10 px-1.5 py-0.5 rounded">
+                            <span className="material-symbols-outlined text-xs">schedule</span> Unverified
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-on-surface-variant font-medium">Not Configured</span>
+                        )}
+                      </span>
                       <span className="text-[10px] text-teaching-emerald font-bold uppercase tracking-wider">0% Fee Direct</span>
                     </label>
                     <div className="relative">
@@ -701,6 +725,9 @@ export function Profile() {
                       />
                       <span className="material-symbols-outlined absolute left-2.5 top-2.5 text-base text-teaching-emerald">qr_code_2</span>
                     </div>
+                    <p className="text-[10px] text-on-surface-variant mt-1">
+                      Must be a valid NPCI VPA (e.g., username@bank). Updating your UPI ID resets verification until confirmed by admin.
+                    </p>
                   </div>
                 </>
               )}

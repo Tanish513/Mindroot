@@ -596,8 +596,194 @@ async function runAuditGapsTests() {
     );
     console.log('✅ TEST 8 PASSED: Token cancellation refunded student exactly once; Direct-UPI moved to pending direct refund!');
 
+    // -------------------------------------------------------------
+    // TEST 9: Gap F10 UPI VPA Capture, Validation, Verification, and Safeguards
+    // -------------------------------------------------------------
+    console.log('\n--- TEST 9: Gap F10 Mentor UPI ID / VPA Safeguards ---');
+
+    // 9.1: confirm-upi returns 400 MENTOR_PAYOUT_NOT_CONFIGURED when mentor has no VPA
+    const unconfTeacherId = `unconf-teacher-${Date.now()}`;
+    const unconfStudentId = `unconf-student-${Date.now()}`;
+    const unconfSessId = `unconf-sess-${Date.now()}`;
+
+    await seedTestUser({
+      id: unconfTeacherId,
+      name: 'Unconfigured Mentor',
+      email: `${unconfTeacherId}@test.com`,
+      role: 'teacher',
+      upiId: null,
+      vpaVerified: false
+    });
+    await seedTestUser({
+      id: unconfStudentId,
+      name: 'Eager Student',
+      email: `${unconfStudentId}@test.com`,
+      role: 'student'
+    });
+
+    inMemorySessions.push({
+      id: unconfSessId,
+      title: 'Machine Learning Deep Dive',
+      teacherId: unconfTeacherId,
+      studentId: unconfStudentId,
+      amount: 499,
+      status: 'pending',
+      paymentStatus: 'unpaid'
+    });
+
+    const unconfStudentToken = createToken(unconfStudentId, 'student');
+    const noVpaPayRes = await fetch(`${baseUrl}/api/payment/confirm-upi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${unconfStudentToken}` },
+      body: JSON.stringify({
+        sessionId: unconfSessId,
+        teacherId: unconfTeacherId,
+        amount: 499,
+        utr: '123456789012'
+      })
+    });
+    const noVpaPayData: any = await noVpaPayRes.json();
+    assert.strictEqual(noVpaPayRes.status, 400, 'Must return 400 when mentor has no VPA');
+    assert.strictEqual(noVpaPayData.code, 'MENTOR_PAYOUT_NOT_CONFIGURED', 'Code must be MENTOR_PAYOUT_NOT_CONFIGURED');
+    console.log('✅ TEST 9.1 PASSED: Direct UPI payment blocked when mentor lacks configured VPA!');
+
+    // 9.2: payout-account returns 400 for invalid VPA formats
+    const confTeacherId = `conf-teacher-${Date.now()}`;
+    await seedTestUser({
+      id: confTeacherId,
+      name: 'Configurable Mentor',
+      email: `${confTeacherId}@test.com`,
+      role: 'teacher',
+      vpaVerified: false
+    });
+    const confTeacherToken = createToken(confTeacherId, 'teacher');
+
+    const invalidVpaRes = await fetch(`${baseUrl}/api/wallet/payout-account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${confTeacherToken}` },
+      body: JSON.stringify({
+        accountHolderName: 'Configurable Mentor',
+        payoutMethod: 'upi',
+        upiId: 'bad_vpa_without_handle'
+      })
+    });
+    assert.strictEqual(invalidVpaRes.status, 400, 'Must reject malformed VPA format');
+    console.log('✅ TEST 9.2 PASSED: payout-account rejects malformed VPA format!');
+
+    // 9.3: confirm-upi strictly validates 12-digit numeric UTR
+    // First, configure a valid VPA for confTeacherId
+    const setVpaRes = await fetch(`${baseUrl}/api/wallet/payout-account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${confTeacherToken}` },
+      body: JSON.stringify({
+        accountHolderName: 'Configurable Mentor',
+        payoutMethod: 'upi',
+        upiId: 'mentor.valid@okhdfcbank'
+      })
+    });
+    assert.strictEqual(setVpaRes.status, 200, 'Setting valid VPA must succeed');
+
+    const validSessId = `valid-sess-${Date.now()}`;
+    inMemorySessions.push({
+      id: validSessId,
+      title: 'Valid Mentorship Session',
+      teacherId: confTeacherId,
+      studentId: unconfStudentId,
+      amount: 499,
+      status: 'pending',
+      paymentStatus: 'unpaid'
+    });
+
+    // Short UTR rejected
+    const shortUtrRes = await fetch(`${baseUrl}/api/payment/confirm-upi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${unconfStudentToken}` },
+      body: JSON.stringify({
+        sessionId: validSessId,
+        teacherId: confTeacherId,
+        amount: 499,
+        utr: '12345'
+      })
+    });
+    assert.strictEqual(shortUtrRes.status, 400, 'Must reject non-12-digit UTR');
+
+    // Alphanumeric UTR rejected
+    const alphaUtrRes = await fetch(`${baseUrl}/api/payment/confirm-upi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${unconfStudentToken}` },
+      body: JSON.stringify({
+        sessionId: validSessId,
+        teacherId: confTeacherId,
+        amount: 499,
+        utr: 'abc123456789'
+      })
+    });
+    assert.strictEqual(alphaUtrRes.status, 400, 'Must reject non-numeric UTR');
+
+    // Valid 12-digit numeric UTR accepted
+    const valid12Utr = `${Math.floor(100000000000 + Math.random() * 900000000000)}`;
+    const validUtrRes = await fetch(`${baseUrl}/api/payment/confirm-upi`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${unconfStudentToken}` },
+      body: JSON.stringify({
+        sessionId: validSessId,
+        teacherId: confTeacherId,
+        amount: 499,
+        utr: valid12Utr
+      })
+    });
+    assert.strictEqual(validUtrRes.status, 200, 'Valid 12-digit UTR must be accepted');
+    console.log('✅ TEST 9.3 PASSED: confirm-upi strictly validates 12-digit numeric UTRs!');
+
+    // 9.4: VPA change resets vpaVerified = false, Admin can verify VPA
+    const adminUserId = `admin-audit-${Date.now()}`;
+    await seedTestUser({
+      id: adminUserId,
+      name: 'System Admin',
+      email: `${adminUserId}@test.com`,
+      role: 'admin'
+    });
+    const adminToken = createToken(adminUserId, 'admin');
+
+    // Admin verifies VPA
+    const adminVerifyRes = await fetch(`${baseUrl}/api/users/${confTeacherId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${adminToken}` },
+      body: JSON.stringify({ vpaVerified: true })
+    });
+    assert.strictEqual(adminVerifyRes.status, 200);
+    const teacherAfterAdminVerify = inMemoryUsers.find(u => u.id === confTeacherId);
+    assert.strictEqual(teacherAfterAdminVerify.vpaVerified, true, 'Admin should be able to verify mentor VPA');
+
+    // Teacher edits VPA -> vpaVerified automatically resets to false
+    const teacherEditVpaRes = await fetch(`${baseUrl}/api/wallet/payout-account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${confTeacherToken}` },
+      body: JSON.stringify({
+        accountHolderName: 'Configurable Mentor',
+        payoutMethod: 'upi',
+        upiId: 'new.mentor@okaxis'
+      })
+    });
+    assert.strictEqual(teacherEditVpaRes.status, 200);
+    const teacherAfterEdit = inMemoryUsers.find(u => u.id === confTeacherId);
+    assert.strictEqual(teacherAfterEdit.vpaVerified, false, 'Editing VPA must reset vpaVerified to false');
+    console.log('✅ TEST 9.4 PASSED: VPA editing resets verification status; Admin can verify VPA!');
+
+    // 9.5: GET /api/payment/mentor-upi/:teacherId returns truthful null upiId without placeholder
+    const mentorUpiRes = await fetch(`${baseUrl}/api/payment/mentor-upi/${unconfTeacherId}`, {
+      headers: { 'Authorization': `Bearer ${unconfStudentToken}` }
+    });
+    assert.strictEqual(mentorUpiRes.status, 200);
+    const mentorUpiData: any = await mentorUpiRes.json();
+    assert.strictEqual(mentorUpiData.upiId, null, 'Unconfigured mentor must return upiId: null');
+    assert.strictEqual(mentorUpiData.isConfigured, false, 'isConfigured must be false');
+    const rawResText = JSON.stringify(mentorUpiData);
+    assert.strictEqual(rawResText.includes('@okhdfcbank'), false, 'Response must never contain fabricated @okhdfcbank');
+    console.log('✅ TEST 9.5 PASSED: mentor-upi returns null for unconfigured mentors with zero fabricated VPAs!');
+
     console.log('\n====================================================');
-    console.log('🎉 ALL AUDIT GAP VERIFICATION TESTS PASSED (8/8)');
+    console.log('🎉 ALL AUDIT GAP VERIFICATION TESTS PASSED (9/9)');
     console.log('====================================================\n');
     serverInstance.close();
     process.exit(0);

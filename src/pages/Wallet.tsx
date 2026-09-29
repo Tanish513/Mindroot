@@ -34,9 +34,9 @@ export function Wallet() {
     accountNumber: '••••••••4892',
     ifscCode: 'HDFC0001234',
     bankName: 'HDFC Bank',
-    upiId: 'mentor@okhdfcbank',
+    upiId: '',
     payoutMethod: 'upi',
-    isVerified: true
+    isVerified: false
   });
   const [withdrawAmount, setWithdrawAmount] = useState<number>(1000);
   const [isWithdrawing, setIsWithdrawing] = useState(false);
@@ -180,10 +180,19 @@ export function Wallet() {
 
   const handleSavePayoutSettings = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (payoutAccount.payoutMethod === 'upi') {
+      const cleanUpi = (payoutAccount.upiId || '').trim();
+      const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+      if (!cleanUpi || !vpaRegex.test(cleanUpi)) {
+        alert('Invalid UPI ID / VPA format. Must be formatted like name@bank (e.g. username@okhdfcbank or mobile@paytm).');
+        return;
+      }
+    }
     try {
       await api.savePayoutAccount({
         userId: currentUser?.id || 'user-maya',
-        ...payoutAccount
+        ...payoutAccount,
+        upiId: (payoutAccount.upiId || '').trim()
       });
       setIsPayoutSettingsOpen(false);
       alert('Bank Account & Payout settings updated successfully!');

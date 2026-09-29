@@ -522,13 +522,57 @@ export const api = {
       if (r.ok) remotePeers = await safeParse(r, []);
     } catch {}
 
+    const isTestPeer = (p: any) => {
+      if (!p) return true;
+      const id = (p.id || '').toLowerCase();
+      const email = (p.email || '').toLowerCase();
+      const name = (p.name || '').toLowerCase();
+      return (
+        id.includes('test') ||
+        id.includes('gap') ||
+        id.includes('unconf') ||
+        id.includes('conf-') ||
+        id.includes('imposter') ||
+        id.includes('del-user') ||
+        id.includes('bounty') ||
+        id.includes('token-student') ||
+        id.includes('token-teacher') ||
+        id.includes('socket-user') ||
+        id.includes('reward-user') ||
+        id.includes('rev-') ||
+        id.includes('admin-audit') ||
+        email.includes('@test.com') ||
+        name.includes('unconfigured mentor') ||
+        name.includes('configurable mentor') ||
+        name.includes('eager student') ||
+        name.includes('imposter peer') ||
+        name.includes('real teacher') ||
+        name.includes('real student') ||
+        name.includes('review student') ||
+        name.includes('random bystander') ||
+        name.includes('review mentor') ||
+        name.includes('aiden pearce') ||
+        name.includes('question author') ||
+        name.includes('genius solver') ||
+        name.includes('reward tester') ||
+        name.includes('token learner') ||
+        name.includes('compiler mentor') ||
+        name.includes('socket user')
+      );
+    };
+
+    remotePeers = remotePeers.filter(p => !isTestPeer(p));
+
     const storedPeersJson = localStorage.getItem('mindroot_known_peers');
     let localPeers: any[] = [];
     if (storedPeersJson) {
       try { 
         const parsed = JSON.parse(storedPeersJson); 
-        // Filter out legacy peer-1/peer-2/peer-3 data
-        localPeers = Array.isArray(parsed) ? parsed.filter(p => p && p.id && !p.id.startsWith('peer-')) : [];
+        // Filter out legacy peer-1/peer-2/peer-3 data and test artifacts
+        localPeers = Array.isArray(parsed) ? parsed.filter(p => p && p.id && !p.id.startsWith('peer-') && !isTestPeer(p)) : [];
+        if (localPeers.length !== parsed.length) {
+          safeSetStorage('mindroot_known_peers', localPeers);
+        }
       } catch {}
     }
 
@@ -1553,7 +1597,10 @@ export const api = {
       success: true,
       teacherId,
       mentorName: 'Mentor',
-      upiId: 'mindroot.peer@okhdfcbank',
+      upiId: null,
+      isConfigured: false,
+      vpaVerified: false,
+      accountHolderName: 'Mentor',
       upiQrImage: null,
       officialIdType: null,
       officialIdNumber: null,
@@ -1620,14 +1667,14 @@ export const api = {
       accountNumber: '••••••••4892',
       ifscCode: 'HDFC0001234',
       bankName: 'HDFC Bank',
-      upiId: 'mentor@okhdfcbank',
+      upiId: '',
       payoutMethod: 'upi',
       upiQrImage: null,
       officialIdType: null,
       officialIdNumber: null,
       officialIdDocument: null,
       officialIdStatus: 'unverified',
-      isVerified: true
+      isVerified: false
     };
   },
 

@@ -141,8 +141,20 @@ function toPublicUser(user: any, role?: string): any {
     upiQrImage,
     ...safe
   } = user;
-  return { ...safe, isPublic: isPublicVal, emailVerified: true };
+  return { 
+    ...safe, 
+    isPublic: isPublicVal, 
+    emailVerified: true,
+    hasUpiConfigured: Boolean(user.upiId && VPA_REGEX.test(String(user.upiId).trim())),
+    vpaVerified: Boolean(user.vpaVerified)
+  };
 }
+
+// NPCI UPI VPA format standard (username@bankhandle)
+export const VPA_REGEX = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+
+// Standard 12-digit numeric Bank Reference Number / UTR
+export const UTR_REGEX = /^\d{12}$/;
 
 function getBroadcastPeers(users: any[]): any[] {
   if (!Array.isArray(users)) return [];
@@ -158,7 +170,10 @@ const registerSchema = z.object({
   teaches: z.any().optional(),
   learns: z.any().optional(),
   hourlyRate: z.any().optional(),
-  batchPricing: z.any().optional()
+  batchPricing: z.any().optional(),
+  upiId: z.string().optional().refine(val => !val || VPA_REGEX.test(val.trim()), {
+    message: 'Invalid UPI ID format. Please use format username@bankhandle (e.g. name@okhdfcbank).'
+  })
 });
 
 const loginSchema = z.object({
@@ -760,6 +775,10 @@ async function recordUserActivity(userId: string, activityType: 'session' | 'dis
 const DB_FILE = path.join(__dirname, '../db.json');
 
 function saveDb() {
+  const isTestEnv = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || process.argv.some(a => a.includes('test'));
+  if (isTestEnv) {
+    return;
+  }
   try {
     const data = {
       users: inMemoryUsers,
@@ -2931,8 +2950,11 @@ app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
   const user = inMemoryUsers.find(u => u.id === teacherId);
   
   const mentorName = user?.name || payoutAcc?.accountHolderName || 'Mentor';
-  const cleanMentorHandle = mentorName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'mentor';
-  const upiId = payoutAcc?.upiId || user?.upiId || `${cleanMentorHandle}@okhdfcbank`;
+  const accountHolderName = payoutAcc?.accountHolderName || user?.name || mentorName;
+  const rawUpiId = (payoutAcc?.upiId || user?.upiId || '').toLowerCase().trim();
+  const isConfigured = Boolean(rawUpiId && VPA_REGEX.test(rawUpiId));
+  const vpaVerified = Boolean(isConfigured && (payoutAcc?.vpaVerified || user?.vpaVerified));
+  const upiId = isConfigured ? rawUpiId : null;
   const upiQrImage = user?.upiQrImage || payoutAcc?.upiQrImage || null;
   const officialIdType = user?.officialIdType || payoutAcc?.officialIdType || null;
   const officialIdNumber = user?.officialIdNumber || payoutAcc?.officialIdNumber || null;
@@ -2944,13 +2966,16 @@ app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
     success: true,
     teacherId,
     mentorName,
+    accountHolderName,
     upiId,
     upiQrImage,
     officialIdType,
     officialIdNumber,
     officialIdStatus,
     isIdVerified,
-    isCustomUpi: Boolean(payoutAcc?.upiId || user?.upiId)
+    isCustomUpi: isConfigured,
+    isConfigured,
+    vpaVerified
   });
 });
 
@@ -2981,12 +3006,24 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       }
     }
 
+    const finalTeacherId = teacherId || targetSession?.teacherId || targetSession?.teacher?.id;
+    const teacherPayoutAcc = inMemoryPayoutAccounts[finalTeacherId];
+    const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
+    const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
+    const isMentorVpaConfigured = Boolean(teacherVpa && VPA_REGEX.test(teacherVpa));
+
     const isDemoAllowed = Boolean(isDemo && DEMO_MODE);
     const cleanUtr = String(utr || '').trim();
 
     if (!isDemoAllowed) {
-      if (!cleanUtr || cleanUtr.length < 6) {
-        return res.status(400).json({ error: 'Valid UPI reference number (UTR) is required (minimum 6 characters).' });
+      if (!isMentorVpaConfigured) {
+        return res.status(400).json({
+          error: 'Mentor has not configured their UPI payout address (VPA).',
+          code: 'MENTOR_PAYOUT_NOT_CONFIGURED'
+        });
+      }
+      if (!cleanUtr || !UTR_REGEX.test(cleanUtr)) {
+        return res.status(400).json({ error: 'A valid 12-digit UPI reference number (UTR) is required.' });
       }
       if (inMemoryUsedUtrs.has(cleanUtr)) {
         return res.status(409).json({ error: 'This UPI reference (UTR) has already been submitted.' });
@@ -3004,9 +3041,6 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       }
       inMemoryUsedUtrs.add(cleanUtr);
     }
-
-    const finalTeacherId = teacherId || targetSession?.teacherId || targetSession?.teacher?.id;
-    const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
 
     const finalAmount = Number(amount || targetSession?.pricePerStudent || targetSession?.amount || teacherObj.hourlyRate || 499);
     const generatedPaymentId = isDemoAllowed 
@@ -3140,14 +3174,17 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
 // GET /api/wallet/payout-account — Retrieve teacher's bank/UPI payout settings
 app.get('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
   const userId = req.userId; // Authenticated user ID ONLY
+  const user = inMemoryUsers.find(u => u.id === userId);
   const account = inMemoryPayoutAccounts[userId] || {
-    accountHolderName: 'Teacher / Mentor',
+    accountHolderName: user?.name || 'Teacher / Mentor',
     accountNumber: '',
     ifscCode: '',
     bankName: '',
-    upiId: '',
+    upiId: user?.upiId || '',
     payoutMethod: 'upi',
-    isVerified: false
+    isVerified: false,
+    vpaVerified: Boolean(user?.vpaVerified),
+    vpaVerifiedAt: user?.vpaVerifiedAt || null
   };
   res.json(account);
 });
@@ -3169,7 +3206,30 @@ app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
   } = req.body;
   const targetUser = req.userId; // Authenticated user ID ONLY
 
+  if (upiId !== undefined && upiId !== null && upiId !== '') {
+    const trimmedUpi = String(upiId).toLowerCase().trim();
+    if (!VPA_REGEX.test(trimmedUpi)) {
+      return res.status(400).json({ error: 'Invalid UPI ID format. Please use format username@bankhandle (e.g. name@okhdfcbank).' });
+    }
+  }
+
   const existingAcc = inMemoryPayoutAccounts[targetUser] || {};
+  const existingUpi = (existingAcc.upiId || '').toLowerCase().trim();
+  const incomingUpi = upiId !== undefined ? String(upiId).toLowerCase().trim() : existingUpi;
+  const upiChanged = upiId !== undefined && incomingUpi !== existingUpi;
+
+  let vpaVerified = Boolean(existingAcc.vpaVerified);
+  let vpaVerifiedAt = existingAcc.vpaVerifiedAt || null;
+
+  if (upiChanged) {
+    vpaVerified = false;
+    vpaVerifiedAt = null;
+  }
+  if (req.userRole === 'admin' && req.body.vpaVerified !== undefined) {
+    vpaVerified = Boolean(req.body.vpaVerified);
+    vpaVerifiedAt = vpaVerified ? new Date().toISOString() : null;
+  }
+
   const determinedStatus = officialIdStatus || (officialIdDocument || officialIdNumber ? 'verified' : (existingAcc.officialIdStatus || 'unverified'));
 
   inMemoryPayoutAccounts[targetUser] = {
@@ -3178,7 +3238,7 @@ app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
     accountNumber: accountNumber ? `••••••••${accountNumber.slice(-4)}` : (existingAcc.accountNumber || ''),
     ifscCode: (ifscCode || existingAcc.ifscCode || '').toUpperCase().trim(),
     bankName: bankName || existingAcc.bankName || 'Bank of India',
-    upiId: (upiId || existingAcc.upiId || '').toLowerCase().trim(),
+    upiId: incomingUpi,
     payoutMethod: payoutMethod || existingAcc.payoutMethod || 'upi',
     upiQrImage: upiQrImage !== undefined ? upiQrImage : existingAcc.upiQrImage,
     officialIdType: officialIdType !== undefined ? officialIdType : existingAcc.officialIdType,
@@ -3186,17 +3246,21 @@ app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
     officialIdDocument: officialIdDocument !== undefined ? officialIdDocument : existingAcc.officialIdDocument,
     officialIdStatus: determinedStatus,
     isVerified: true,
+    vpaVerified,
+    vpaVerifiedAt,
     updatedAt: new Date().toISOString()
   };
 
   const user = inMemoryUsers.find(u => u.id === targetUser);
   if (user) {
-    if (upiId) user.upiId = (upiId || '').toLowerCase().trim();
+    if (upiId !== undefined) user.upiId = incomingUpi;
     if (upiQrImage !== undefined) user.upiQrImage = upiQrImage;
     if (officialIdType !== undefined) user.officialIdType = officialIdType;
     if (officialIdNumber !== undefined) user.officialIdNumber = officialIdNumber;
     if (officialIdDocument !== undefined) user.officialIdDocument = officialIdDocument;
     user.officialIdStatus = determinedStatus;
+    user.vpaVerified = vpaVerified;
+    user.vpaVerifiedAt = vpaVerifiedAt;
   }
 
   saveDb();
@@ -3503,6 +3567,18 @@ app.post('/api/sessions', async (req, res) => {
   const maxCap = Math.min(Math.max(parseInt(maxCapacity, 10) || 1, 1), 5);
   const seatPrice = isSwapSession ? 0 : (pricePerStudent ? parseInt(pricePerStudent, 10) : teacherObj.hourlyRate || 499);
   const reqTime = new Date(scheduledAt || Date.now()).getTime();
+
+  // If booking direct UPI and mentor has not configured VPA
+  const teacherPayoutAcc = inMemoryPayoutAccounts[finalTeacherId];
+  const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
+  const isTeacherVpaConfigured = Boolean(teacherVpa && VPA_REGEX.test(teacherVpa));
+
+  if (!isSwapSession && seatPrice > 0 && !isTeacherVpaConfigured && (paymentMethod === 'upi' || paymentMethod === 'direct_upi')) {
+    return res.status(400).json({
+      error: 'Cannot book a direct UPI session: mentor has not configured their UPI payout address (VPA). Please book with tokens or request a skill swap.',
+      code: 'MENTOR_PAYOUT_NOT_CONFIGURED'
+    });
+  }
 
   // If client opted to pay or book using tokens, handle via atomic TokenService
   const isTokenPayment = Boolean(payWithTokens || paymentMethod === 'tokens' || tokens !== undefined);
@@ -4268,6 +4344,30 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
     ? Math.round(Number(hourlyRate))
     : undefined;
 
+  if (upiId !== undefined && upiId !== null && upiId !== '') {
+    const trimmedUpi = String(upiId).toLowerCase().trim();
+    if (!VPA_REGEX.test(trimmedUpi)) {
+      return res.status(400).json({ error: 'Invalid UPI ID format. Please use format username@bankhandle (e.g. name@okhdfcbank).' });
+    }
+  }
+
+  const existingUserObj = inMemoryUsers.find(u => u.id === id);
+  const existingUpi = (existingUserObj?.upiId || '').toLowerCase().trim();
+  const incomingUpi = upiId !== undefined ? String(upiId).toLowerCase().trim() : existingUpi;
+  const upiChanged = upiId !== undefined && incomingUpi !== existingUpi;
+
+  let newVpaVerified = Boolean(existingUserObj?.vpaVerified);
+  let newVpaVerifiedAt = existingUserObj?.vpaVerifiedAt || null;
+
+  if (upiChanged) {
+    newVpaVerified = false;
+    newVpaVerifiedAt = null;
+  }
+  if (req.userRole === 'admin' && req.body.vpaVerified !== undefined) {
+    newVpaVerified = Boolean(req.body.vpaVerified);
+    newVpaVerifiedAt = newVpaVerified ? new Date().toISOString() : null;
+  }
+
   let hashedPassword: string | undefined = undefined;
   if (password !== undefined && password !== '') {
     hashedPassword = await bcrypt.hash(password, 10);
@@ -4348,6 +4448,8 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
         if (officialIdNumber !== undefined) user.officialIdNumber = officialIdNumber;
         if (officialIdDocument !== undefined) user.officialIdDocument = officialIdDocument;
         if (determinedStatus !== undefined) user.officialIdStatus = determinedStatus;
+        user.vpaVerified = newVpaVerified;
+        user.vpaVerifiedAt = newVpaVerifiedAt;
 
         inMemoryPayoutAccounts[id] = {
           ...(inMemoryPayoutAccounts[id] || {}),
@@ -4358,7 +4460,9 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
           ...(officialIdDocument !== undefined ? { officialIdDocument } : {}),
           ...(determinedStatus !== undefined ? { officialIdStatus: determinedStatus } : {}),
           accountHolderName: user.name || 'Mentor Beneficiary',
-          isVerified: true
+          isVerified: true,
+          vpaVerified: newVpaVerified,
+          vpaVerifiedAt: newVpaVerifiedAt
         };
       } else {
         const copy = { 
@@ -4431,6 +4535,8 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
   if (officialIdNumber !== undefined) user.officialIdNumber = officialIdNumber;
   if (officialIdDocument !== undefined) user.officialIdDocument = officialIdDocument;
   if (determinedStatus !== undefined) user.officialIdStatus = determinedStatus;
+  user.vpaVerified = newVpaVerified;
+  user.vpaVerifiedAt = newVpaVerifiedAt;
 
   inMemoryPayoutAccounts[id] = {
     ...(inMemoryPayoutAccounts[id] || {}),
@@ -4441,7 +4547,9 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
     ...(officialIdDocument !== undefined ? { officialIdDocument } : {}),
     ...(determinedStatus !== undefined ? { officialIdStatus: determinedStatus } : {}),
     accountHolderName: user.name || 'Mentor Beneficiary',
-    isVerified: true
+    isVerified: true,
+    vpaVerified: newVpaVerified,
+    vpaVerifiedAt: newVpaVerifiedAt
   };
 
   saveDb();
@@ -5901,7 +6009,8 @@ server.on('error', (err: any) => {
     process.exit(1);
   }
 });
-if (process.env.NODE_ENV !== 'test') {
+const isTestEnv = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || process.argv.some(a => a.includes('test'));
+if (!isTestEnv) {
   server.listen(PORT, '0.0.0.0', () => {
     logger.info(`✅ Mindroot API with WebRTC Signaling running on port ${PORT} (Bound to 0.0.0.0)`);
     const nets = os.networkInterfaces();

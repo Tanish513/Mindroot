@@ -268,6 +268,13 @@ export function Login() {
         setSignUpError('Please enter a valid non-negative hourly rate.');
         return;
       }
+      if (signUpUpiId.trim()) {
+        const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+        if (!vpaRegex.test(signUpUpiId.trim())) {
+          setSignUpError('Invalid UPI ID format. Please use format username@bankhandle (e.g. name@okhdfcbank or phone@paytm).');
+          return;
+        }
+      }
     }
 
     setSignUpLoading(true);
@@ -328,6 +335,13 @@ export function Login() {
       if (isNaN(onboardHourlyRate) || onboardHourlyRate < 0) {
         alert('Please enter a valid non-negative mentoring rate.');
         return;
+      }
+      if (onboardUpiId.trim()) {
+        const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
+        if (!vpaRegex.test(onboardUpiId.trim())) {
+          alert('Invalid UPI ID format. Please use format username@bankhandle (e.g. name@okhdfcbank or phone@paytm).');
+          return;
+        }
       }
     }
 

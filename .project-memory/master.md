@@ -13,4 +13,6 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
 - **Completed**:
   1. FIX 1: Teacher price setting fully accepted and persisted. Non-negative prices (including 0) and custom batch pricing tiers are accepted, validated (400 for negative/NaN), safely rounded for Prisma schema `Int`, and persisted via API during onboarding and profile saves.
   2. FIX 2: Profile page "Delete Account" feature fully implemented. Danger Zone UI with a two-step confirmation modal, authenticated self-deletion route with relational foreign key cascading cleanup via Prisma `$transaction`, in-memory cache purging, socket notification broadcast, store logout, and login redirect.
-- **Known Issues**: None. All builds and typechecks pass cleanly.
+  3. Dynamic Match Recommendations: Peer compatibility matching and community champions endpoints.
+  4. Security & Concurrency Suite: In-flight transactional booking mutex queue (`sessionBookingMutex`), fail-closed cryptographic HMAC token security and revocation tracking (`tokenService.ts`), WebRTC mesh hardening, and 5 automated test suites in `server/test/` verifying concurrency races, cross-tenant authorization, and accounting/audit gaps.
+- **Known Issues**: None. All builds, typechecks, and automated backend test suites pass cleanly.

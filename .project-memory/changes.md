@@ -24,3 +24,57 @@
       - Replaced `hourlyRate || 499` with `typeof ... === 'number'` in state, data loading, and `handleSaveRates`.
       - Changed tier price input `min` to `0`.
   - **Verification**: `npx tsc --noEmit`, `server` `npm run typecheck`, and root `npm run build` all passed with code 0.
+
+- **2026-09-28**:
+  - **Task**: Dynamic recommendations, P0-P2 security remediation, concurrency mutex, fail-closed token policy, and automated test suite.
+  - **Commits**: `6fd20f9`, `0051fc6`, `0dfdadd`
+  - **Files Changed & Features Added**:
+    - `server/src/index.ts`:
+      - Added dynamic peer match recommendations and community champions endpoints.
+      - Introduced in-flight booking concurrency mutex queue (`sessionBookingMutex`) to prevent double-booking slot collisions under high concurrency.
+      - Hardened cross-tenant authorization and role privilege verification.
+      - Tightened accounting, ledger audits, and wallet operations.
+    - `server/src/lib/tokenService.ts`:
+      - Implemented fail-closed cryptographic HMAC token verification, expiration, and token revocation tracking.
+    - `server/test/`:
+      - Added comprehensive automated integration test suite using Node.js test runner and Supertest:
+        - `concurrency_race.test.ts`: Confirms slot reservation race protection under simultaneous requests.
+        - `cross_user_auth.test.ts`: Tests cross-tenant resource protection.
+        - `extended_race.test.ts`: Tests stress concurrency and conflict isolation.
+        - `fail_closed.test.ts`: Asserts fail-closed behavior on corrupted/expired tokens.
+        - `audit_gaps.test.ts`: Covers edge cases in accounting, balances, and audit records.
+    - `src/pages/LiveRoom.tsx`:
+      - Hardened WebRTC mesh reconnect and signaling logic.
+    - `src/pages/Login.tsx`, `src/pages/Profile.tsx`, `src/pages/Wallet.tsx`, `src/lib/api/index.ts`:
+      - Integrated dynamic recommendations, wallet accounting checks, and rate security.
+  - **Verification**: All 5 test suites in `server/test/` verified, typecheck passed cleanly.
+
+- **2026-09-29**:
+  - **Task**: Remediation of Gap F10 (Mentor UPI ID / VPA Capture, NPCI Format Validation, Verification, and Safeguards).
+  - **Implementation Plan**: `_scratchpad/mindroot_implementation_plan_antigravity.md`
+  - **Files Changed**:
+    - `server/prisma/schema.prisma`:
+      - Added `upiId String?`, `upiQrImage String?`, `vpaVerified Boolean @default(false)`, `vpaVerifiedAt DateTime?` to `User`.
+      - Ran `npx prisma generate`.
+    - `server/src/index.ts`:
+      - Added NPCI VPA regex validation (`/^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/`) and 12-digit numeric UTR validation (`/^\d{12}$/`).
+      - Updated `registerSchema`, `GET /api/payment/mentor-upi/:teacherId`, `POST /api/payment/confirm-upi`, `POST /api/wallet/payout-account`, `PATCH /api/users/:id`, and `POST /api/sessions`.
+      - Completely removed fabricated `@okhdfcbank` fallback; returns `upiId: null` and `isConfigured: false` when unconfigured.
+      - Enforced 400 rejection with `code: 'MENTOR_PAYOUT_NOT_CONFIGURED'` when attempting to book or confirm direct UPI payment for mentors without configured VPA.
+      - Enforced automatic reset of `vpaVerified` to `false` when VPA is modified. Supported Admin verification.
+    - `src/components/payment/UpiPaymentModal.tsx`:
+      - Removed fabricated UPI fallbacks; gated "Quick Demo Pay" tab so it only shows when `demoMode === true`.
+      - Added "Direct UPI Not Configured" warning banner disabling submission if mentor has no VPA.
+      - Distinguish between verified and unverified VPAs with truthful labeling and added Payee Name cross-check safeguard box.
+      - Enforced strict 12-digit numeric UTR input with counter.
+    - `src/pages/Login.tsx`, `src/pages/Profile.tsx`, `src/pages/Wallet.tsx`, `src/pages/AdminPortal.tsx`, `src/lib/api/index.ts`:
+      - Added VPA format validation in mentor signup, profile, and payout settings.
+      - Displayed `vpaVerified` badge and note on profile UPI input.
+      - In Admin Portal: removed `@okhdfcbank` string, displayed truthful VPA status, and added admin VPA verification toggle button.
+    - `server/test/audit_gaps.test.ts`:
+      - Added TEST 9 covering subtests F10.1 through F10.5.
+  - **Verification**:
+    - `npx tsx --test server/test/audit_gaps.test.ts`: 9/9 test suites passed.
+    - `npm run typecheck --prefix server`: 0 errors.
+    - `npm run build`: built cleanly in 2.80s.
+    - Vault master audit and implementation plan updated and synchronized.
