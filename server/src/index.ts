@@ -1217,6 +1217,89 @@ function notifySessionParticipants(session: any, eventName: string, payload: any
   });
 }
 
+export function getSessionApproverId(session: any): string {
+  if (!session) return '';
+  if (session.isSwap && session.proposerId) {
+    if (session.proposerId === session.studentId) return session.teacherId || session.teacher?.id || '';
+    return session.studentId || session.student?.id || '';
+  }
+  return session.teacherId || session.teacher?.id || '';
+}
+
+export function resolveSessionRole(session: any, userId?: string, clientDeclaredRole?: string): 'teacher' | 'student' | 'observer' {
+  if (!session || !userId) return 'student';
+  if (session.isSwap) {
+    const isParticipant = session.teacherId === userId || session.teacher?.id === userId ||
+                          session.studentId === userId || session.student?.id === userId;
+    return isParticipant ? 'teacher' : 'observer';
+  }
+  const isTeacher = session.teacherId === userId || session.teacher?.id === userId;
+  if (isTeacher) {
+    return 'teacher';
+  }
+  const isStudent = session.studentId === userId || 
+                    session.student?.id === userId || 
+                    (Array.isArray(session.students) && session.students.some((st: any) => (st.id || st) === userId));
+  if (isStudent) return 'student';
+  return 'observer';
+}
+
+function checkAndExpirePendingSessions() {
+  const now = Date.now();
+  let changed = false;
+
+  inMemorySessions.forEach(async (s) => {
+    if (s && s.status === 'pending' && s.scheduledAt) {
+      const scheduledTime = new Date(s.scheduledAt).getTime();
+      const createdAt = s.createdAt ? new Date(s.createdAt).getTime() : scheduledTime;
+      const twentyFourHoursAfterCreated = createdAt + 24 * 60 * 60 * 1000;
+      
+      const expiryTime = Math.min(scheduledTime, twentyFourHoursAfterCreated);
+
+      if (now > expiryTime) {
+        s.status = 'cancelled';
+        s.cancellationReason = 'Expired: Not accepted before scheduled start time';
+        changed = true;
+
+        const studentId = s.studentId || (Array.isArray(s.students) && s.students[0]?.id);
+        const isTokenHeld = s.paymentStatus === 'held' || s.paymentId?.startsWith('tx-token');
+        if (isTokenHeld && studentId && !s.tokenRefunded) {
+          s.tokenRefunded = true;
+          s.paymentStatus = 'cancelled';
+          const refundTokens = Math.max(1, Number(s.amount || s.pricePerStudent || 1));
+          try {
+            await creditTokensAtomic({
+              prisma,
+              inMemoryUsers,
+              inMemorySessions,
+              inMemoryTransactions,
+              saveDb
+            }, {
+              userId: studentId,
+              amount: refundTokens,
+              reason: `Refund: Expired unconfirmed session "${s.title || s.id}"`,
+              sessionId: s.id,
+              currency: 'TOKENS'
+            });
+          } catch (err) {
+            logger.error({ err }, 'Error refunding expired session tokens');
+          }
+        }
+
+        notifySessionParticipants(s, 'session-request-expired', s);
+      }
+    }
+  });
+
+  if (changed) {
+    saveDb();
+    io.emit('network-sessions-updated', inMemorySessions);
+  }
+}
+
+// Check for expired pending requests every minute
+setInterval(checkAndExpirePendingSessions, 60000);
+
 // Socket.io Handshake Authentication Middleware
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token || (socket.handshake.headers?.authorization && socket.handshake.headers.authorization.startsWith('Bearer ') ? socket.handshake.headers.authorization.split(' ')[1] : null);
@@ -1308,15 +1391,18 @@ io.on('connection', (socket) => {
       // Existing participants in this room before newcomer
       const existingParticipants = Array.from(roomMap.values()).filter(p => p.socketId !== socket.id && p.peerId !== senderId);
 
+      // Derive authenticated role on server to prevent client role spoofing
+      const serverRole = targetSession ? resolveSessionRole(targetSession, callerId, userRole) : (userRole || 'student');
+
       // Register current participant
       roomMap.set(socket.id, {
         socketId: socket.id,
         peerId: senderId,
         userName: userName || 'Peer',
-        userRole: userRole || 'student'
+        userRole: serverRole
       });
 
-      console.log(`🏠 Socket ${socket.id} (user: ${userName || senderId}, role: ${userRole}) joined room ${roomId}. Total in room: ${roomMap.size}`);
+      console.log(`🏠 Socket ${socket.id} (user: ${userName || senderId}, server-stamped role: ${serverRole}) joined room ${roomId}. Total in room: ${roomMap.size}`);
 
       // 1. Send existing participants to newcomer so newcomer can initiate peer connections
       socket.emit('room-participants', {
@@ -1329,7 +1415,7 @@ io.on('connection', (socket) => {
         roomId,
         senderId,
         userName,
-        userRole,
+        userRole: serverRole,
         socketId: socket.id
       });
     }
@@ -2999,6 +3085,12 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
     }
 
     if (targetSession) {
+      if (targetSession.status === 'pending') {
+        return res.status(400).json({
+          error: 'Cannot submit payment for a session that is still pending mentor approval. Please wait for the mentor to accept your request.',
+          code: 'SESSION_NOT_CONFIRMED'
+        });
+      }
       const isStudentParticipant = targetSession.studentId === studentId ||
         (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === studentId));
       if (!isStudentParticipant && req.userRole !== 'admin') {
@@ -3341,9 +3433,10 @@ app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
 // GET /api/sessions — user-scoped sessions (optional auth: authenticated users get scoped sessions, guests get public sessions)
 app.get('/api/sessions', async (req: any, res: any) => {
   consolidateGroupSessions();
+  checkAndExpirePendingSessions();
   const now = Date.now();
   inMemorySessions.forEach(s => {
-    if (s && s.scheduledAt && (s.status === 'confirmed' || s.status === 'pending')) {
+    if (s && s.scheduledAt && (s.status === 'confirmed' || s.status === 'live')) {
       const startTime = new Date(s.scheduledAt).getTime();
       const durationMs = (s.durationMin || 60) * 60 * 1000;
       if (startTime + durationMs <= now) {
@@ -3637,7 +3730,7 @@ app.post('/api/sessions', async (req, res) => {
           name: teacherObj.name || (isSwapSession ? 'Peer' : 'Mentor'),
           title: bookRes.session.title,
           scheduledAt: bookRes.session.scheduledAt,
-          status: 'confirmed'
+          status: 'pending'
         }).catch(err => console.error('Booking notification email error:', err));
       }
 
@@ -3843,12 +3936,16 @@ app.post('/api/sessions/:id/pay-tokens', requireAuth, async (req: any, res: any)
       currency: 'TOKENS'
     });
 
-    session.paymentStatus = 'paid';
-    session.status = 'confirmed';
+    const isPendingSession = session.status === 'pending';
+    session.paymentStatus = isPendingSession ? 'held' : 'paid';
+    if (!isPendingSession) {
+      session.status = 'confirmed';
+    }
+
     if (Array.isArray(session.students)) {
       session.students.forEach((st: any) => {
         if (st.id === studentId) {
-          st.paymentStatus = 'paid';
+          st.paymentStatus = isPendingSession ? 'held' : 'paid';
           st.amountDue = 0;
           st.amountPaid = tokenCost;
         }
@@ -3858,7 +3955,10 @@ app.post('/api/sessions/:id/pay-tokens', requireAuth, async (req: any, res: any)
     if (process.env.DATABASE_URL && prisma) {
       await prisma.session.update({
         where: { id: session.id },
-        data: { paymentStatus: 'paid', status: 'confirmed' }
+        data: { 
+          paymentStatus: isPendingSession ? 'held' : 'paid',
+          ...(isPendingSession ? {} : { status: 'confirmed' })
+        }
       }).catch(() => {});
     }
 
@@ -4072,8 +4172,37 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
     }
 
     if (status === 'confirmed' || status === 'declined') {
-      if (!isTeacher && !isAdmin) {
-        return res.status(403).json({ error: 'Forbidden: Only the mentor can confirm or decline sessions.' });
+      const approverId = getSessionApproverId(memSess);
+      const isApprover = approverId === req.userId;
+      if (!isApprover && !isAdmin) {
+        return res.status(403).json({ error: 'Forbidden: Only the approving mentor can confirm or decline sessions.' });
+      }
+    }
+
+    if (status === 'confirmed') {
+      const reqTime = new Date(memSess.scheduledAt).getTime();
+      const reqDuration = (memSess.durationMin || 60) * 60 * 1000;
+      const teacherId = memSess.teacherId || memSess.teacher?.id;
+
+      const slotConflict = inMemorySessions.find(s => {
+        if (s.id === memSess.id) return false;
+        if (s.status !== 'confirmed' && s.status !== 'live') return false;
+        const tId = s.teacherId || s.teacher?.id;
+        if (tId !== teacherId) return false;
+        const sTime = new Date(s.scheduledAt).getTime();
+        const sDuration = (s.durationMin || 60) * 60 * 1000;
+        return Math.max(reqTime, sTime) < Math.min(reqTime + reqDuration, sTime + sDuration);
+      });
+
+      if (slotConflict) {
+        return res.status(409).json({
+          error: 'Slot conflict: You already have a confirmed session at this time.',
+          code: 'SLOT_CONFLICT'
+        });
+      }
+
+      if (memSess.paymentStatus === 'held') {
+        memSess.paymentStatus = 'paid';
       }
     }
 
@@ -4155,13 +4284,14 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
       }
     }
 
-    if (status === 'cancelled' && prevStatus !== 'cancelled') {
+    if ((status === 'cancelled' || status === 'declined') && prevStatus !== status) {
       const studentId = memSess.studentId || (Array.isArray(memSess.students) && memSess.students[0]?.id);
-      const isTokenPaid = memSess.paymentId?.startsWith('tx-token') || memSess.currency === 'TOKENS' || (Number(memSess.amount || memSess.pricePerStudent || 0) <= 20 && !memSess.utrNumber);
+      const isTokenPaid = memSess.paymentId?.startsWith('tx-token') || memSess.currency === 'TOKENS' || memSess.paymentStatus === 'held' || (Number(memSess.amount || memSess.pricePerStudent || 0) <= 20 && !memSess.utrNumber);
 
-      if (memSess.paymentStatus === 'paid') {
+      if (memSess.paymentStatus === 'paid' || memSess.paymentStatus === 'held') {
         if (isTokenPaid && studentId && !memSess.tokenRefunded) {
           memSess.tokenRefunded = true;
+          memSess.paymentStatus = 'refunded';
           const refundTokens = Math.max(1, Number(memSess.amount || memSess.pricePerStudent || 1));
           try {
             await creditTokensAtomic({
@@ -4173,12 +4303,12 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
             }, {
               userId: studentId,
               amount: refundTokens,
-              reason: `Refund: Cancelled session "${memSess.title || id}"`,
+              reason: `Refund: ${status === 'declined' ? 'Declined' : 'Cancelled'} session "${memSess.title || id}"`,
               sessionId: id,
               currency: 'TOKENS'
             });
           } catch (rErr) {
-            logger.error({ rErr }, 'Token refund on session cancellation encountered error');
+            logger.error({ rErr }, 'Token refund on session rejection encountered error');
           }
         } else if (memSess.utrNumber || memSess.paymentStatus === 'paid') {
           // Direct UPI payment: external settlement requires direct refund negotiation
@@ -4271,6 +4401,7 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
 
     saveDb();
     sendSessionsToParticipants(memSess);
+    notifySessionParticipants(memSess, 'session-status-updated', memSess);
     io.emit('network-sessions-updated', inMemorySessions);
   }
 
@@ -4283,7 +4414,11 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
 
       if (session) {
         const updateData: any = { status };
-        if (paymentStatus) updateData.paymentStatus = paymentStatus;
+        if (memSess && memSess.paymentStatus) {
+          updateData.paymentStatus = memSess.paymentStatus;
+        } else if (paymentStatus) {
+          updateData.paymentStatus = paymentStatus;
+        }
         const updated = await prisma.session.update({
           where: { id },
           data: updateData,

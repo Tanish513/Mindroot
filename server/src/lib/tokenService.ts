@@ -167,7 +167,7 @@ export async function bookSessionWithTokens(
             }
           });
 
-          // Create confirmed Session
+          // Create Session (pending teacher approval, tokens held)
           const session = await tx.session.create({
             data: {
               id: sessionId,
@@ -178,8 +178,8 @@ export async function bookSessionWithTokens(
               isSwap: Boolean(params.isSwap),
               giveSkill: params.giveSkill || null,
               takeSkill: params.takeSkill || null,
-              status: 'confirmed',
-              paymentStatus: 'paid',
+              status: 'pending',
+              paymentStatus: 'held',
               paymentId: txId,
               pricePerStudent: tokenCost,
               amount: tokenCost,
@@ -277,14 +277,14 @@ export async function bookSessionWithTokens(
           name: student.name,
           avatar: student.avatar || 'https://i.pravatar.cc/150?img=11',
           enrolledAt: new Date().toISOString(),
-          paymentStatus: 'paid',
+          paymentStatus: 'held',
           paymentId: txId,
           amountPaid: tokenCost,
           amountDue: 0
         }
       ],
-      status: 'confirmed',
-      paymentStatus: 'paid',
+      status: 'pending',
+      paymentStatus: 'held',
       paymentId: txId,
       scheduledAt: scheduledDate.toISOString(),
       durationMin

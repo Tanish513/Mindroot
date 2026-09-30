@@ -88,6 +88,68 @@ export const safeGetStorage = <T>(key: string, fallback: T): T => {
   }
 };
 
+export function getSessionApproverId(session: any): string {
+  if (!session) return '';
+  if (session.isSwap && session.proposerId) {
+    if (session.proposerId === session.studentId) return session.teacherId || session.teacher?.id || '';
+    return session.studentId || session.student?.id || '';
+  }
+  return session.teacherId || session.teacher?.id || '';
+}
+
+export function shouldSendJoinReminder(session: any, nowMs: number = Date.now()): boolean {
+  if (!session || !session.scheduledAt) return false;
+  const status = session.status;
+  if (status !== 'confirmed' && status !== 'live') return false;
+  
+  const startTime = new Date(session.scheduledAt).getTime();
+  const timeUntilStart = startTime - nowMs;
+  const fiveMinMs = 5 * 60 * 1000;
+  const durationMs = (session.durationMin || 60) * 60 * 1000;
+
+  return timeUntilStart <= fiveMinMs && timeUntilStart >= -durationMs;
+}
+
+export function resolveSessionRole(session: any, userId?: string, clientDeclaredRole?: string): 'teacher' | 'student' | 'observer' {
+  if (!session || !userId) {
+    if (clientDeclaredRole === 'teacher') return 'teacher';
+    return 'student';
+  }
+  if (session.isSwap) {
+    const isParticipant = session.teacherId === userId || session.teacher?.id === userId ||
+                          session.studentId === userId || session.student?.id === userId;
+    return isParticipant ? 'teacher' : 'observer';
+  }
+  if (session.teacherId === userId || session.teacher?.id === userId) {
+    return 'teacher';
+  }
+  const isStudent = session.studentId === userId || 
+                    session.student?.id === userId || 
+                    (Array.isArray(session.students) && session.students.some((st: any) => (st.id || st) === userId));
+  if (isStudent) return 'student';
+  if (clientDeclaredRole === 'teacher') return 'teacher';
+  return 'observer';
+}
+
+const sessionRequestListeners: Array<(session: any) => void> = [];
+const sessionStatusListeners: Array<(session: any) => void> = [];
+
+export const onSessionRequestCreated = (cb: (session: any) => void) => {
+  sessionRequestListeners.push(cb);
+  return () => {
+    const idx = sessionRequestListeners.indexOf(cb);
+    if (idx >= 0) sessionRequestListeners.splice(idx, 1);
+  };
+};
+
+export const onSessionStatusUpdated = (cb: (session: any) => void) => {
+  sessionStatusListeners.push(cb);
+  return () => {
+    const idx = sessionStatusListeners.indexOf(cb);
+    if (idx >= 0) sessionStatusListeners.splice(idx, 1);
+  };
+};
+
 const peerListeners: Array<(peers: any[]) => void> = [];
 const sessionListeners: Array<(sessions: any[]) => void> = [];
 const messageListeners: Array<(messages: any[]) => void> = [];
@@ -249,6 +311,18 @@ globalSocket.on('network-rewards-updated', (rewards: any) => {
 
 globalSocket.on('session-payment-received', (data: any) => {
   paymentListeners.forEach(cb => {
+    try { cb(data); } catch {}
+  });
+});
+
+globalSocket.on('session-request-created', (data: any) => {
+  sessionRequestListeners.forEach(cb => {
+    try { cb(data); } catch {}
+  });
+});
+
+globalSocket.on('session-status-updated', (data: any) => {
+  sessionStatusListeners.forEach(cb => {
     try { cb(data); } catch {}
   });
 });
@@ -992,6 +1066,14 @@ export const api = {
     } catch {}
 
     return createdSession;
+  },
+
+  acceptSession: async (id: string) => {
+    return api.patchSession(id, { status: 'confirmed' });
+  },
+
+  declineSession: async (id: string, reason?: string) => {
+    return api.patchSession(id, { status: 'declined', reason });
   },
 
   acceptSwap: async (id: string) => {

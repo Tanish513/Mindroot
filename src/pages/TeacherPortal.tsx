@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
-import { api } from '../lib/api';
+import { api, getSessionApproverId } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
@@ -25,6 +25,7 @@ export function TeacherPortal() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
+  const [actingId, setActingId] = useState<string | null>(null);
   const { currentUser, setCurrentUser, searchQuery } = useAppStore();
 
   const [slots, setSlots] = useState<Record<string, boolean>>(() => {
@@ -133,7 +134,7 @@ export function TeacherPortal() {
   }, [loadData]);
 
   const teacherSessions = sessions.filter(s => currentUser && (s.teacherId === currentUser.id || s.teacher?.id === currentUser.id));
-  const pendingSessions = teacherSessions.filter(s => s.status === 'pending');
+  const pendingSessions = sessions.filter(s => currentUser && getSessionApproverId(s) === currentUser.id && s.status === 'pending');
   const confirmedSessions = teacherSessions.filter(s => s.status === 'confirmed' || s.status === 'live');
 
   // Calculate live teacher revenue from earned transactions
@@ -153,13 +154,27 @@ export function TeacherPortal() {
   });
 
   const handleApprove = async (id: string) => {
-    await api.patchSession(id, { status: 'confirmed' });
-    loadData();
+    setActingId(id);
+    try {
+      await api.acceptSession(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to approve booking request');
+    } finally {
+      setActingId(null);
+    }
   };
 
   const handleDecline = async (id: string) => {
-    await api.patchSession(id, { status: 'declined' });
-    loadData();
+    setActingId(id);
+    try {
+      await api.declineSession(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to decline booking request');
+    } finally {
+      setActingId(null);
+    }
   };
 
   const handleSaveAvailability = async (targetSlots = slots, targetNow = isAvailableNow) => {
@@ -468,20 +483,27 @@ export function TeacherPortal() {
                       {new Date(session.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
                   </div>
+                  {session.paymentStatus === 'held' && (
+                    <div className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20 text-center">
+                      Tokens Held in Escrow (Auto-settles upon approval)
+                    </div>
+                  )}
                   <div className="flex gap-2 pt-1">
                     <Button
                       variant="secondary"
-                      className="flex-1 py-1 text-xs font-semibold"
+                      disabled={actingId === session.id}
+                      className="flex-1 py-1 text-xs font-semibold text-alert-rose hover:bg-alert-rose/10"
                       onClick={() => handleDecline(session.id)}
                     >
                       Decline
                     </Button>
                     <Button
                       variant="primary"
-                      className="flex-1 py-1 text-xs font-semibold"
+                      disabled={actingId === session.id}
+                      className="flex-1 py-1 text-xs font-semibold bg-teaching-emerald hover:bg-teaching-emerald/90 text-white shadow-xs"
                       onClick={() => handleApprove(session.id)}
                     >
-                      Accept
+                      {actingId === session.id ? 'Approving...' : 'Accept'}
                     </Button>
                   </div>
                 </div>

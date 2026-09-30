@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { io, type Socket } from 'socket.io-client';
 import { useAppStore } from '../store/useAppStore';
-import { api } from '../lib/api';
+import { api, resolveSessionRole } from '../lib/api';
 import { UpiPaymentModal } from '../components/payment/UpiPaymentModal';
 
 const safeUUID = () => {
@@ -196,7 +196,8 @@ export function LiveRoom() {
   const { currentUser } = useAppStore();
   const roomId = sessionId || 'demo-room';
   const userName = currentUser?.name || 'You';
-  const userRole = currentUser?.role || 'student';
+  const [currentSession, setCurrentSession] = useState<any | null>(null);
+  const userRole = resolveSessionRole(currentSession, currentUser?.id, currentUser?.role);
   const isTeacher = userRole === 'teacher';
 
   const [workspace, setWorkspace] = useState<Workspace>('whiteboard');
@@ -229,7 +230,6 @@ export function LiveRoom() {
   const [selectedCodeLang, setSelectedCodeLang] = useState('javascript');
   const [codeOutput, setCodeOutput] = useState<string | null>(null);
   const [isRunningCode, setIsRunningCode] = useState(false);
-  const [currentSession, setCurrentSession] = useState<any | null>(null);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 'welcome', sender: 'Mindroot System', text: 'Welcome to your live cohort studio! All enrolled batch students and the instructor join and collaborate here together.' }
@@ -1052,7 +1052,7 @@ export function LiveRoom() {
     channel.onmessage = (event) => handleSignalData(event.data);
 
     socket.on('connect', () => {
-      socket.emit('join-room', { roomId, senderId: peerId.current, userName, userRole: currentUser?.role || 'student' });
+      socket.emit('join-room', { roomId, senderId: peerId.current, userName, userRole });
       setNotice('Connected to cohort studio signaling server.');
     });
 
@@ -2519,14 +2519,16 @@ export function LiveRoom() {
               </button>
             </div>
 
-            {/* Hand Raise Control */}
-            <Control
-              active={raisedHand}
-              icon="pan_tool"
-              label="Raise hand"
-              highlighted={raisedHand}
-              onClick={toggleHand}
-            />
+            {/* Hand Raise Control (Students Only) */}
+            {!isTeacher && (
+              <Control
+                active={raisedHand}
+                icon="pan_tool"
+                label="Raise hand"
+                highlighted={raisedHand}
+                onClick={toggleHand}
+              />
+            )}
 
             {/* Screen Share Control */}
             <Control
@@ -2798,7 +2800,7 @@ export function LiveRoom() {
             </div>
 
             {/* Post-Lecture Payment Section for Students */}
-            {!isTeacher && currentSession?.paymentStatus !== 'paid' && (
+            {!isTeacher && currentSession?.paymentStatus !== 'paid' && currentSession?.paymentStatus !== 'confirmed' && currentSession?.type !== 'swap' && (
               <div className="bg-teaching-emerald-container/50 border border-teaching-emerald/20 rounded-2xl p-4 text-left space-y-2 text-on-teaching-emerald-container">
                 <div className="flex justify-between items-center text-xs font-bold">
                   <span>Mentor Fee Due:</span>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '../components/ui/Button';
 import { useAppStore } from '../store/useAppStore';
-import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated } from '../lib/api';
+import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated, getSessionApproverId } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
 export function Dashboard() {
@@ -11,6 +11,7 @@ export function Dashboard() {
   const [transactions, setTransactions] = useState<any[]>([]);
   const [champions, setChampions] = useState<any[]>([]);
   const [loadingChampions, setLoadingChampions] = useState<boolean>(true);
+  const [actingSessionId, setActingSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
 
   const loadData = () => {
@@ -193,6 +194,47 @@ export function Dashboard() {
 
   const isBothRole = loginRole === 'both' || currentUser?.role === 'both';
   const isTeacherRole = role === 'teacher' || (!isBothRole && (loginRole === 'teacher' || currentUser?.role === 'teacher'));
+
+  const pendingRequestsForMe = useMemo(() => {
+    if (!currentUser?.id) return [];
+    return sessions.filter(s => s && s.status === 'pending' && getSessionApproverId(s) === currentUser.id && !isPastSession(s));
+  }, [sessions, currentUser?.id]);
+
+  const handleAcceptBooking = async (sessionId: string) => {
+    setActingSessionId(sessionId);
+    try {
+      await api.acceptSession(sessionId);
+      addNotification({
+        type: 'session',
+        title: '✅ Request Approved',
+        body: 'You approved the booking request. The classroom is ready.',
+        link: `/live/${sessionId}`
+      });
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to accept booking');
+    } finally {
+      setActingSessionId(null);
+    }
+  };
+
+  const handleDeclineBooking = async (sessionId: string) => {
+    setActingSessionId(sessionId);
+    try {
+      await api.declineSession(sessionId);
+      addNotification({
+        type: 'session',
+        title: 'Booking Declined',
+        body: 'You declined the booking request. Any held tokens have been refunded.',
+        link: '/schedule'
+      });
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to decline booking');
+    } finally {
+      setActingSessionId(null);
+    }
+  };
 
   const confirmedSessions = sessions.filter(s => {
     const isUserPart = s.teacherId === currentUser.id || s.studentId === currentUser.id || (Array.isArray(s.students) && s.students.some((st: any) => st.id === currentUser.id));
@@ -634,6 +676,70 @@ export function Dashboard() {
           </Button>
         </div>
       </div>
+
+      {/* Pending Student Booking Requests Alert for Mentors */}
+      {pendingRequestsForMe.length > 0 && (
+        <div className="bg-surface border-2 border-primary/40 rounded-2xl p-5 shadow-elevation-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-xl animate-pulse">mark_email_unread</span>
+              <h3 className="text-sm font-black text-on-surface">
+                Pending Student Booking Requests ({pendingRequestsForMe.length})
+              </h3>
+            </div>
+            <span className="text-[11px] font-bold text-on-surface-variant">Review & approve to unlock live classroom</span>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {pendingRequestsForMe.map(req => (
+              <div key={req.id} className="bg-surface-container-low rounded-xl p-4 border border-outline-variant flex flex-col justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <img
+                    src={req.student?.avatar || `https://i.pravatar.cc/150?img=11`}
+                    alt={req.student?.name || 'Student'}
+                    className="w-10 h-10 rounded-full object-cover border border-outline-variant shrink-0 ring-1 ring-primary/20"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <h4 className="text-xs font-bold text-on-surface truncate">{req.title}</h4>
+                    <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
+                      Student: <strong className="text-on-surface">{req.student?.name || 'Learner'}</strong>
+                    </p>
+                    <div className="flex items-center gap-2 text-[10px] text-on-surface-variant mt-1">
+                      <span>📅 {req.scheduledAt ? new Date(req.scheduledAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Flexible'}</span>
+                      {req.paymentStatus === 'held' && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/20">
+                          Tokens Held
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-1 border-t border-outline-variant/40">
+                  <Button
+                    variant="primary"
+                    disabled={actingSessionId === req.id}
+                    onClick={() => handleAcceptBooking(req.id)}
+                    className="flex-1 py-1.5 text-xs font-bold bg-teaching-emerald hover:bg-teaching-emerald/90 text-white flex items-center justify-center gap-1 shadow-xs"
+                  >
+                    <span className="material-symbols-outlined text-sm">check_circle</span>
+                    <span>{actingSessionId === req.id ? 'Confirming...' : 'Accept Request'}</span>
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    disabled={actingSessionId === req.id}
+                    onClick={() => handleDeclineBooking(req.id)}
+                    className="flex-1 py-1.5 text-xs font-bold text-alert-rose hover:bg-alert-rose/10 flex items-center justify-center gap-1 border border-outline-variant"
+                  >
+                    <span className="material-symbols-outlined text-sm">cancel</span>
+                    <span>Decline</span>
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Daily Streak & Community Momentum Banner */}
       <div className="bg-surface-container border border-outline-variant rounded-2xl p-4 sm:p-5 shadow-elevation-1 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
