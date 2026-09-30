@@ -10,7 +10,7 @@ tags:
 status: completed
 created: 2026-09-29
 last_updated: 2026-09-30
-latest_commit: "892278b"
+latest_commit: "1ea3de8"
 author: "[[ANTIGRAVITY]]"
 project_hub: "[[student_to_student]]"
 source_spec: "[[student_to_student_spec]]"
@@ -714,16 +714,16 @@ flowchart TD
 ---
 
 ## 6. Acceptance Criteria **[Added in review]**
-- [ ] A user who is the session's teacher always sees the Teacher badge and Instructor view, and never a pay or rate-mentor prompt, regardless of global `role`.
-- [ ] The server, not the client, decides the role shown to peers; a spoofed `senderRole` has no effect.
-- [ ] A pending request never shows "Join Classroom Live" and never triggers a join reminder.
-- [ ] The teacher can accept or decline from the toast, Dashboard and `TeacherPortal`, and the student is notified of the result (with refund status on decline).
-- [ ] A pending request is visible to a teacher who was offline when it was created.
-- [ ] Only the approver or an admin can confirm/decline; illegal transitions and double decisions are rejected; token refunds happen exactly once.
-- [ ] Paid skill swaps: the listed student pays the listed teacher, the server sets the amount, and only the listed teacher confirms receipt.
-- [ ] Direct UPI cannot be paid or confirmed while a session is `pending`; token holds are released exactly once on decline or expiry.
-- [ ] Host-only controls work only for the session teacher whose registered role is `teacher` or `both`, and the server rejects host-only events from anyone else.
-- [ ] All five existing suites plus P2.1–P2.13 pass; server typecheck, `npx tsc --noEmit` and build are clean.
+- [x] A user who is the session's teacher always sees the Teacher badge and Instructor view, and never a pay or rate-mentor prompt, regardless of global `role`.
+- [x] The server, not the client, decides the role shown to peers; a spoofed `senderRole` has no effect.
+- [x] A pending request never shows "Join Classroom Live" and never triggers a join reminder.
+- [x] The teacher can accept or decline from the toast, Dashboard and `TeacherPortal`, and the student is notified of the result (with refund status on decline).
+- [x] A pending request is visible to a teacher who was offline when it was created.
+- [x] Only the approver or an admin can confirm/decline; illegal transitions and double decisions are rejected; token refunds happen exactly once.
+- [x] Paid skill swaps: the listed student pays the listed teacher, the server sets the amount, and only the listed teacher confirms receipt.
+- [x] Direct UPI cannot be paid or confirmed while a session is `pending`; token holds are released exactly once on decline or expiry.
+- [x] Host-only controls work only for the session teacher whose registered role is `teacher` or `both`, and the server rejects host-only events from anyone else.
+- [x] All five existing suites plus P2.1–P2.13 pass; server typecheck, `npx tsc --noEmit` and build are clean.
 
 ---
 
