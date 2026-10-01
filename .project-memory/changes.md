@@ -78,3 +78,33 @@
     - `npm run typecheck --prefix server`: 0 errors.
     - `npm run build`: built cleanly in 2.80s.
     - Vault master audit and implementation plan updated and synchronized.
+
+- **2026-09-30**:
+  - **Task**: Plan 2 — Live Room Role Access & Teacher Booking Request Accept/Decline Workflow.
+  - **Commits**: `1ea3de8`, `32e7def`
+  - **Files Changed & Features Added**:
+    - `server/src/index.ts`:
+      - Implemented authoritative server role resolution `resolveSessionRole(session, userId)` returning `teacher`, `student`, or `observer`.
+      - Stamped session role on socket `join-room` and WebRTC signaling, preventing client role spoofing.
+      - Added `getSessionApproverId(session)` helper. Gated `PATCH /api/sessions/:id` so only the approver (or admin) can transition `pending` -> `confirmed` / `declined`.
+      - Added slot conflict detection on approval (`409 SLOT_CONFLICT`).
+      - In token mode, bookings create `status: 'pending'`, `paymentStatus: 'held'`. On decline/cancel, held tokens are atomically refunded via `creditTokensAtomic`.
+      - Blocked direct UPI confirmation on pending sessions (`400 SESSION_NOT_CONFIRMED`).
+    - `server/src/lib/tokenService.ts`:
+      - Exported `creditTokensAtomic` helper for atomic refund on session decline.
+    - `server/test/session_decision.test.ts`:
+      - Added 6th automated test suite (8 test cases): role resolution, reminder guard, escrow hold, pending UPI rejection, approver authorization 403, slot collision 409, atomic decline refund, and approval idempotency.
+    - `src/components/NotificationManager.tsx`:
+      - Added inline `Accept` and `Decline` action buttons on booking request notifications.
+      - Added `shouldSendJoinReminder` check suppressing premature join alerts.
+    - `src/pages/Dashboard.tsx` & `src/pages/TeacherPortal.tsx`:
+      - Added "Pending Student Requests" review cards with Accept/Decline actions and status indicators.
+    - `src/pages/LiveRoom.tsx`:
+      - Resolved roles contextually via `isMentor = currentSession.teacherId === currentUser.id`. Suppressed student prompts (post-lecture UPI pay card, self-rating, hand raise) for teachers.
+    - `src/lib/api/index.ts`:
+      - Added `updateSessionStatus` API method for accept/decline actions.
+  - **Verification**:
+    - All 8 tests in `server/test/session_decision.test.ts` passed (100%).
+    - Full test suite: 31/31 tests passing across 6 suites.
+    - Server typecheck (`npm run typecheck --prefix server`): 0 errors.
+    - Frontend build (`npm run build`): 0 errors.
