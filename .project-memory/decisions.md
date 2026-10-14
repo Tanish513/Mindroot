@@ -8,3 +8,21 @@
   - Reason: `schema.prisma` does not have `onDelete: Cascade` on most user relations; deleting user without cleaning child rows throws `P2003` foreign key errors.
 - **DEC-003: Self-Service Account Deletion with Admin Exemption**:
   - Decision: Both `/api/users/me` and `/api/users/:id` allowed with `requireAuth` as long as `req.userId === id || req.userRole === 'admin'`. Master `user-admin` account is protected from deletion.
+- **DEC-004: Server-Authoritative Pricing and Payee Enforcement**:
+  - Decision: In `/api/sessions/pay-tokens`, `/api/payment/confirm-upi`, and `/api/payment/confirm-payment`, prices and recipient IDs are resolved strictly from the stored session record on the server. Any client-provided overrides are rejected with 400. Direct payments on unconfirmed sessions are rejected with `400 SESSION_NOT_CONFIRMED`.
+  - Reason: Prevents price manipulation and rogue payee redirection in checkout requests.
+- **DEC-005: Universal Mentor VPA Guard for Paid Bookings**:
+  - Decision: All paid session bookings (direct UPI or unstated paymentMethod) require the mentor to have a verified UPI VPA configured before checkout can proceed (`400 MENTOR_PAYOUT_NOT_CONFIGURED`). Token bookings bypass this requirement.
+  - Reason: Protects students from paying for sessions where the mentor has no valid payout channel configured to receive disbursements.
+- **DEC-006: Contextual Session Role Derivation & Host-Only Room Controls**:
+  - Decision: Participant roles in live rooms are dynamically derived server-side via `resolveSessionRole(session, userId)` instead of trusting client claims. Signaling events (`fullscreen`, `workspace`, `sync-full-state`) are permitted only for session hosts or admins.
+  - Reason: Prevents attendee privilege escalation and room hijack attacks.
+- **DEC-007: Teacher Booking Decision Workflow with Token Escrow**:
+  - Decision: Bookings default to `pending` status, requiring explicit mentor acceptance or decline. If booked using tokens, the token amount is placed into escrow immediately; if declined or cancelled, tokens are automatically and atomically refunded to the student balance.
+  - Reason: Ensures clear scheduling consent while securing funds without risking loss during rejection.
+- **DEC-008: Approver-Scoped Real-Time Socket Notifications**:
+  - Decision: Socket event `session-request-created` and decision alerts are routed strictly to the approver's personal socket room (`io.to('user:' + approverId)`).
+  - Reason: Eliminates sensitive session metadata leakage to other connected users on the platform.
+- **DEC-009: 12-Digit Numeric UTR Enforcement & VPA Reset on Profile Edit**:
+  - Decision: UPI UTR references must match strict 12-digit numeric format (`^\d{12}$`) and undergo global uniqueness checks (`409 DUPLICATE_UTR`). Any modification to a mentor's UPI ID resets `vpaVerified: false`.
+  - Reason: Conforms to NPCI transaction standards and prevents fraud via recycled reference IDs or unverified account updates.

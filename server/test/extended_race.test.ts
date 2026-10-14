@@ -7,6 +7,7 @@ process.env.NODE_ENV = 'test';
 
 import {
   app,
+  prisma,
   inMemoryUsers,
   inMemorySessions,
   inMemoryUsedUtrs,
@@ -49,6 +50,8 @@ async function runExtendedRaceTests() {
       name: 'Dr. Turing',
       email: `${mentorId}@test.com`,
       role: 'teacher',
+      upiId: 'turing.mentor@okhdfcbank',
+      vpaVerified: true,
       tokenBalance: 0,
       inrWalletBalance: 0,
       version: 0
@@ -152,7 +155,7 @@ async function runExtendedRaceTests() {
     // TEST 3: Duplicate UPI UTR Submission Prevention (HTTP 409)
     // -------------------------------------------------------------
     console.log('\n--- TEST 3: Duplicate UPI UTR Verification ---');
-    const testUtr = 'UTR_TEST_' + Date.now();
+    const testUtr = String(Date.now()).padStart(12, '0').slice(-12);
     const studentToken = createToken(studentIds[0]);
 
     const firstUpiRes = await fetch(`${baseUrl}/api/payment/confirm-upi`, {
@@ -218,7 +221,7 @@ async function runExtendedRaceTests() {
       studentId: studentIds[0],
       amount: 499,
       paymentStatus: 'pending',
-      status: 'pending'
+      status: 'confirmed'
     };
     inMemorySessions.push(paymentSession);
 
@@ -259,7 +262,15 @@ async function runExtendedRaceTests() {
     console.log('🎉 ALL EXTENDED CONCURRENCY & RACE TESTS PASSED (4/4)');
     console.log('====================================================\n');
   } finally {
-    serverInstance.close();
+    if ((serverInstance as any).closeAllConnections) {
+      (serverInstance as any).closeAllConnections();
+    }
+    await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
+    if (prisma && process.env.DATABASE_URL) {
+      try {
+        await prisma.$disconnect();
+      } catch {}
+    }
     process.exit(0);
   }
 }

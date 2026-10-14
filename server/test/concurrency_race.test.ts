@@ -113,9 +113,9 @@ async function runTests() {
     );
 
     const successCount = results.filter(r => r.status === 201).length;
-    const failureCount = results.filter(r => r.status === 400).length;
+    const failureCount = results.filter(r => r.status === 409).length;
 
-    console.log(`\nResults: ${successCount} Succeeded (HTTP 201), ${failureCount} Failed (HTTP 400)`);
+    console.log(`\nResults: ${successCount} Succeeded (HTTP 201), ${failureCount} Failed (HTTP 409)`);
 
     results.forEach(r => {
       if (r.status === 201) {
@@ -126,7 +126,7 @@ async function runTests() {
     });
 
     assert.strictEqual(successCount, 1, `Expected exactly 1 booking to succeed, but got ${successCount}`);
-    assert.strictEqual(failureCount, 9, `Expected exactly 9 bookings to be rejected with 400, but got ${failureCount}`);
+    assert.strictEqual(failureCount, 9, `Expected exactly 9 bookings to be rejected with 409, but got ${failureCount}`);
 
     const finalStudent = inMemoryUsers.find(u => u.id === testStudentId);
     console.log(`\nFinal Student Token Balance: ${finalStudent.tokenBalance}`);
@@ -218,12 +218,19 @@ async function runTests() {
         await prisma.user.deleteMany({ where: { id: { in: [testStudentId, testTeacherId] } } });
       } catch {}
     }
-    serverInstance.close();
-    process.exit(0);
+    if ((serverInstance as any).closeAllConnections) {
+      (serverInstance as any).closeAllConnections();
+    }
+    await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
+    if (prisma && process.env.DATABASE_URL) {
+      try {
+        await prisma.$disconnect();
+      } catch {}
+    }
   }
 }
 
 runTests().catch((err) => {
   console.error('\n❌ TEST SUITE FAILED:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

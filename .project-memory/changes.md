@@ -105,6 +105,41 @@
       - Added `updateSessionStatus` API method for accept/decline actions.
   - **Verification**:
     - All 8 tests in `server/test/session_decision.test.ts` passed (100%).
-    - Full test suite: 31/31 tests passing across 6 suites.
     - Server typecheck (`npm run typecheck --prefix server`): 0 errors.
     - Frontend build (`npm run build`): 0 errors.
+
+- **2026-10-02**:
+  - **Task**: Plan 3 — Codex Independent Verification Remediation & Gap Closure (D1=A, D2=A).
+  - **Files Changed & Features Added**:
+    - `server/src/index.ts`:
+      - P3.1: Enforced server-owned session price and payee in `pay-tokens`, `confirm-upi`, and `confirm-payment`. Rejects client tampering with 400. Blocked `confirm-payment` on pending sessions (`400 SESSION_NOT_CONFIRMED`).
+      - P3.2: Enforced host-only authorization on signaling events (`fullscreen`, `workspace`, `sync-full-state`). Permitted only for session host with role `teacher`/`both`, swap participants, or admin. Rejects unauthorized attempts with `room-error` event.
+      - P3.3: Enforced mentor VPA guard across all paid bookings regardless of `paymentMethod` presence (missing `paymentMethod` treated as direct UPI). Token payment bypasses VPA requirement.
+      - P3.4: Scoped `session-request-created` socket events strictly to the target approver's user room (`io.to('user:' + approverId)`).
+      - P3.5: Implemented D2=A for swaps: session price preserved; listed student pays listed teacher; VPA guard enforced for paid swaps; free swaps remain 0.
+      - P3.7: Cleaned up interval handles (`unref()`) and test teardowns to prevent open handles and libuv assertion crashes.
+    - `server/test/verification_gaps.test.ts`:
+      - Added dedicated tests for F10.6, F10.7, F10.8 (P3.3), P2.5 (P3.4), P2.11 (P3.2), P2.12 (P3.5), P2.13 (P3.1).
+    - `server/test/audit_gaps.test.ts`:
+      - Updated Test 9.1 for D1=A: verified VPA rejection on booking path and on confirmed session `confirm-upi`.
+    - `server/test/extended_race.test.ts`, `server/test/concurrency_race.test.ts`, `server/test/cross_user_auth.test.ts`, `server/test/session_decision.test.ts`:
+      - Fixed teardown handles and Prisma disconnects to exit cleanly with code 0.
+  - **Verification**:
+    - Real test count: 38/38 passing across 7 suites (`audit_gaps`: 9, `extended_race`: 4, `concurrency_race`: 3, `cross_user_auth`: 4, `fail_closed`: 3, `session_decision`: 8, `verification_gaps`: 7).
+    - Server typecheck (`npm run typecheck --prefix server`): 0 errors.
+    - Frontend build (`npm run build`): 0 errors.
+
+- **2026-10-13**:
+  - **Task**: Vault & Project Memory Synchronization, Test Assertion Polish & Health Check.
+  - **Files Changed & Synchronized**:
+    - `server/test/concurrency_race.test.ts`:
+      - Restored `r.status === 400` check for insufficient token balance rejections in concurrency double-spend test (Test 1).
+    - `.project-memory/` (`master.md`, `file-index.md`, `task-history.md`, `changes.md`):
+      - Updated fingerprints, verification date (2026-10-13), and test suite counts.
+    - Obsidian Vault (`student_to_student.md`, `_core/student_to_student_spec.md`, `_scratchpad/student_to_student_master_audit.md`, `_scratchpad/mindroot_implementation_plan_antigravity.md`):
+      - Synchronized `last_updated`, `latest_commit: "b1a48d2"`, Plan 3 remediation evidence, and test status across all notes.
+  - **Verification**:
+    - 38/38 tests passing across all 7 suites (`audit_gaps`: 9/9, `extended_race`: 4/4, `concurrency_race`: 3/3, `cross_user_auth`: 4/4, `fail_closed`: 3/3, `session_decision`: 8/8, `verification_gaps`: 7/7).
+    - Server typecheck (`npm run typecheck --prefix server`): 0 errors.
+    - Production build (`npm run build`): 0 errors.
+

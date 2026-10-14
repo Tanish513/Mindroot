@@ -369,7 +369,15 @@ async function runTests() {
   console.log('🎉 ALL PLAN 2 DECISION & ROLE INTEGRITY TESTS PASSED!');
   console.log('====================================================\n');
 
-  serverInstance.close();
+  if ((serverInstance as any).closeAllConnections) {
+    (serverInstance as any).closeAllConnections();
+  }
+  await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
+  if (prisma && process.env.DATABASE_URL) {
+    try {
+      await prisma.$disconnect();
+    } catch {}
+  }
   process.exit(0);
 }
 

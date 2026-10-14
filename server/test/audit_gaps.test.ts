@@ -100,7 +100,7 @@ async function runAuditGapsTests() {
       studentId: student1Id,
       amount: 499,
       paymentStatus: 'pending_mentor_confirmation',
-      status: 'pending'
+      status: 'confirmed'
     });
 
     const imposterToken = createToken(imposterId, 'student');
@@ -620,18 +620,35 @@ async function runAuditGapsTests() {
       email: `${unconfStudentId}@test.com`,
       role: 'student'
     });
+    const unconfStudentToken = createToken(unconfStudentId, 'student');
 
+    // 9.1: D1 = A: VPA guard on booking path + VPA guard on confirmed session confirm-upi
+    // Case A: Booking path rejection when mentor lacks VPA
+    const noVpaBookingRes = await fetch(`${baseUrl}/api/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${unconfStudentToken}` },
+      body: JSON.stringify({
+        teacherId: unconfTeacherId,
+        title: 'Machine Learning Deep Dive',
+        scheduledAt: new Date(Date.now() + 86400000).toISOString(),
+        pricePerStudent: 499
+      })
+    });
+    const noVpaBookingData: any = await noVpaBookingRes.json();
+    assert.strictEqual(noVpaBookingRes.status, 400, 'Must return 400 when mentor has no VPA at booking');
+    assert.strictEqual(noVpaBookingData.code, 'MENTOR_PAYOUT_NOT_CONFIGURED', 'Code must be MENTOR_PAYOUT_NOT_CONFIGURED');
+
+    // Case B: Confirmed session where mentor has no VPA -> confirm-upi returns MENTOR_PAYOUT_NOT_CONFIGURED
     inMemorySessions.push({
       id: unconfSessId,
       title: 'Machine Learning Deep Dive',
       teacherId: unconfTeacherId,
       studentId: unconfStudentId,
       amount: 499,
-      status: 'pending',
+      status: 'confirmed',
       paymentStatus: 'unpaid'
     });
 
-    const unconfStudentToken = createToken(unconfStudentId, 'student');
     const noVpaPayRes = await fetch(`${baseUrl}/api/payment/confirm-upi`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${unconfStudentToken}` },
@@ -643,9 +660,9 @@ async function runAuditGapsTests() {
       })
     });
     const noVpaPayData: any = await noVpaPayRes.json();
-    assert.strictEqual(noVpaPayRes.status, 400, 'Must return 400 when mentor has no VPA');
+    assert.strictEqual(noVpaPayRes.status, 400, 'Must return 400 when mentor has no VPA in confirm-upi');
     assert.strictEqual(noVpaPayData.code, 'MENTOR_PAYOUT_NOT_CONFIGURED', 'Code must be MENTOR_PAYOUT_NOT_CONFIGURED');
-    console.log('✅ TEST 9.1 PASSED: Direct UPI payment blocked when mentor lacks configured VPA!');
+    console.log('✅ TEST 9.1 PASSED: Mentor lacking VPA blocked at booking and on confirmed confirm-upi (D1=A)!');
 
     // 9.2: payout-account returns 400 for invalid VPA formats
     const confTeacherId = `conf-teacher-${Date.now()}`;
@@ -690,7 +707,7 @@ async function runAuditGapsTests() {
       teacherId: confTeacherId,
       studentId: unconfStudentId,
       amount: 499,
-      status: 'pending',
+      status: 'confirmed',
       paymentStatus: 'unpaid'
     });
 
@@ -785,11 +802,27 @@ async function runAuditGapsTests() {
     console.log('\n====================================================');
     console.log('🎉 ALL AUDIT GAP VERIFICATION TESTS PASSED (9/9)');
     console.log('====================================================\n');
-    serverInstance.close();
+    if ((serverInstance as any).closeAllConnections) {
+      (serverInstance as any).closeAllConnections();
+    }
+    await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
+    if (prisma && process.env.DATABASE_URL) {
+      try {
+        await prisma.$disconnect();
+      } catch {}
+    }
     process.exit(0);
   } catch (err) {
     console.error('\n❌ AUDIT GAPS TEST FAILED:', err);
-    serverInstance.close();
+    if ((serverInstance as any).closeAllConnections) {
+      (serverInstance as any).closeAllConnections();
+    }
+    await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
+    if (prisma && process.env.DATABASE_URL) {
+      try {
+        await prisma.$disconnect();
+      } catch {}
+    }
     process.exit(1);
   }
 }

@@ -12,3 +12,18 @@
 - **MISTAKE-004: Direct `prisma.user.delete` failing foreign key constraints**:
   - Problem: Deleting user directly caused Postgres to throw `P2003` foreign key constraint failures due to related sessions, messages, reviews, transactions, userSkills.
   - Fix: Clean up child records inside `prisma.$transaction` before deleting the user.
+- **MISTAKE-005: Trusting Client-Provided Pricing or Payee in Payment Endpoints**:
+  - Problem: Allowing client payload to supply `amount` or `payeeId` enabled tampering or redirection of transaction funds.
+  - Fix: Fetch the session record from the database/in-memory store on the server, enforcing server-stored price and teacher ID. Reject mismatching requests with HTTP 400.
+- **MISTAKE-006: Broadcasting Private Booking Creation to All Connected Sockets**:
+  - Problem: Emitting `session-request-created` globally exposed private student session booking details to all connected platform users.
+  - Fix: Scope notification delivery strictly to the target recipient's personal room (`io.to('user:' + approverId)`).
+- **MISTAKE-007: Unrestricted Signaling Event Relay in Live Rooms**:
+  - Problem: Attendees could emit `fullscreen`, `workspace`, or state sync events, overriding the teacher/host presentation.
+  - Fix: Check contextual room host authorization on all signaling message handlers and reject unauthorized events with `room-error`.
+- **MISTAKE-008: Unclosed Sockets, Intervals, or Prisma Connections in Test Teardown**:
+  - Problem: Test processes hung or triggered libuv assertion failures (`Assertion failed: req->type == UV_FS`) on exit due to active timers and open socket handles.
+  - Fix: Call `server.closeAllConnections()`, await server close callback, disconnect Prisma clients, and mark interval timers with `.unref()`.
+- **MISTAKE-009: Allowing Payment Confirmation on Unconfirmed/Pending Sessions**:
+  - Problem: Students could submit payment confirmations against sessions that were still awaiting mentor approval.
+  - Fix: Verify `session.status === 'confirmed'` before processing payments in `confirm-upi` and `confirm-payment`, returning `400 SESSION_NOT_CONFIRMED` otherwise.

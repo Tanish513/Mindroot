@@ -1067,7 +1067,8 @@ async function cleanupExpiredTokens() {
 }
 
 cleanupExpiredTokens();
-setInterval(cleanupExpiredTokens, 24 * 60 * 60 * 1000);
+const cleanupTokensInterval = setInterval(cleanupExpiredTokens, 24 * 60 * 60 * 1000);
+cleanupTokensInterval.unref();
 
 // GET /api/turn-credentials — serve STUN and TURN server credentials for WebRTC NAT traversal (Protected)
 app.get('/api/turn-credentials', requireAuth, (_req, res) => {
@@ -1298,7 +1299,8 @@ function checkAndExpirePendingSessions() {
 }
 
 // Check for expired pending requests every minute
-setInterval(checkAndExpirePendingSessions, 60000);
+const expireSessionsInterval = setInterval(checkAndExpirePendingSessions, 60000);
+expireSessionsInterval.unref();
 
 // Socket.io Handshake Authentication Middleware
 io.use((socket, next) => {
@@ -1334,9 +1336,13 @@ io.use((socket, next) => {
   next();
 });
 
-// Socket.io WebRTC signaling & real-time multi-laptop sync
 io.on('connection', (socket) => {
   console.log(`🔌 Socket connected: ${socket.id}`);
+
+  const authUserId = (socket as any).userId || socket.data?.userId;
+  if (authUserId) {
+    registerUserSocket(authUserId, socket.id);
+  }
 
   // Send initial synchronized public state to newly connected laptop
   socket.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
@@ -1429,8 +1435,8 @@ io.on('connection', (socket) => {
   };
 
   const sendTargetedSignal = (eventName: string, data: any) => {
-    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
-    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id && !r.startsWith('user:'));
+    const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
 
     const targetId = data?.targetId;
@@ -1458,23 +1464,55 @@ io.on('connection', (socket) => {
   socket.on('sdp-answer', (data: any) => sendTargetedSignal('sdp-answer', data));
   socket.on('ice-candidate', (data: any) => sendTargetedSignal('ice-candidate', data));
 
+const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-state']);
+
   socket.on('room-event', (data: any) => {
-    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
-    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id && !r.startsWith('user:'));
+    const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
+
+    const eventType = data?.event?.type || data?.type;
+    if (HOST_ONLY_ROOM_EVENTS.has(eventType)) {
+      const senderUserId = (socket as any).userId || socket.data?.userId;
+      const targetSession = inMemorySessions.find(s => s.id === roomId || s.meetingLink === `/live/${roomId}` || s.meetingLink === roomId);
+      const senderUser = inMemoryUsers.find(u => u.id === senderUserId);
+      const senderRole = senderUser?.role || (socket as any).userRole;
+
+      const isHost = Boolean(
+        (socket as any).userRole === 'admin' ||
+        (targetSession?.isSwap && (
+          targetSession.teacherId === senderUserId ||
+          targetSession.teacher?.id === senderUserId ||
+          targetSession.studentId === senderUserId ||
+          targetSession.student?.id === senderUserId ||
+          (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === senderUserId))
+        )) ||
+        (targetSession && (targetSession.teacherId === senderUserId || targetSession.teacher?.id === senderUserId) && (senderRole === 'teacher' || senderRole === 'both'))
+      );
+
+      if (!isHost) {
+        socket.emit('room-error', {
+          error: 'Forbidden: Only the session host can broadcast host-controlled room events.',
+          code: 'HOST_PERMISSION_REQUIRED',
+          eventType
+        });
+        return;
+      }
+    }
+
     socket.to(roomId).emit('room-event', data);
   });
 
   socket.on('whiteboard-update', (data: any) => {
-    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
-    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id && !r.startsWith('user:'));
+    const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
     socket.to(roomId).emit('whiteboard-update', data);
   });
 
   socket.on('chat-message', (data: any) => {
-    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id);
-    const roomId = (joinedRoom && socket.rooms.has(joinedRoom)) ? joinedRoom : data?.roomId;
+    const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id && !r.startsWith('user:'));
+    const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
     socket.to(roomId).emit('chat-message', data);
   });
@@ -3096,9 +3134,19 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       if (!isStudentParticipant && req.userRole !== 'admin') {
         return res.status(403).json({ error: 'Forbidden: Only the enrolled student can submit payment for this session.' });
       }
+
+      const sessionTeacherId = targetSession.teacherId || targetSession.teacher?.id;
+      const sessionPrice = Number(targetSession.pricePerStudent ?? targetSession.amount ?? 499);
+
+      if (teacherId !== undefined && teacherId !== sessionTeacherId) {
+        return res.status(400).json({ error: 'Teacher ID mismatch for session.' });
+      }
+      if (amount !== undefined && Number(amount) !== sessionPrice) {
+        return res.status(400).json({ error: 'Payment amount does not match session price.' });
+      }
     }
 
-    const finalTeacherId = teacherId || targetSession?.teacherId || targetSession?.teacher?.id;
+    const finalTeacherId = targetSession ? (targetSession.teacherId || targetSession.teacher?.id) : (teacherId || 'teacher-default');
     const teacherPayoutAcc = inMemoryPayoutAccounts[finalTeacherId];
     const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
     const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
@@ -3134,7 +3182,7 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       inMemoryUsedUtrs.add(cleanUtr);
     }
 
-    const finalAmount = Number(amount || targetSession?.pricePerStudent || targetSession?.amount || teacherObj.hourlyRate || 499);
+    const finalAmount = targetSession ? Number(targetSession.pricePerStudent ?? targetSession.amount ?? 499) : Number(amount || teacherObj.hourlyRate || 499);
     const generatedPaymentId = isDemoAllowed 
       ? `pay_demo_${Date.now()}` 
       : `pay_upi_${cleanUtr || Date.now()}`;
@@ -3658,7 +3706,10 @@ app.post('/api/sessions', async (req, res) => {
     return res.status(400).json({ error: 'Cannot book a session with a profile registered as student. Mentoring sessions can only be booked with teachers or profiles with both role.' });
   }
   const maxCap = Math.min(Math.max(parseInt(maxCapacity, 10) || 1, 1), 5);
-  const seatPrice = isSwapSession ? 0 : (pricePerStudent ? parseInt(pricePerStudent, 10) : teacherObj.hourlyRate || 499);
+  // D2 = A: A swap is one session. The listed student pays the listed teacher the session price. A swap with price 0 stays free.
+  const seatPrice = isSwapSession
+    ? (pricePerStudent !== undefined ? parseInt(pricePerStudent, 10) : (req.body.amount !== undefined ? parseInt(req.body.amount, 10) : 0))
+    : (pricePerStudent ? parseInt(pricePerStudent, 10) : (req.body.amount ? parseInt(req.body.amount, 10) : teacherObj.hourlyRate || 499));
   const reqTime = new Date(scheduledAt || Date.now()).getTime();
 
   // If booking direct UPI and mentor has not configured VPA
@@ -3666,15 +3717,16 @@ app.post('/api/sessions', async (req, res) => {
   const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
   const isTeacherVpaConfigured = Boolean(teacherVpa && VPA_REGEX.test(teacherVpa));
 
-  if (!isSwapSession && seatPrice > 0 && !isTeacherVpaConfigured && (paymentMethod === 'upi' || paymentMethod === 'direct_upi')) {
+  // If client opted to pay or book using tokens, handle via atomic TokenService
+  const isTokenPayment = Boolean(payWithTokens || paymentMethod === 'tokens' || tokens !== undefined);
+
+  // P3.3 & P3.5: Any booking (including swaps) with price > 0 requires mentor to have a valid VPA unless explicitly paid with tokens
+  if (seatPrice > 0 && !isTokenPayment && !isTeacherVpaConfigured) {
     return res.status(400).json({
-      error: 'Cannot book a direct UPI session: mentor has not configured their UPI payout address (VPA). Please book with tokens or request a skill swap.',
+      error: 'Cannot book a paid session: mentor has not configured their UPI payout address (VPA). Please book with tokens or configure payout VPA.',
       code: 'MENTOR_PAYOUT_NOT_CONFIGURED'
     });
   }
-
-  // If client opted to pay or book using tokens, handle via atomic TokenService
-  const isTokenPayment = Boolean(payWithTokens || paymentMethod === 'tokens' || tokens !== undefined);
   if (isTokenPayment) {
     const finalTokenCost = Math.max(1, parseInt(tokenCost || tokens || 1, 10));
 
@@ -3735,7 +3787,10 @@ app.post('/api/sessions', async (req, res) => {
       }
 
       sendSessionsToParticipants(bookRes.session);
-      notifySessionParticipants(bookRes.session, 'session-request-created', bookRes.session);
+      const approverId1 = getSessionApproverId(bookRes.session);
+      if (approverId1) {
+        io.to('user:' + approverId1).emit('session-request-created', bookRes.session);
+      }
       io.emit('network-sessions-updated', inMemorySessions);
       io.emit('network-transactions-updated', inMemoryTransactions);
       io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
@@ -3839,13 +3894,13 @@ app.post('/api/sessions', async (req, res) => {
         name: studentObj.name,
         avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
         enrolledAt: new Date().toISOString(),
-        paymentStatus: isSwapSession ? 'swap' : 'pending',
+        paymentStatus: (isSwapSession && seatPrice === 0) ? 'swap' : 'pending',
         amountPaid: 0,
         amountDue: seatPrice
       }
     ],
     status: 'pending', // Requires Recipient Approval
-    paymentStatus: isSwapSession ? 'swap' : 'pending',
+    paymentStatus: (isSwapSession && seatPrice === 0) ? 'swap' : 'pending',
     scheduledAt: scheduledAt || new Date().toISOString(),
     durationMin: durationMin ? parseInt(durationMin, 10) : 60
   };
@@ -3897,7 +3952,10 @@ app.post('/api/sessions', async (req, res) => {
   }
 
   sendSessionsToParticipants(newSession);
-  notifySessionParticipants(newSession, 'session-request-created', newSession);
+  const approverId2 = getSessionApproverId(newSession);
+  if (approverId2) {
+    io.to('user:' + approverId2).emit('session-request-created', newSession);
+  }
   io.emit('network-sessions-updated', inMemorySessions);
   res.status(201).json(newSession);
 });
@@ -3918,7 +3976,20 @@ app.post('/api/sessions/:id/pay-tokens', requireAuth, async (req: any, res: any)
     return res.status(400).json({ error: 'Session is already fully paid.' });
   }
 
-  const tokenCost = Math.max(1, parseInt(req.body.tokenCost || session.amount || session.pricePerStudent || 1, 10));
+  const expectedTokenCost = Math.max(1, parseInt(session.tokenCost || session.amount || session.pricePerStudent || 1, 10));
+  const expectedTeacherId = session.teacherId || session.teacher?.id;
+
+  if (req.body?.tokenCost !== undefined && parseInt(req.body.tokenCost, 10) !== expectedTokenCost) {
+    return res.status(400).json({ error: 'Token cost mismatch with session price.' });
+  }
+  if (req.body?.amount !== undefined && parseInt(req.body.amount, 10) !== expectedTokenCost) {
+    return res.status(400).json({ error: 'Payment amount mismatch with session price.' });
+  }
+  if (req.body?.teacherId !== undefined && req.body.teacherId !== expectedTeacherId) {
+    return res.status(400).json({ error: 'Teacher ID mismatch for session.' });
+  }
+
+  const tokenCost = expectedTokenCost;
 
   try {
     const deductRes = await deductTokensAtomic({
@@ -5344,6 +5415,24 @@ app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res:
       return res.status(403).json({ error: 'Forbidden: Only the teacher of this session or an admin can confirm payment.' });
     }
 
+    if (session.status === 'pending') {
+      return res.status(400).json({
+        error: 'Cannot confirm payment on a session that is still pending mentor approval. Accept the booking first.',
+        code: 'SESSION_NOT_CONFIRMED'
+      });
+    }
+
+    const finalTeacherId = session.teacherId || session.teacher?.id;
+    const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
+    const finalAmount = Number(session.amount ?? session.pricePerStudent ?? teacherUser?.hourlyRate ?? 499);
+
+    if (req.body?.amount !== undefined && Number(req.body.amount) !== finalAmount) {
+      return res.status(400).json({ error: 'Payment amount mismatch with session price.' });
+    }
+    if (req.body?.teacherId !== undefined && req.body.teacherId !== finalTeacherId) {
+      return res.status(400).json({ error: 'Teacher ID mismatch for session.' });
+    }
+
     // Idempotency check: Double clicks or retries do not credit twice
     if (session.paymentStatus === 'paid') {
       return res.json({ success: true, message: 'Payment already confirmed.', session, alreadyProcessed: true });
@@ -5364,9 +5453,6 @@ app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res:
     // Funds were deposited directly to the mentor's personal UPI/bank account outside platform escrow.
     // Mentor's totalEarned increases for revenue reporting and analytics,
     // but inrWalletBalance is NOT credited (preventing simulated double-liability on the platform).
-    const finalTeacherId = session.teacherId || session.teacher?.id;
-    const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
-    const finalAmount = Number(session.amount || session.pricePerStudent || teacherUser?.hourlyRate || 499);
     if (teacherUser) {
       teacherUser.totalEarned = (teacherUser.totalEarned || 0) + finalAmount;
       teacherUser.rewardPoints = (teacherUser.rewardPoints || 0) + 50;
@@ -6135,6 +6221,7 @@ const sessionReminderInterval = setInterval(async () => {
     logger.error({ err }, 'Error in automated session reminder background worker');
   }
 }, REMINDER_CHECK_INTERVAL_MS);
+sessionReminderInterval.unref();
 
 const PORT = Number(process.env.PORT) || 3000;
 server.on('error', (err: any) => {

@@ -49,7 +49,8 @@ async function runFailClosedTests() {
     prisma: failingPrisma,
     inMemoryUsers,
     inMemorySessions,
-    inMemoryTransactions
+    inMemoryTransactions,
+    saveDb: () => {}
   };
 
   // Ensure DATABASE_URL is set so policy engages
@@ -126,11 +127,10 @@ async function runFailClosedTests() {
     console.log('====================================================\n');
   } finally {
     delete process.env.ALLOW_UNSAFE_IN_MEMORY_FAILOVER;
-    process.exit(0);
   }
 }
 
 runFailClosedTests().catch(err => {
   console.error('\n❌ FAIL-CLOSED TEST FAILED:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

@@ -91,9 +91,9 @@ async function runTests() {
     try {
       await prisma.user.createMany({
         data: [
-          { id: userA.id, name: userA.name, email: userA.email, role: userA.role, tokenBalance: 10, tokenVersion: 0 },
-          { id: userB.id, name: userB.name, email: userB.email, role: userB.role, tokenBalance: 10, tokenVersion: 0 },
-          { id: teacher.id, name: teacher.name, email: teacher.email, role: teacher.role, tokenBalance: 0, tokenVersion: 0 }
+          { id: userA.id, name: userA.name, email: userA.email, role: userA.role, tokenBalance: 10 },
+          { id: userB.id, name: userB.name, email: userB.email, role: userB.role, tokenBalance: 10 },
+          { id: teacher.id, name: teacher.name, email: teacher.email, role: teacher.role, tokenBalance: 0 }
         ]
       });
       await prisma.session.create({
@@ -210,7 +210,15 @@ async function runTests() {
         await prisma.user.deleteMany({ where: { id: { in: [userAId, userBId, teacherId] } } });
       } catch {}
     }
-    serverInstance.close();
+    if ((serverInstance as any).closeAllConnections) {
+      (serverInstance as any).closeAllConnections();
+    }
+    await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
+    if (prisma && process.env.DATABASE_URL) {
+      try {
+        await prisma.$disconnect();
+      } catch {}
+    }
     process.exit(0);
   }
 }
