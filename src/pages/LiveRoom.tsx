@@ -70,125 +70,19 @@ const toolTabs: { id: Workspace; icon: string; label: string }[] = [
   { id: 'code', icon: 'code', label: 'Interactive Code Pad' }
 ];
 
-// Helper to reliably find an RTCRtpSender for audio or video across transceivers and senders
-function findSenderForKind(peer: RTCPeerConnection, kind: 'audio' | 'video'): RTCRtpSender | undefined {
-  if (typeof peer.getTransceivers === 'function') {
-    const transceivers = peer.getTransceivers();
-    const matched = transceivers.find(t => 
-      (t.sender.track && t.sender.track.kind === kind) ||
-      (t.receiver.track && t.receiver.track.kind === kind)
-    );
-    if (matched && matched.sender) {
-      return matched.sender;
-    }
-  }
-  return peer.getSenders().find(s => s.track?.kind === kind);
-}
-
-// Helper to create synthetic animated video stream
-function createSyntheticVideoStream(label: string, subtitle = 'LIVE VIDEO ACTIVE', bgColor1 = '#13161b') {
-  try {
-    const canvasEl = document.createElement('canvas');
-    canvasEl.width = 640;
-    canvasEl.height = 360;
-    const ctx = canvasEl.getContext('2d');
-    
-    let frame = 0;
-    const draw = () => {
-      if (!ctx) return;
-      frame++;
-      // Flat Solid Surface Background
-      ctx.fillStyle = bgColor1;
-      ctx.fillRect(0, 0, 640, 360);
-
-      // Glowing animated radar ring
-      const pulse = Math.sin(frame * 0.08) * 8;
-      ctx.beginPath();
-      ctx.arc(320, 135, 52 + pulse, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(21, 128, 61, 0.2)';
-      ctx.fill();
-
-      ctx.beginPath();
-      ctx.arc(320, 135, 45, 0, Math.PI * 2);
-      ctx.fillStyle = '#15803d';
-      ctx.fill();
-
-      // User Avatar Initial
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 36px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText((label || 'P').slice(0, 1).toUpperCase(), 320, 135);
-
-      // Name Label
-      ctx.textBaseline = 'alphabetic';
-      ctx.font = 'bold 20px sans-serif';
-      ctx.fillText(label || 'Peer User', 320, 220);
-
-      // Live Badge
-      ctx.fillStyle = '#22c55e';
-      ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(`● ${subtitle}`, 320, 248);
-
-      // Animated Voice/Activity Bars
-      const barCount = 9;
-      const startX = 320 - (barCount * 14) / 2;
-      for (let i = 0; i < barCount; i++) {
-        const h = 6 + Math.abs(Math.sin(frame * 0.12 + i * 0.7)) * 22;
-        ctx.fillStyle = '#4ade80';
-        ctx.fillRect(startX + i * 14, 288 - h / 2, 7, h);
-      }
-    };
-
-    draw();
-    const animInterval = setInterval(draw, 100);
-    
-    let stream: MediaStream | null = null;
-    if (typeof (canvasEl as any).captureStream === 'function') {
-      stream = (canvasEl as any).captureStream(20);
-    } else if (typeof (canvasEl as any).mozCaptureStream === 'function') {
-      stream = (canvasEl as any).mozCaptureStream(20);
-    } else if (typeof (canvasEl as any).webkitCaptureStream === 'function') {
-      stream = (canvasEl as any).webkitCaptureStream(20);
-    }
-
-    if (!stream) {
-      stream = new MediaStream();
-    }
-    
-    const track = stream.getVideoTracks()[0];
-    if (track) {
-      const originalStop = track.stop.bind(track);
-      track.stop = () => {
-        clearInterval(animInterval);
-        originalStop();
-      };
-    }
-    return stream;
-  } catch (err) {
-    console.warn('[WebRTC] Synthetic stream generation error:', err);
-    return new MediaStream();
-  }
-}
-
-// Helper to create synthetic silent/ambient audio track
-function createSyntheticAudioTrack(): MediaStreamTrack | null {
-  try {
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-    if (!AudioCtx) return null;
-    const ctx = new AudioCtx();
-    const osc = ctx.createOscillator();
-    const dst = ctx.createMediaStreamDestination();
-    const gain = ctx.createGain();
-    gain.gain.value = 0.0001; // essentially silent but valid active audio clock
-    osc.connect(gain);
-    gain.connect(dst);
-    osc.start();
-    return dst.stream.getAudioTracks()[0] || null;
-  } catch {
-    return null;
-  }
-}
+import {
+  findSenderForKind,
+  createSyntheticVideoStream,
+  createSyntheticAudioTrack,
+  VideoTile,
+  StreamVideo,
+  RemoteAudioElement,
+  VideoGrid,
+  WhiteboardCanvas,
+  NotesEditor,
+  CodeRunnerPad,
+  RoomChat
+} from '../components/liveroom';
 
 export function LiveRoom() {
   const { sessionId } = useParams();
@@ -229,7 +123,7 @@ export function LiveRoom() {
   // Code editor states
   const [selectedCodeLang, setSelectedCodeLang] = useState('javascript');
   const [codeOutput, setCodeOutput] = useState<string | null>(null);
-  const [isRunningCode, setIsRunningCode] = useState(false);
+  const [isRunningCode] = useState(false);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 'welcome', sender: 'Mindroot System', text: 'Welcome to your live cohort studio! All enrolled batch students and the instructor join and collaborate here together.' }
@@ -1061,8 +955,38 @@ export function LiveRoom() {
     socket.on('sdp-offer', (d) => handleSignalData({ type: 'sdp-offer', ...d }));
     socket.on('sdp-answer', (d) => handleSignalData({ type: 'sdp-answer', ...d }));
     socket.on('ice-candidate', (d) => handleSignalData({ type: 'ice-candidate', ...d }));
-    socket.on('peer-left', (d) => handleSignalData({ type: 'peer-left', ...d }));
     socket.on('room-event', (d) => handleSignalData({ type: 'room-event', ...d }));
+    socket.on('room-state-sync', (state: any) => {
+      if (!state) return;
+      if (state.workspace) setWorkspace(state.workspace);
+      if (state.notes !== undefined) setNotes(state.notes);
+      if (state.code !== undefined) setCode(state.code);
+      if (state.codeLanguage) setSelectedCodeLang(state.codeLanguage);
+      if (state.isFullscreen !== undefined) setIsFullscreenWorkspace(Boolean(state.isFullscreen));
+      if (state.canvasDataUrl) {
+        const img = new Image();
+        img.onload = () => {
+          const ctx = canvas.current?.getContext('2d');
+          if (ctx && canvas.current) {
+            ctx.clearRect(0, 0, canvas.current.width, canvas.current.height);
+            ctx.drawImage(img, 0, 0);
+          }
+        };
+        img.src = state.canvasDataUrl;
+      }
+      if (Array.isArray(state.chatMessages) && state.chatMessages.length > 0) {
+        setMessages(prev => {
+          const existingIds = new Set(prev.map(m => m.id));
+          const incoming = state.chatMessages
+            .filter((m: any) => !existingIds.has(m.id))
+            .map((m: any) => ({
+              ...m,
+              own: m.sender === userName
+            }));
+          return [...prev, ...incoming];
+        });
+      }
+    });
 
     // Announce join to other open tabs / peers
     broadcastSignal('join-room', {});
@@ -1342,316 +1266,7 @@ export function LiveRoom() {
     setTimeout(() => setCopiedCode(false), 2000);
   };
 
-  // Multi-language Code Execution Engine (C++, Python 3, Java, JS/TS, SQL)
-  const executeCode = () => {
-    setIsRunningCode(true);
-    setCodeOutput(null);
 
-    setTimeout(() => {
-      const start = performance.now();
-      const lang = selectedCodeLang || 'javascript';
-      const trimmed = code.trim();
-
-      if (!trimmed) {
-        setCodeOutput('⚠️ No code provided to execute.');
-        setIsRunningCode(false);
-        return;
-      }
-
-      // 1. JavaScript & TypeScript Runtime
-      if (lang === 'javascript' || lang === 'typescript') {
-        const logs: string[] = [];
-        const originalLog = console.log;
-        const originalWarn = console.warn;
-        const originalError = console.error;
-
-        try {
-          console.log = (...args: unknown[]) => {
-            logs.push(args.map(a => typeof a === 'object' && a !== null ? JSON.stringify(a, null, 2) : String(a)).join(' '));
-          };
-          console.warn = (...args: unknown[]) => {
-            logs.push('[WARN] ' + args.map(a => String(a)).join(' '));
-          };
-          console.error = (...args: unknown[]) => {
-            logs.push('[ERROR] ' + args.map(a => String(a)).join(' '));
-          };
-
-          // Strip simple TypeScript type annotations for safe browser evaluation
-          const cleanJs = code
-            .replace(/:\s*(string|number|boolean|any|void|string\[\]|number\[\])\b/g, '')
-            .replace(/interface\s+\w+\s*\{[^}]*\}/g, '')
-            .replace(/type\s+\w+\s*=\s*[^;]+;/g, '');
-
-          const evalResult = new Function(`"use strict"; ${cleanJs}`)();
-          if (evalResult !== undefined && logs.length === 0) {
-            logs.push(typeof evalResult === 'object' ? JSON.stringify(evalResult, null, 2) : String(evalResult));
-          }
-
-          const timeMs = Math.round(performance.now() - start);
-          const formatted = logs.length 
-            ? `${logs.join('\n')}\n\n⏱️ Execution time: ${timeMs}ms | Exit code: 0`
-            : `✅ Process finished with exit code 0 (${timeMs}ms).\n(No console output returned)`;
-          setCodeOutput(formatted);
-        } catch (err: unknown) {
-          const timeMs = Math.round(performance.now() - start);
-          setCodeOutput(`❌ Runtime Error (${timeMs}ms):\n${err instanceof Error ? err.message : String(err)}`);
-        } finally {
-          console.log = originalLog;
-          console.warn = originalWarn;
-          console.error = originalError;
-          setIsRunningCode(false);
-        }
-        return;
-      }
-
-      // 2. Python 3 Sandbox
-      if (lang === 'python') {
-        try {
-          const logs: string[] = [];
-          const lines = code.split('\n');
-          const env: Record<string, any> = {};
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line || line.startsWith('#')) continue;
-
-            // Handle print(...)
-            const printMatch = line.match(/^print\((.*)\)$/);
-            if (printMatch) {
-              const content = printMatch[1];
-              if (content.startsWith('f"') || content.startsWith("f'")) {
-                let inner = content.slice(2, -1);
-                inner = inner.replace(/\{([^}]+)\}/g, (_, exp) => {
-                  try {
-                    if (env[exp.trim()] !== undefined) return env[exp.trim()];
-                    return new Function(...Object.keys(env), `return ${exp}`)(...Object.values(env));
-                  } catch {
-                    return exp;
-                  }
-                });
-                logs.push(inner);
-              } else {
-                try {
-                  const val = new Function(...Object.keys(env), `return ${content}`)(...Object.values(env));
-                  logs.push(typeof val === 'object' && val !== null ? JSON.stringify(val, null, 2) : String(val));
-                } catch {
-                  logs.push(content.replace(/^["']|["']$/g, ''));
-                }
-              }
-              continue;
-            }
-
-            // Variable assignment
-            const assignMatch = line.match(/^([a-zA-Z_]\w*)\s*=\s*(.+)$/);
-            if (assignMatch) {
-              const varName = assignMatch[1];
-              const expr = assignMatch[2];
-              try {
-                env[varName] = new Function(...Object.keys(env), `return ${expr}`)(...Object.values(env));
-              } catch {
-                env[varName] = expr.replace(/^["']|["']$/g, '');
-              }
-            }
-          }
-
-          const timeMs = Math.round(performance.now() - start + 4);
-          if (logs.length === 0) {
-            logs.push('✅ Python script executed successfully (Exit code: 0).');
-          }
-          setCodeOutput(`${logs.join('\n')}\n\n⏱️ Execution time: ${timeMs}ms | Python 3.12 Runtime`);
-        } catch (err: any) {
-          setCodeOutput(`❌ Python Execution Error:\n${err?.message || String(err)}`);
-        } finally {
-          setIsRunningCode(false);
-        }
-        return;
-      }
-
-      // 3. C++ (C++20 GCC Sandbox)
-      if (lang === 'cpp') {
-        try {
-          const logs: string[] = [];
-          const lines = code.split('\n');
-          const env: Record<string, any> = {};
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line || line.startsWith('//') || line.startsWith('#include') || line.startsWith('using namespace') || line === '{' || line === '}' || line.startsWith('int main')) {
-              continue;
-            }
-
-            // cout << ...
-            if (line.includes('cout')) {
-              const parts = line.replace(/^std::cout|^cout/, '').replace(/;\s*$/, '').split('<<').map(p => p.trim()).filter(Boolean);
-              let rowOutput = '';
-              for (const part of parts) {
-                if (part === 'endl' || part === 'std::endl' || part === '"\\n"' || part === "'\\n'") {
-                  continue;
-                }
-                if ((part.startsWith('"') && part.endsWith('"')) || (part.startsWith("'") && part.endsWith("'"))) {
-                  rowOutput += part.slice(1, -1);
-                } else {
-                  try {
-                    const evaluated = new Function(...Object.keys(env), `return ${part}`)(...Object.values(env));
-                    rowOutput += (evaluated !== undefined ? evaluated : '');
-                  } catch {
-                    rowOutput += (env[part] !== undefined ? env[part] : part);
-                  }
-                }
-              }
-              logs.push(rowOutput);
-              continue;
-            }
-
-            // printf(...)
-            const printfMatch = line.match(/^printf\((.*)\);?$/);
-            if (printfMatch) {
-              const rawArgs = printfMatch[1];
-              logs.push(rawArgs.replace(/^["']|["']$/g, '').replace(/\\n/g, ''));
-              continue;
-            }
-
-            // Variable assignment: int a = 15;
-            const assignMatch = line.match(/^(?:int|float|double|string|auto|char|bool)\s+([a-zA-Z_]\w*)\s*=\s*(.+?);?$/);
-            if (assignMatch) {
-              const varName = assignMatch[1];
-              const expr = assignMatch[2].replace(/;$/, '');
-              try {
-                env[varName] = new Function(...Object.keys(env), `return ${expr}`)(...Object.values(env));
-              } catch {
-                env[varName] = expr.replace(/^["']|["']$/g, '');
-              }
-            }
-          }
-
-          const timeMs = Math.round(performance.now() - start + 8);
-          if (logs.length === 0) {
-            logs.push('Hello\n[Process completed with return code 0]');
-          }
-          setCodeOutput(`${logs.join('\n')}\n\n⏱️ Compiled & executed in ${timeMs}ms | g++ (C++20 GCC 13.2)`);
-        } catch (err: any) {
-          setCodeOutput(`❌ C++ Compiler Error:\n${err?.message || String(err)}`);
-        } finally {
-          setIsRunningCode(false);
-        }
-        return;
-      }
-
-      // 4. Java Runtime (OpenJDK 21)
-      if (lang === 'java') {
-        try {
-          const logs: string[] = [];
-          const lines = code.split('\n');
-          const env: Record<string, any> = {};
-
-          for (const rawLine of lines) {
-            const line = rawLine.trim();
-            if (!line || line.startsWith('//') || line.startsWith('import ') || line.startsWith('public class') || line.startsWith('class ') || line.startsWith('public static void main') || line === '{' || line === '}') {
-              continue;
-            }
-
-            // System.out.println(...)
-            const printMatch = line.match(/^System\.out\.println\((.*)\);?$/) || line.match(/^System\.out\.print\((.*)\);?$/);
-            if (printMatch) {
-              const expr = printMatch[1];
-              try {
-                const evaluated = new Function(...Object.keys(env), `return ${expr}`)(...Object.values(env));
-                logs.push(typeof evaluated === 'object' && evaluated !== null ? JSON.stringify(evaluated, null, 2) : String(evaluated));
-              } catch {
-                logs.push(expr.replace(/^["']|["']$/g, ''));
-              }
-              continue;
-            }
-
-            // Variables
-            const assignMatch = line.match(/^(?:int|float|double|String|boolean|var|long)\s+([a-zA-Z_]\w*)\s*=\s*(.+?);?$/);
-            if (assignMatch) {
-              const varName = assignMatch[1];
-              const expr = assignMatch[2].replace(/;$/, '');
-              try {
-                env[varName] = new Function(...Object.keys(env), `return ${expr}`)(...Object.values(env));
-              } catch {
-                env[varName] = expr.replace(/^["']|["']$/g, '');
-              }
-            }
-          }
-
-          const timeMs = Math.round(performance.now() - start + 12);
-          if (logs.length === 0) {
-            logs.push('Java JVM execution completed.\n[Exit Code 0]');
-          }
-          setCodeOutput(`${logs.join('\n')}\n\n⏱️ Execution time: ${timeMs}ms | OpenJDK 21 Runtime`);
-        } catch (err: any) {
-          setCodeOutput(`❌ Java Compilation Error:\n${err?.message || String(err)}`);
-        } finally {
-          setIsRunningCode(false);
-        }
-        return;
-      }
-
-      // 5. SQL Query Engine
-      if (lang === 'sql') {
-        const mockDB = {
-          mentors: [
-            { id: 1, name: 'Maya S.', skill: 'UI/UX & Figma', rating: 4.98, hourly_rate: 499, status: 'online' },
-            { id: 2, name: 'Liam K.', skill: 'Python & ML', rating: 4.92, hourly_rate: 399, status: 'online' },
-            { id: 3, name: 'Sarah M.', skill: 'React & TS', rating: 4.88, hourly_rate: 450, status: 'in-call' },
-            { id: 4, name: 'David R.', skill: 'Spring Boot', rating: 4.85, hourly_rate: 349, status: 'offline' }
-          ],
-          cohorts: [
-            { id: 'batch-101', title: 'React & TypeScript Systems', seats: 3, price: 349, status: 'live' },
-            { id: 'batch-102', title: 'Full-Stack Node.js Masterclass', seats: 5, price: 299, status: 'scheduled' }
-          ]
-        };
-
-        try {
-          const q = trimmed.toLowerCase();
-          let tableData: any[] = [];
-          let tableName = 'Result';
-
-          if (q.includes('cohorts')) {
-            tableData = mockDB.cohorts;
-            tableName = 'cohorts';
-          } else {
-            tableData = mockDB.mentors;
-            tableName = 'mentors';
-          }
-
-          if (q.includes('where')) {
-            if (q.includes('4.9') || q.includes('rating >=')) {
-              tableData = tableData.filter(m => m.rating >= 4.9);
-            } else if (q.includes('online')) {
-              tableData = tableData.filter(m => m.status === 'online');
-            }
-          }
-
-          const headers = Object.keys(tableData[0] || {});
-          const colWidths = headers.map(h => Math.max(h.length, ...tableData.map(row => String(row[h] || '').length)) + 2);
-
-          let tableAscii = `📊 TABLE: ${tableName} (${tableData.length} rows fetched in 2ms)\n\n`;
-          tableAscii += '+' + colWidths.map(w => '-'.repeat(w + 2)).join('+') + '+\n';
-          tableAscii += '| ' + headers.map((h, i) => h.toUpperCase().padEnd(colWidths[i])).join(' | ') + ' |\n';
-          tableAscii += '+' + colWidths.map(w => '='.repeat(w + 2)).join('+') + '+\n';
-
-          for (const row of tableData) {
-            tableAscii += '| ' + headers.map((h, i) => String(row[h] ?? '').padEnd(colWidths[i])).join(' | ') + ' |\n';
-          }
-          tableAscii += '+' + colWidths.map(w => '-'.repeat(w + 2)).join('+') + '+\n';
-
-          const timeMs = Math.round(performance.now() - start + 2);
-          setCodeOutput(`${tableAscii}\n⏱️ Query executed in ${timeMs}ms | SQLite / PostgreSQL Sandbox`);
-        } catch (err: any) {
-          setCodeOutput(`❌ SQL Query Error:\n${err?.message || String(err)}`);
-        } finally {
-          setIsRunningCode(false);
-        }
-        return;
-      }
-
-      setCodeOutput('⚠️ Unsupported language runtime.');
-      setIsRunningCode(false);
-    }, 250);
-  };
 
   const unlockAudio = () => {
     const audioEls = document.querySelectorAll('audio');
@@ -2062,106 +1677,25 @@ export function LiveRoom() {
 
         {/* Main Stage Content */}
         {viewMode === 'gallery' ? (
-          /* GALLERY VIEW: Fullscreen Dynamic Video Call Grid */
-          <div className="flex-1 min-h-0 flex flex-col gap-2 p-2 bg-slate-950 rounded-2xl border border-slate-800 shadow-inner overflow-hidden">
-            <div className="flex items-center justify-between px-2 text-xs text-slate-300 font-bold shrink-0">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                <span>Gallery Grid View · {totalParticipantsCount} Active Feeds</span>
-              </span>
-              <button
-                onClick={() => setViewMode('studio')}
-                className="flex items-center gap-1 px-3 py-1 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-extrabold shadow-elevation-1 active:scale-95 transition-all"
-              >
-                <span className="material-symbols-outlined text-sm">draw</span>
-                <span>Open Whiteboard Studio</span>
-              </button>
-            </div>
-
-            {/* Dynamic Gallery Grid based on participant count */}
-            <div className={`flex-1 min-h-0 grid gap-2.5 p-1 ${
-              totalParticipantsCount === 1
-                ? 'grid-cols-1 md:grid-cols-2'
-                : totalParticipantsCount === 2
-                ? 'grid-cols-1 md:grid-cols-2'
-                : totalParticipantsCount === 3
-                ? 'grid-cols-1 sm:grid-cols-3'
-                : totalParticipantsCount === 4
-                ? 'grid-cols-2 grid-rows-2'
-                : 'grid-cols-2 sm:grid-cols-3 grid-rows-2'
-            }`}>
-              {/* Local Participant */}
-              <VideoTile 
-                stream={localStream} 
-                name={userName + ' (You)'} 
-                role={userRole}
-                muted 
-                waiting={false} 
-                raised={raisedHand} 
-                cameraOff={!cameraOn} 
-                micOff={!micOn}
-                accent={isTeacher ? "bg-teaching-emerald" : "bg-learning-amber"}
-                onSwitchCamera={cycleNextCamera}
-                hasMultipleCameras={videoDevices.length > 1}
-                isHardware={hardwareInfo.cam}
-                className="h-full w-full"
-              />
-
-              {/* Remote Participants (up to 3 video streams in mesh) */}
-              {videoRemoteParticipants.map(p => (
-                <VideoTile 
-                  key={p.id}
-                  stream={p.stream} 
-                  name={p.name} 
-                  role={p.role}
-                  muted={false} 
-                  waiting={false} 
-                  raised={p.handRaised} 
-                  isSimulated={p.isSimulated}
-                  accent={p.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
-                  isRemote
-                  onUnlockAudio={unlockAudio}
-                  className="h-full w-full"
-                />
-              ))}
-
-              {/* Overflow Mesh Participants as Audio-only Avatar Tiles */}
-              {overflowAudioParticipants.map(p => (
-                <div 
-                  key={p.id}
-                  className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center shadow-sm h-full w-full"
-                  title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
-                >
-                  <div className="h-12 w-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-sm mb-2">
-                    {p.name.slice(0, 1).toUpperCase()}
-                  </div>
-                  <div className="text-xs font-bold text-white truncate max-w-[140px]">{p.name}</div>
-                  <span className="text-[10px] text-amber-400 font-bold mt-1.5 flex items-center gap-1 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
-                    <span className="material-symbols-outlined text-[13px]">volume_up</span> Audio-Only (Mesh Cap)
-                  </span>
-                </div>
-              ))}
-
-              {/* Waiting Slots when alone */}
-              {remoteParticipants.length === 0 && (
-                <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-slate-700 bg-slate-900/80 flex flex-col items-center justify-center p-4 text-center h-full w-full shadow-sm">
-                  <div className="w-12 h-12 rounded-full bg-primary-container/30 text-primary flex items-center justify-center mb-2">
-                    <span className="material-symbols-outlined text-2xl">groups</span>
-                  </div>
-                  <h4 className="text-sm font-bold text-white">Waiting for Classmates & Teacher</h4>
-                  <p className="text-xs text-slate-400 mt-1 max-w-[240px]">
-                    Share the room link or click below to simulate the 3-student batch immediately.
-                  </p>
-                  <button
-                    onClick={() => addSimulatedBatchStudents(3)}
-                    className="mt-3 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold shadow-md active:scale-95 transition-all"
-                  >
-                    + Simulate 3 Students
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <VideoGrid
+            localStream={localStream}
+            userName={userName}
+            userRole={userRole}
+            raisedHand={raisedHand}
+            cameraOn={cameraOn}
+            micOn={micOn}
+            cycleNextCamera={cycleNextCamera}
+            videoDevices={videoDevices}
+            hardwareCam={hardwareInfo.cam}
+            remoteParticipants={remoteParticipants}
+            videoRemoteParticipants={videoRemoteParticipants}
+            overflowAudioParticipants={overflowAudioParticipants}
+            totalParticipantsCount={totalParticipantsCount}
+            unlockAudio={unlockAudio}
+            onOpenWhiteboardStudio={() => setViewMode('studio')}
+            onSimulateStudents={() => addSimulatedBatchStudents(3)}
+            isTeacher={isTeacher}
+          />
         ) : (
           /* STUDIO VIEW: Dynamic Top Video Grid + Main Whiteboard/Code Workspace */
           <section className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_300px] overflow-hidden">
@@ -2283,7 +1817,6 @@ export function LiveRoom() {
                     codeOutput={codeOutput}
                     onClearCodeOutput={() => setCodeOutput(null)}
                     isRunningCode={isRunningCode}
-                    executeCode={executeCode}
                     copiedCode={copiedCode}
                     handleCopyCode={handleCopyCode}
                     sharing={sharing}
@@ -2302,50 +1835,13 @@ export function LiveRoom() {
               'min-h-0 shrink-0 overflow-hidden rounded-2xl border border-outline-variant bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-on-surface',
               chatOpen ? 'flex' : 'hidden lg:flex'
             )}>
-              <div className="flex items-center justify-between border-b border-outline-variant px-3.5 py-2.5 bg-surface-container-low shrink-0">
-                <div>
-                  <h2 className="text-xs font-black text-on-surface">Live Cohort Chat</h2>
-                  <p className="text-[10px] text-on-surface-variant font-bold">Encrypted in-session messaging</p>
-                </div>
-                <span className="grid h-7 w-7 place-items-center rounded-xl bg-primary-container text-on-primary-container border border-primary/20 shadow-elevation-1">
-                  <span className="material-symbols-outlined text-[15px]">forum</span>
-                </span>
-              </div>
-              <div className="flex-1 space-y-2.5 overflow-y-auto p-3 custom-scrollbar bg-surface-container-low/30">
-                {messages.map(message => (
-                  <div
-                    key={message.id}
-                    className={clsx(
-                      'max-w-[90%] rounded-2xl px-3 py-1.5 text-xs leading-4 shadow-elevation-1 transition-all',
-                      message.own 
-                        ? 'ml-auto bg-primary text-on-primary font-bold rounded-tr-none' 
-                        : 'bg-surface-container border border-outline-variant text-on-surface rounded-tl-none font-medium'
-                    )}
-                  >
-                    <p className={clsx('mb-0.5 text-[9px] font-extrabold', message.own ? 'text-on-primary/80' : 'text-primary')}>
-                      {message.sender}
-                    </p>
-                    {message.text}
-                  </div>
-                ))}
-              </div>
-              <form
-                onSubmit={event => {
-                  event.preventDefault();
-                  sendChat();
-                }}
-                className="flex gap-1.5 border-t border-outline-variant p-2.5 bg-surface shrink-0"
-              >
-                <input
-                  value={chatText}
-                  onChange={event => setChatText(event.target.value)}
-                  placeholder="Type a message…"
-                  className="min-w-0 flex-1 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-1.5 text-xs text-on-surface outline-none placeholder:text-neutral-subtle transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 font-medium"
-                />
-                <button className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary hover:bg-primary-hover active:scale-95 transition-all shadow-elevation-1 shrink-0">
-                  <span className="material-symbols-outlined text-[15px]">send</span>
-                </button>
-              </form>
+              <RoomChat
+                messages={messages}
+                chatText={chatText}
+                setChatText={setChatText}
+                sendChat={sendChat}
+                chatOpen={chatOpen}
+              />
             </aside>
           </section>
         )}
@@ -2661,7 +2157,6 @@ export function LiveRoom() {
                 codeOutput={codeOutput}
                 onClearCodeOutput={() => setCodeOutput(null)}
                 isRunningCode={isRunningCode}
-                executeCode={executeCode}
                 copiedCode={copiedCode}
                 handleCopyCode={handleCopyCode}
                 sharing={sharing}
@@ -2746,39 +2241,14 @@ export function LiveRoom() {
 
             {/* Fullscreen Floating Chat Drawer */}
             {showFullscreenChat && (
-              <div className="w-80 border-l border-white/10 bg-slate-900 flex flex-col z-30 animate-in slide-in-from-right duration-200">
-                <div className="flex items-center justify-between border-b border-white/10 px-4 py-3 text-white">
-                  <h3 className="text-xs font-black">Live Chat in Fullscreen</h3>
-                  <button onClick={() => setShowFullscreenChat(false)} className="text-slate-400 hover:text-white">
-                    <span className="material-symbols-outlined text-sm">close</span>
-                  </button>
-                </div>
-                <div className="flex-1 space-y-2 overflow-y-auto p-3 custom-scrollbar">
-                  {messages.map(m => (
-                    <div key={m.id} className={clsx("p-2.5 rounded-xl text-xs max-w-[90%]", m.own ? "ml-auto bg-primary text-on-primary font-bold" : "bg-slate-800 text-slate-200")}>
-                      <span className="block text-[10px] font-extrabold opacity-75">{m.sender}</span>
-                      {m.text}
-                    </div>
-                  ))}
-                </div>
-                <form
-                  onSubmit={e => {
-                    e.preventDefault();
-                    sendChat();
-                  }}
-                  className="p-2 border-t border-white/10 flex gap-1.5 bg-slate-950"
-                >
-                  <input
-                    value={chatText}
-                    onChange={e => setChatText(e.target.value)}
-                    placeholder="Type message…"
-                    className="flex-1 rounded-lg bg-slate-800 px-3 py-1.5 text-xs text-white outline-none border border-slate-700"
-                  />
-                  <button className="px-3 bg-primary text-on-primary rounded-lg text-xs font-bold hover:bg-primary-hover">
-                    Send
-                  </button>
-                </form>
-              </div>
+              <RoomChat
+                messages={messages}
+                chatText={chatText}
+                setChatText={setChatText}
+                sendChat={sendChat}
+                isDrawer={true}
+                onClose={() => setShowFullscreenChat(false)}
+              />
             )}
           </div>
         </div>
@@ -3043,7 +2513,6 @@ function WorkspaceContent({
   codeOutput,
   onClearCodeOutput,
   isRunningCode,
-  executeCode,
   copiedCode,
   handleCopyCode,
   sharing,
@@ -3082,7 +2551,6 @@ function WorkspaceContent({
   codeOutput: string | null;
   onClearCodeOutput: () => void;
   isRunningCode: boolean;
-  executeCode: () => void;
   copiedCode: boolean;
   handleCopyCode: () => void;
   sharing?: boolean;
@@ -3169,293 +2637,46 @@ function WorkspaceContent({
       <div className="relative min-h-0 flex-1 bg-surface-container-low/30 overflow-hidden flex flex-col">
         {/* 1. Whiteboard Canvas */}
         {workspace === 'whiteboard' && (
-          <div className="relative h-full w-full bg-surface flex flex-col">
-            {/* Whiteboard Floating Toolbar */}
-            <div className="absolute left-3 top-3 z-20 flex flex-wrap items-center gap-1.5 rounded-2xl bg-surface border border-outline-variant px-3 py-2 text-xs text-on-surface shadow-elevation-2 max-w-[calc(100%-24px)]">
-              {/* Drawing Tool Selectors */}
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setDrawingTool('pen')}
-                  className={clsx("p-1.5 rounded-lg flex items-center gap-1 font-extrabold text-[11px] transition-all", drawingTool === 'pen' ? "bg-primary text-on-primary" : "hover:bg-surface-container text-on-surface")}
-                  title="Pen tool"
-                >
-                  <span className="material-symbols-outlined text-[15px]">edit</span>
-                  <span className="hidden sm:inline">Pen</span>
-                </button>
-
-                <button
-                  onClick={() => setDrawingTool('highlighter')}
-                  className={clsx("p-1.5 rounded-lg flex items-center gap-1 font-extrabold text-[11px] transition-all", drawingTool === 'highlighter' ? "bg-learning-amber text-on-learning-amber" : "hover:bg-surface-container text-on-surface")}
-                  title="Highlighter tool"
-                >
-                  <span className="material-symbols-outlined text-[15px]">ink_highlighter</span>
-                  <span className="hidden sm:inline">Highlight</span>
-                </button>
-
-                <button
-                  onClick={() => setDrawingTool('eraser')}
-                  className={clsx("p-1.5 rounded-lg flex items-center gap-1 font-extrabold text-[11px] transition-all", drawingTool === 'eraser' ? "bg-alert-rose text-on-alert-rose" : "hover:bg-surface-container text-on-surface")}
-                  title="Eraser tool"
-                >
-                  <span className="material-symbols-outlined text-[15px]">ink_eraser</span>
-                  <span className="hidden sm:inline">Eraser</span>
-                </button>
-              </div>
-
-              <div className="h-4 w-px bg-outline-variant mx-0.5" />
-
-              {/* Shapes */}
-              <div className="flex items-center gap-0.5">
-                <button onClick={() => setDrawingTool('line')} className={clsx("p-1 rounded-lg text-on-surface", drawingTool === 'line' ? "bg-primary-container text-on-primary-container font-bold" : "hover:bg-surface-container")} title="Draw Line">
-                  <span className="material-symbols-outlined text-[16px]">horizontal_rule</span>
-                </button>
-                <button onClick={() => setDrawingTool('arrow')} className={clsx("p-1 rounded-lg text-on-surface", drawingTool === 'arrow' ? "bg-primary-container text-on-primary-container font-bold" : "hover:bg-surface-container")} title="Draw Arrow">
-                  <span className="material-symbols-outlined text-[16px]">arrow_forward</span>
-                </button>
-                <button onClick={() => setDrawingTool('rect')} className={clsx("p-1 rounded-lg text-on-surface", drawingTool === 'rect' ? "bg-primary-container text-on-primary-container font-bold" : "hover:bg-surface-container")} title="Draw Rectangle">
-                  <span className="material-symbols-outlined text-[16px]">rectangle</span>
-                </button>
-                <button onClick={() => setDrawingTool('circle')} className={clsx("p-1 rounded-lg text-on-surface", drawingTool === 'circle' ? "bg-primary-container text-on-primary-container font-bold" : "hover:bg-surface-container")} title="Draw Circle">
-                  <span className="material-symbols-outlined text-[16px]">radio_button_unchecked</span>
-                </button>
-              </div>
-
-              <div className="h-4 w-px bg-outline-variant mx-0.5" />
-
-              {/* Color Palette */}
-              <div className="flex items-center gap-1">
-                {['#2563eb', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#0f172a'].map(color => (
-                  <button
-                    key={color}
-                    onClick={() => { setDrawColor(color); if (drawingTool === 'eraser') setDrawingTool('pen'); }}
-                    className={clsx(
-                      "w-4 h-4 rounded-full transition-transform",
-                      drawingTool !== 'eraser' && drawColor === color ? "scale-125 ring-2 ring-offset-1 ring-primary" : "hover:scale-110"
-                    )}
-                    style={{ backgroundColor: color }}
-                    title={`Color ${color}`}
-                  />
-                ))}
-              </div>
-
-              <div className="h-4 w-px bg-outline-variant mx-0.5" />
-
-              {/* Stroke Widths */}
-              <div className="flex items-center gap-1">
-                {[2, 4, 8, 14].map(w => (
-                  <button
-                    key={w}
-                    onClick={() => setDrawWidth(w)}
-                    className={clsx(
-                      "px-1.5 py-0.5 rounded text-[10px] font-extrabold transition-all",
-                      drawWidth === w ? "bg-primary text-on-primary" : "text-on-surface-variant hover:bg-surface-container"
-                    )}
-                  >
-                    {w}px
-                  </button>
-                ))}
-              </div>
-
-              <div className="h-4 w-px bg-outline-variant mx-0.5" />
-
-              {/* Sync & Export */}
-              <button 
-                onClick={syncWorkspaceWithPeer} 
-                className="px-2 py-1 rounded-lg text-[11px] font-extrabold text-on-primary-container bg-primary-container border border-primary/20 hover:bg-primary-container/80 flex items-center gap-1 transition-all"
-                title="Sync drawing with peer"
-              >
-                <span className="material-symbols-outlined text-xs">sync</span> Sync
-              </button>
-
-              <button 
-                onClick={downloadWhiteboard} 
-                className="px-2 py-1 rounded-lg text-[11px] font-extrabold text-on-surface hover:bg-surface-container flex items-center gap-1 transition-all"
-                title="Export Whiteboard as Image"
-              >
-                <span className="material-symbols-outlined text-xs">download</span> Save
-              </button>
-
-              <button onClick={clearBoard} className="text-[11px] font-extrabold text-on-surface-variant hover:text-alert-rose px-1 transition-colors">
-                Clear
-              </button>
-            </div>
-
-            <canvas
-              ref={canvasRef}
-              width={1920}
-              height={1080}
-              onPointerDown={beginDraw}
-              onPointerMove={continueDraw}
-              onPointerUp={endDraw}
-              onPointerLeave={endDraw}
-              className="h-full w-full touch-none cursor-crosshair object-contain bg-surface"
-            />
-          </div>
+          <WhiteboardCanvas
+            canvasRef={canvasRef}
+            drawingTool={drawingTool}
+            setDrawingTool={setDrawingTool}
+            drawColor={drawColor}
+            setDrawColor={setDrawColor}
+            drawWidth={drawWidth}
+            setDrawWidth={setDrawWidth}
+            clearBoard={clearBoard}
+            syncWorkspaceWithPeer={syncWorkspaceWithPeer}
+            downloadWhiteboard={downloadWhiteboard}
+            beginDraw={beginDraw}
+            continueDraw={continueDraw}
+            endDraw={endDraw}
+          />
         )}
 
         {/* 2. Shared Notes & Plan */}
         {workspace === 'notes' && (
-          <div className="flex flex-col h-full bg-surface p-4 sm:p-6 overflow-hidden text-on-surface">
-            <div className="flex items-center justify-between border-b border-outline-variant pb-3 mb-3">
-              <div className="flex items-center gap-2 text-xs font-extrabold text-on-surface">
-                <span className="material-symbols-outlined text-primary text-base">edit_note</span>
-                <span>Shared Markdown Notes & Action Items</span>
-              </div>
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(notes);
-                  alert('Notes copied to clipboard!');
-                }}
-                className="px-2.5 py-1 text-xs font-extrabold bg-surface-container hover:bg-surface-container-high text-on-surface rounded-lg flex items-center gap-1 transition-all"
-              >
-                <span className="material-symbols-outlined text-xs">content_copy</span> Copy Notes
-              </button>
-            </div>
-
-            <textarea
-              value={notes}
-              onChange={event => {
-                setNotes(event.target.value);
-                emitRoomEvent({ type: 'notes', value: event.target.value });
-              }}
-              className="flex-1 w-full resize-none font-sans text-sm leading-7 text-on-surface outline-none placeholder:text-neutral-subtle p-2 rounded-xl focus:bg-surface-container-low transition-colors custom-scrollbar bg-surface"
-              placeholder="Type shared session notes, formulas, explanations, and action items..."
-            />
-          </div>
+          <NotesEditor
+            notes={notes}
+            setNotes={setNotes}
+            emitRoomEvent={emitRoomEvent}
+          />
         )}
 
         {/* 3. Interactive Code Pad */}
         {workspace === 'code' && (
-          <div className="flex flex-col h-full bg-slate-950 text-cyan-200 overflow-hidden select-none">
-            {/* Code Header Bar */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-900/95 px-3 py-2 text-xs shrink-0">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-cyan-400 text-base">terminal</span>
-                <select
-                  value={selectedCodeLang}
-                  onChange={e => {
-                    const newLang = e.target.value;
-                    setSelectedCodeLang(newLang);
-                    emitRoomEvent({ type: 'code-lang', lang: newLang });
-                  }}
-                  className="bg-slate-800 text-white font-bold rounded-lg px-2.5 py-1 border border-slate-700 outline-none text-xs focus:ring-2 focus:ring-cyan-500/30"
-                >
-                  <option value="javascript">⚡ JavaScript / Node.js</option>
-                  <option value="python">🐍 Python 3.12</option>
-                  <option value="cpp">⚙️ C++20 (GCC 13)</option>
-                  <option value="java">☕ Java (OpenJDK 21)</option>
-                  <option value="sql">📊 SQL Query Engine</option>
-                </select>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const templates: Record<string, string> = {
-                      javascript: '// ⚡ JavaScript / TypeScript Live Sandbox\nfunction calculateBatch() {\n  return {\n    topic: "React & TypeScript Systems",\n    students: 3,\n    status: "Active 🎓"\n  };\n}\nconsole.log("Cohort Report:", calculateBatch());\n',
-                      python: '# 🐍 Python 3 Live Sandbox\ndef solve():\n    skills = ["React", "Python", "WebRTC"]\n    print("Welcome to Mindroot Python Engine!")\n    for i, s in enumerate(skills, 1):\n        print(f"  {i}. {s}")\n\nsolve()\n',
-                      cpp: '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "🚀 Mindroot C++20 Live Playground" << endl;\n    cout << "Welcome to the interactive cohort batch!" << endl;\n    \n    int students = 3;\n    cout << "Active Batch Size: " << students << " students" << endl;\n    return 0;\n}\n',
-                      java: 'public class Main {\n    public static void main(String[] args) {\n        System.out.println("☕ Mindroot Java Live Sandbox");\n        int totalStudents = 3;\n        System.out.println("Connected Batch: " + totalStudents + " students");\n    }\n}\n',
-                      sql: '-- 📊 Query Cohort Database\nSELECT id, name, skill, rating, hourly_rate, status\nFROM mentors\nWHERE rating >= 4.9;\n'
-                    };
-                    const starter = templates[selectedCodeLang] || templates.javascript;
-                    setCode(starter);
-                    emitRoomEvent({ type: 'code', value: starter });
-                  }}
-                  className="hidden sm:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white font-bold text-[11px] border border-slate-700 transition-all"
-                  title="Insert starter boilerplate for this language"
-                >
-                  <span className="material-symbols-outlined text-xs">code_blocks</span>
-                  <span>Template</span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleCopyCode}
-                  className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold flex items-center gap-1 transition-all text-xs"
-                  title="Copy code to clipboard"
-                >
-                  <span className="material-symbols-outlined text-xs">{copiedCode ? 'check' : 'content_copy'}</span>
-                  <span>{copiedCode ? 'Copied' : 'Copy'}</span>
-                </button>
-
-                <button
-                  onClick={executeCode}
-                  disabled={isRunningCode}
-                  className="px-3.5 py-1 rounded-lg bg-primary hover:bg-primary-hover text-on-primary font-extrabold shadow-sm flex items-center gap-1.5 transition-all active:scale-95 text-xs"
-                  title="Run code in interactive sandbox"
-                >
-                  <span className="material-symbols-outlined text-[15px]">{isRunningCode ? 'hourglass_top' : 'play_arrow'}</span>
-                  <span>{isRunningCode ? 'Compiling…' : 'Run Code'}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Code Editor Body + Output Split */}
-            <div className="flex-1 flex flex-col md:flex-row min-h-0">
-              <div className="flex-1 flex h-full min-h-0 bg-slate-950 relative border-b md:border-b-0 md:border-r border-slate-800">
-                {/* Line Numbers Column */}
-                <div className="py-4 pl-3 pr-2 select-none text-right font-mono text-xs text-slate-600 border-r border-slate-800/80 bg-slate-950/60 shrink-0">
-                  {code.split('\n').map((_, i) => (
-                    <div key={i} className="leading-6">{i + 1}</div>
-                  ))}
-                </div>
-
-                <textarea
-                  value={code}
-                  onChange={event => {
-                    setCode(event.target.value);
-                    emitRoomEvent({ type: 'code', value: event.target.value });
-                  }}
-                  onKeyDown={e => {
-                    // Support Tab key indenting (2 spaces)
-                    if (e.key === 'Tab') {
-                      e.preventDefault();
-                      const target = e.currentTarget;
-                      const start = target.selectionStart;
-                      const end = target.selectionEnd;
-                      const updated = code.substring(0, start) + '  ' + code.substring(end);
-                      setCode(updated);
-                      emitRoomEvent({ type: 'code', value: updated });
-                      setTimeout(() => {
-                        target.selectionStart = target.selectionEnd = start + 2;
-                      }, 0);
-                    }
-                  }}
-                  spellCheck={false}
-                  className="flex-1 h-full w-full resize-none bg-slate-950 p-4 font-mono text-sm leading-6 text-cyan-200 outline-none custom-scrollbar"
-                  placeholder="// Write code here..."
-                />
-              </div>
-
-              {/* Live Output / Console Terminal Panel */}
-              <div className="h-44 md:h-full md:w-84 lg:w-96 bg-slate-900/95 p-3.5 font-mono text-xs overflow-y-auto border-t md:border-t-0 border-slate-800 custom-scrollbar flex flex-col shrink-0">
-                <div className="flex items-center justify-between text-slate-400 font-extrabold border-b border-slate-800 pb-2 mb-2 text-[10px] uppercase tracking-wider">
-                  <span className="flex items-center gap-1.5 text-cyan-300">
-                    <span className="material-symbols-outlined text-xs">terminal</span>
-                    <span>Console / Compiler Output</span>
-                  </span>
-                  {codeOutput && (
-                    <button onClick={onClearCodeOutput} className="text-slate-500 hover:text-white text-[11px] font-bold" title="Clear console">
-                      Clear
-                    </button>
-                  )}
-                </div>
-
-                {codeOutput ? (
-                  <pre className="flex-1 whitespace-pre-wrap text-slate-200 leading-5 font-mono text-xs overflow-x-auto select-text">
-                    {codeOutput}
-                  </pre>
-                ) : (
-                  <div className="flex-1 flex flex-col items-center justify-center text-slate-600 text-center p-4">
-                    <span className="material-symbols-outlined text-2xl mb-1 text-slate-700">play_circle</span>
-                    <p className="text-[11px] font-bold text-slate-500">Ready to run</p>
-                    <p className="text-[10px] text-slate-600 mt-0.5">Click "Run Code" above to compile & see stdout output</p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
+          <CodeRunnerPad
+            code={code}
+            setCode={setCode}
+            selectedCodeLang={selectedCodeLang}
+            setSelectedCodeLang={setSelectedCodeLang}
+            codeOutput={codeOutput}
+            onClearCodeOutput={onClearCodeOutput}
+            isRunningCode={isRunningCode}
+            copiedCode={copiedCode}
+            handleCopyCode={handleCopyCode}
+            emitRoomEvent={emitRoomEvent}
+          />
         )}
 
         {/* 4. Live Shared Screen Viewport */}
@@ -3481,250 +2702,7 @@ function WorkspaceContent({
   );
 }
 
-function RemoteAudioElement({
-  stream,
-  onUnlockAudio
-}: {
-  stream: MediaStream | null;
-  onUnlockAudio?: () => void;
-}) {
-  const audioRef = useRef<HTMLAudioElement>(null);
 
-  useEffect(() => {
-    const el = audioRef.current;
-    if (!el) return;
-    if (stream) {
-      if (el.srcObject !== stream) {
-        el.srcObject = stream;
-      }
-      el.play().catch(err => {
-        console.warn('Remote audio autoplay blocked:', err);
-        if (onUnlockAudio) onUnlockAudio();
-      });
-    } else {
-      el.srcObject = null;
-    }
-  }, [stream, onUnlockAudio]);
-
-  return <audio ref={audioRef} autoPlay playsInline style={{ display: 'none' }} />;
-}
-
-function StreamVideo({
-  stream,
-  className,
-  cameraOff = false,
-  onUnlockAudio,
-  isRemote = false
-}: {
-  stream: MediaStream | null;
-  muted?: boolean;
-  className?: string;
-  cameraOff?: boolean;
-  onUnlockAudio?: () => void;
-  isRemote?: boolean;
-}) {
-  const videoRef = useRef<HTMLVideoElement>(null);
-
-  useEffect(() => {
-    const el = videoRef.current;
-    if (!el) return;
-
-    const handlePlay = () => {
-      if (stream && !cameraOff) {
-        if (el.srcObject !== stream) {
-          el.srcObject = stream;
-        }
-        el.muted = true;
-        el.playsInline = true;
-        const playPromise = el.play();
-        if (playPromise !== undefined) {
-          playPromise.catch(err => {
-            console.log('[WebRTC Video] Autoplay deferred for remote stream:', err);
-            if (isRemote && onUnlockAudio) {
-              onUnlockAudio();
-            }
-          });
-        }
-      } else {
-        el.srcObject = null;
-      }
-    };
-
-    handlePlay();
-
-    if (stream) {
-      stream.onaddtrack = handlePlay;
-      stream.onremovetrack = handlePlay;
-      stream.getVideoTracks().forEach(t => {
-        t.addEventListener('unmute', handlePlay);
-      });
-    }
-
-    return () => {
-      if (stream) {
-        stream.onaddtrack = null;
-        stream.onremovetrack = null;
-        stream.getVideoTracks().forEach(t => {
-          t.removeEventListener('unmute', handlePlay);
-        });
-      }
-    };
-  }, [stream, cameraOff, isRemote, onUnlockAudio]);
-
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted={true}
-      // @ts-ignore
-      webkit-playsinline="true"
-      onLoadedMetadata={(e) => {
-        e.currentTarget.play().catch(() => undefined);
-      }}
-      className={clsx(className, cameraOff && 'opacity-0')}
-    />
-  );
-}
-
-function VideoTile({ 
-  stream, 
-  name, 
-  role = 'student',
-  waiting, 
-  muted, 
-  raised, 
-  cameraOff, 
-  micOff,
-  accent,
-  onSwitchCamera,
-  hasMultipleCameras,
-  isRemote,
-  onUnlockAudio,
-  isSimulated,
-  className
-}: { 
-  stream: MediaStream | null; 
-  name: string; 
-  role?: string;
-  waiting?: boolean; 
-  muted: boolean; 
-  raised?: boolean; 
-  cameraOff?: boolean; 
-  micOff?: boolean;
-  accent: string;
-  onSwitchCamera?: () => void;
-  hasMultipleCameras?: boolean;
-  isHardware?: boolean;
-  isRemote?: boolean;
-  onUnlockAudio?: () => void;
-  isSimulated?: boolean;
-  className?: string;
-}) {
-  const [, setTrackVersion] = useState(0);
-
-  useEffect(() => {
-    if (!stream) return;
-
-    const handleTrackChange = () => setTrackVersion(v => v + 1);
-
-    stream.getTracks().forEach(track => {
-      track.addEventListener('unmute', handleTrackChange);
-      track.addEventListener('mute', handleTrackChange);
-      track.addEventListener('ended', handleTrackChange);
-    });
-
-    stream.onaddtrack = handleTrackChange;
-    stream.onremovetrack = handleTrackChange;
-
-    return () => {
-      stream.getTracks().forEach(track => {
-        track.removeEventListener('unmute', handleTrackChange);
-        track.removeEventListener('mute', handleTrackChange);
-        track.removeEventListener('ended', handleTrackChange);
-      });
-      stream.onaddtrack = null;
-      stream.onremovetrack = null;
-    };
-  }, [stream]);
-
-  const isTeacher = role === 'teacher';
-  // Strip redundant duplicate parentheticals from display name
-  const cleanDisplayName = name.replace(/\s*\((Teacher|Classmate\s*\d*)\)/gi, '').trim();
-  const activeVideoTrack = stream?.getVideoTracks()[0];
-  const hasLiveTrack = Boolean(activeVideoTrack && activeVideoTrack.readyState !== 'ended');
-  const showPlaceholder = waiting || cameraOff || !hasLiveTrack;
-
-  return (
-    <div className={clsx(
-      "group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-sm transition-all duration-200 flex items-center justify-center select-none",
-      className || "aspect-video"
-    )}>
-      <StreamVideo
-        stream={stream}
-        muted={muted}
-        cameraOff={cameraOff}
-        isRemote={isRemote}
-        onUnlockAudio={onUnlockAudio}
-        className="h-full w-full bg-slate-950 object-cover"
-      />
-
-      {isSimulated && (
-        <div className="absolute top-2 right-2 bg-amber-500/95 text-slate-950 font-black px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider shadow-md backdrop-blur-md z-30 flex items-center gap-1 border border-amber-300">
-          <span className="material-symbols-outlined text-[12px]">smart_display</span>
-          <span>Simulated Playback (Demo)</span>
-        </div>
-      )}
-
-      {hasMultipleCameras && onSwitchCamera && (
-        <button
-          onClick={onSwitchCamera}
-          className="absolute top-2 left-2 bg-slate-900/85 hover:bg-primary text-white p-1 rounded-lg backdrop-blur-md transition-all border border-white/20 shadow-md flex items-center gap-1 px-2 text-[10px] font-bold z-20 active:scale-95"
-          title="Switch Camera"
-        >
-          <span className="material-symbols-outlined text-xs">flip_camera_ios</span>
-          <span>Flip</span>
-        </button>
-      )}
-
-      {showPlaceholder && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-container-high p-2 text-center z-10">
-          <div className={clsx('grid h-12 w-12 place-items-center rounded-2xl text-base font-bold text-white shadow-md', accent)}>
-            {waiting ? <span className="material-symbols-outlined animate-pulse text-lg">person_search</span> : cleanDisplayName.slice(0, 1).toUpperCase()}
-          </div>
-          <p className="text-[10px] font-medium text-on-surface-variant mt-1.5">
-            {waiting ? 'Connecting…' : (cameraOff ? 'Camera Off' : 'Waiting for video stream…')}
-          </p>
-        </div>
-      )}
-
-      {/* Role Pill & Name Badge on bottom left */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-white/20 bg-slate-900/90 text-white px-2 py-0.5 text-[11px] font-bold shadow-md backdrop-blur-md z-20 max-w-[88%]">
-        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-learning-amber" : "bg-teaching-emerald animate-pulse")} />
-        <span className="truncate">{cleanDisplayName}</span>
-        <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-black tracking-wider shrink-0 ${
-          isTeacher ? 'bg-teaching-emerald text-on-teaching-emerald' : 'bg-learning-amber text-on-learning-amber'
-        }`}>
-          {isTeacher ? 'Teacher' : 'Student'}
-        </span>
-      </div>
-
-      {/* Mic Status Badge on bottom right */}
-      {micOff && (
-        <div className="absolute bottom-2 right-2 bg-rose-500/90 text-white p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Muted">
-          <span className="material-symbols-outlined text-[13px]">mic_off</span>
-        </div>
-      )}
-
-      {/* Hand Raise Badge on top right */}
-      {raised && (
-        <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-amber-300 text-amber-950 shadow-md animate-bounce z-20">
-          <span className="material-symbols-outlined text-[15px]">pan_tool</span>
-        </div>
-      )}
-    </div>
-  );
-}
 
 function Control({ active, icon, label, off, highlighted, onClick }: { active: boolean; icon: string; label: string; off?: boolean; highlighted?: boolean; onClick: () => void }) {
   return (

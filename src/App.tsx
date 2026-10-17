@@ -1,25 +1,24 @@
 import { lazy, Suspense } from 'react';
+import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { Dashboard } from './pages/Dashboard';
-import { Marketplace } from './pages/Marketplace';
-import { Schedule } from './pages/Schedule';
-import { TeacherPortal } from './pages/TeacherPortal';
-import { Wallet } from './pages/Wallet';
-import { Feedback } from './pages/Feedback';
-import { MatchFinder } from './pages/MatchFinder';
-import { Messages } from './pages/Messages';
-import { Profile } from './pages/Profile';
-import { Login } from './pages/Login';
-import ForgotPassword from './pages/ForgotPassword';
-import ResetPassword from './pages/ResetPassword';
-import VerifyEmail from './pages/VerifyEmail';
-import { Rewards } from './pages/Rewards';
-import { Discussions } from './pages/Discussions';
 import { useAppStore } from './store/useAppStore';
-import type { ReactNode } from 'react';
-
+const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
+const Marketplace = lazy(() => import('./pages/Marketplace').then(m => ({ default: m.Marketplace })));
+const Schedule = lazy(() => import('./pages/Schedule').then(m => ({ default: m.Schedule })));
+const TeacherPortal = lazy(() => import('./pages/TeacherPortal').then(m => ({ default: m.TeacherPortal })));
+const Wallet = lazy(() => import('./pages/Wallet').then(m => ({ default: m.Wallet })));
+const Feedback = lazy(() => import('./pages/Feedback').then(m => ({ default: m.Feedback })));
+const MatchFinder = lazy(() => import('./pages/MatchFinder').then(m => ({ default: m.MatchFinder })));
+const Messages = lazy(() => import('./pages/Messages').then(m => ({ default: m.Messages })));
+const Profile = lazy(() => import('./pages/Profile').then(m => ({ default: m.Profile })));
+const Login = lazy(() => import('./pages/Login').then(m => ({ default: m.Login })));
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
+const VerifyEmail = lazy(() => import('./pages/VerifyEmail'));
+const Rewards = lazy(() => import('./pages/Rewards').then(m => ({ default: m.Rewards })));
+const Discussions = lazy(() => import('./pages/Discussions').then(m => ({ default: m.Discussions })));
 const AdminPortal = lazy(() => import('./pages/AdminPortal').then(m => ({ default: m.AdminPortal })));
 const LiveRoom = lazy(() => import('./pages/LiveRoom').then(m => ({ default: m.LiveRoom })));
 
@@ -74,7 +73,8 @@ function App() {
     <ErrorBoundary>
       <BrowserRouter>
         <AppShell>
-          <Routes>
+          <Suspense fallback={SuspenseFallback}>
+            <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -128,9 +128,7 @@ function App() {
               path="/admin" 
               element={
                 <ProtectedRoute allowedRoles={['admin']}>
-                  <Suspense fallback={SuspenseFallback}>
-                    <AdminPortal />
-                  </Suspense>
+                  <AdminPortal />
                 </ProtectedRoute>
               } 
             />
@@ -162,19 +160,11 @@ function App() {
             />
             <Route 
               path="/live/:sessionId?" 
-              element={
-                <Suspense fallback={SuspenseFallback}>
-                  <LiveRoom />
-                </Suspense>
-              } 
+              element={<LiveRoom />} 
             />
             <Route 
               path="/room/:sessionId?" 
-              element={
-                <Suspense fallback={SuspenseFallback}>
-                  <LiveRoom />
-                </Suspense>
-              } 
+              element={<LiveRoom />} 
             />
             <Route 
               path="/feedback" 
@@ -204,7 +194,8 @@ function App() {
             {/* Fallback Redirect */}
             <Route path="*" element={<RootRedirect />} />
           </Routes>
-        </AppShell>
+        </Suspense>
+      </AppShell>
       </BrowserRouter>
     </ErrorBoundary>
   );

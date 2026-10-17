@@ -1082,10 +1082,17 @@ cleanupTokensInterval.unref();
 
 // GET /api/turn-credentials — serve STUN and TURN server credentials for WebRTC NAT traversal (Protected)
 app.get('/api/turn-credentials', requireAuth, (_req, res) => {
-  const turnUrl = process.env.TURN_SERVER_URL;
+  const turnUrl = process.env.TURN_SERVER_URL || process.env.TURN_URL;
   const turnUsername = process.env.TURN_USERNAME;
   const turnCredential = process.env.TURN_CREDENTIAL;
   const turnSecret = process.env.TURN_SECRET;
+
+  if (!DEMO_MODE && !turnUrl) {
+    return res.status(503).json({
+      error: 'TURN server is unconfigured in production/non-demo mode. Real TURN server credentials required for NAT traversal.',
+      code: 'TURN_UNCONFIGURED'
+    });
+  }
 
   const iceServers: any[] = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -1160,6 +1167,74 @@ const io = new Server(server, {
 
 // Live WebRTC room participants registry: roomId -> Map<socketId, { socketId, peerId, userName, userRole }>
 const liveRoomRegistry = new Map<string, Map<string, { socketId: string; peerId: string; userName: string; userRole: string }>>();
+
+export interface LiveRoomState {
+  roomId: string;
+  workspace: string;
+  notes: string;
+  code: string;
+  codeLanguage: string;
+  canvasDataUrl: string | null;
+  isFullscreen: boolean;
+  whiteboardElements: any[];
+  chatMessages: any[];
+  lastUpdated: number;
+}
+
+export const liveRoomStates = new Map<string, LiveRoomState>();
+
+export function getOrCreateRoomState(roomId: string): LiveRoomState {
+  let state = liveRoomStates.get(roomId);
+  if (!state) {
+    const sess = inMemorySessions.find(s => s.id === roomId || s.meetingLink === `/live/${roomId}` || s.meetingLink === roomId);
+    state = {
+      roomId,
+      workspace: 'whiteboard',
+      notes: sess?.studyNotes || '',
+      code: '',
+      codeLanguage: 'javascript',
+      canvasDataUrl: null,
+      isFullscreen: false,
+      whiteboardElements: [],
+      chatMessages: [],
+      lastUpdated: Date.now()
+    };
+    liveRoomStates.set(roomId, state);
+  }
+  return state;
+}
+
+// Rate limiting maps per socket: socketId -> Map<eventName, { count, windowStart }>
+const socketRateLimits = new Map<string, Map<string, { count: number; windowStart: number }>>();
+
+export function checkSocketRateLimit(socketId: string, eventName: string, maxPerSecond: number): boolean {
+  const now = Date.now();
+  let userLimits = socketRateLimits.get(socketId);
+  if (!userLimits) {
+    userLimits = new Map();
+    socketRateLimits.set(socketId, userLimits);
+  }
+  let limit = userLimits.get(eventName);
+  if (!limit || now - limit.windowStart > 1000) {
+    userLimits.set(eventName, { count: 1, windowStart: now });
+    return true;
+  }
+  if (limit.count >= maxPerSecond) {
+    return false;
+  }
+  limit.count++;
+  return true;
+}
+
+export function getPayloadSize(data: any): number {
+  if (data === undefined || data === null) return 0;
+  if (typeof data === 'string') return Buffer.byteLength(data, 'utf8');
+  try {
+    return Buffer.byteLength(JSON.stringify(data), 'utf8');
+  } catch {
+    return 0;
+  }
+}
 
 // User socket tracking registry: userId -> Set of socketId
 const userSocketsMap = new Map<string, Set<string>>();
@@ -1452,6 +1527,20 @@ io.on('connection', (socket) => {
         userRole: serverRole,
         socketId: socket.id
       });
+
+      // 3. Emit full synchronized room state to newcomer for instant state recovery (host drop/refresh/late join)
+      const roomState = getOrCreateRoomState(roomId);
+      socket.emit('room-state-sync', {
+        roomId,
+        workspace: roomState.workspace,
+        notes: roomState.notes,
+        code: roomState.code,
+        codeLanguage: roomState.codeLanguage,
+        canvasDataUrl: roomState.canvasDataUrl,
+        isFullscreen: roomState.isFullscreen,
+        whiteboardElements: roomState.whiteboardElements,
+        chatMessages: roomState.chatMessages
+      });
     }
   });
 
@@ -1499,7 +1588,18 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
     const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
 
-    const eventType = data?.event?.type || data?.type;
+    if (!checkSocketRateLimit(socket.id, 'room-event', 30)) {
+      socket.emit('room-error', { error: 'Rate limit exceeded for room events.', code: 'RATE_LIMIT_EXCEEDED' });
+      return;
+    }
+
+    if (getPayloadSize(data) > 1200 * 1024) {
+      socket.emit('room-error', { error: 'Room event payload exceeds limit.', code: 'PAYLOAD_TOO_LARGE' });
+      return;
+    }
+
+    const event = data?.event || data;
+    const eventType = event?.type;
     if (HOST_ONLY_ROOM_EVENTS.has(eventType)) {
       const senderUserId = (socket as any).userId || socket.data?.userId;
       const targetSession = inMemorySessions.find(s => s.id === roomId || s.meetingLink === `/live/${roomId}` || s.meetingLink === roomId);
@@ -1528,6 +1628,36 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
       }
     }
 
+    // Persist room state updates on server so state is preserved across host drop / refresh / late joins
+    if (roomId && event) {
+      const roomState = getOrCreateRoomState(roomId);
+      if (eventType === 'workspace' && event.workspace) roomState.workspace = event.workspace;
+      if (eventType === 'notes' && event.value !== undefined) roomState.notes = event.value;
+      if (eventType === 'code' && event.value !== undefined) roomState.code = event.value;
+      if (eventType === 'code-lang' && event.lang) roomState.codeLanguage = event.lang;
+      if (eventType === 'fullscreen' && event.isFullscreen !== undefined) roomState.isFullscreen = Boolean(event.isFullscreen);
+      if (eventType === 'canvas-image' && event.dataUrl) roomState.canvasDataUrl = event.dataUrl;
+      if (eventType === 'canvas-clear') roomState.canvasDataUrl = null;
+      if (eventType === 'chat') {
+        roomState.chatMessages.push({
+          id: 'msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
+          sender: event.sender || 'Peer',
+          text: String(event.text || '').slice(0, 2000),
+          role: event.role,
+          timestamp: new Date().toISOString()
+        });
+        if (roomState.chatMessages.length > 200) roomState.chatMessages.shift();
+      }
+      if (eventType === 'sync-full-state') {
+        if (event.workspace) roomState.workspace = event.workspace;
+        if (event.notes !== undefined) roomState.notes = event.notes;
+        if (event.code !== undefined) roomState.code = event.code;
+        if (event.isFullscreen !== undefined) roomState.isFullscreen = Boolean(event.isFullscreen);
+        if (event.canvasDataUrl) roomState.canvasDataUrl = event.canvasDataUrl;
+      }
+      roomState.lastUpdated = Date.now();
+    }
+
     socket.to(roomId).emit('room-event', data);
   });
 
@@ -1535,6 +1665,30 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
     const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id && !r.startsWith('user:'));
     const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
+
+    if (!checkSocketRateLimit(socket.id, 'whiteboard-update', 60)) {
+      socket.emit('room-error', { error: 'Rate limit exceeded for whiteboard updates.', code: 'RATE_LIMIT_EXCEEDED' });
+      return;
+    }
+
+    if (getPayloadSize(data) > 256 * 1024) {
+      socket.emit('room-error', { error: 'Whiteboard payload exceeds 256 KB limit.', code: 'PAYLOAD_TOO_LARGE' });
+      return;
+    }
+
+    if (roomId) {
+      const roomState = getOrCreateRoomState(roomId);
+      if (Array.isArray(data?.elements)) {
+        roomState.whiteboardElements = data.elements.slice(-500);
+      } else if (Array.isArray(data?.strokes)) {
+        roomState.whiteboardElements = data.strokes.slice(-500);
+      } else if (data?.points || data?.stroke || data?.type === 'stroke') {
+        roomState.whiteboardElements.push(data);
+        if (roomState.whiteboardElements.length > 500) roomState.whiteboardElements.shift();
+      }
+      roomState.lastUpdated = Date.now();
+    }
+
     socket.to(roomId).emit('whiteboard-update', data);
   });
 
@@ -1542,6 +1696,33 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
     const joinedRoom = Array.from(socket.rooms).find(r => r !== socket.id && !r.startsWith('user:'));
     const roomId = data?.roomId || joinedRoom;
     if (!validateRoomMember(roomId)) return;
+
+    if (!checkSocketRateLimit(socket.id, 'chat-message', 10)) {
+      socket.emit('room-error', { error: 'Rate limit exceeded for chat messages.', code: 'RATE_LIMIT_EXCEEDED' });
+      return;
+    }
+
+    const payloadSize = getPayloadSize(data);
+    if (payloadSize > 8 * 1024 || (data?.text && String(data.text).length > 2000)) {
+      socket.emit('room-error', { error: 'Chat message exceeds length limit.', code: 'PAYLOAD_TOO_LARGE' });
+      return;
+    }
+
+    if (roomId && data) {
+      const roomState = getOrCreateRoomState(roomId);
+      roomState.chatMessages.push({
+        id: data.id || ('msg-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6)),
+        sender: data.sender || 'Peer',
+        text: String(data.text || '').slice(0, 2000),
+        role: data.role,
+        timestamp: data.timestamp || new Date().toISOString()
+      });
+      if (roomState.chatMessages.length > 200) {
+        roomState.chatMessages.shift();
+      }
+      roomState.lastUpdated = Date.now();
+    }
+
     socket.to(roomId).emit('chat-message', data);
   });
 
@@ -1741,9 +1922,21 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
 
   socket.on('study-notes-update', (data: any) => {
     const { roomId, notes, senderName } = data || {};
-    if (roomId) {
-      socket.to(roomId).emit('study-notes-update', { notes, senderName, timestamp: new Date().toISOString() });
+    if (!roomId) return;
+    if (!checkSocketRateLimit(socket.id, 'study-notes-update', 10)) {
+      socket.emit('room-error', { error: 'Rate limit exceeded for notes updates.', code: 'RATE_LIMIT_EXCEEDED' });
+      return;
     }
+    if (getPayloadSize(notes) > 100 * 1024) {
+      socket.emit('room-error', { error: 'Notes payload exceeds 100 KB limit.', code: 'PAYLOAD_TOO_LARGE' });
+      return;
+    }
+    const roomState = getOrCreateRoomState(roomId);
+    if (notes !== undefined) {
+      roomState.notes = notes;
+      roomState.lastUpdated = Date.now();
+    }
+    socket.to(roomId).emit('study-notes-update', { notes, senderName, timestamp: new Date().toISOString() });
   });
 
   socket.on('study-notes-save', (data: any) => {
@@ -1754,11 +1947,17 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
         session.studyNotes = notes;
         saveDb();
       }
+      const roomState = getOrCreateRoomState(sessionId);
+      if (notes !== undefined) {
+        roomState.notes = notes;
+        roomState.lastUpdated = Date.now();
+      }
     }
   });
 
   socket.on('disconnect', () => {
     console.log(`🔌 Socket disconnected: ${socket.id}`);
+    socketRateLimits.delete(socket.id);
     unregisterUserSocket(socket.id);
     liveRoomRegistry.forEach((roomMap, roomId) => {
       if (roomMap.has(socket.id)) {
