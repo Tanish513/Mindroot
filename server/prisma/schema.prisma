@@ -96,6 +96,10 @@ model Session {
   paymentStatus   String   @default("pending") // 'pending', 'paid', 'partially_paid'
   paymentId       String?
   orderId         String?
+  utrNumber       String?  @unique
+  utr             String?  @unique
+  tokenRefunded   Boolean  @default(false)
+  refundKey       String?
   pricePerStudent Int      @default(499)
   amount          Int      @default(499)
   maxCapacity     Int      @default(1)
@@ -126,6 +130,7 @@ model Transaction {
   balanceAfter  Int?
   paymentId   String?
   orderId     String?
+  utr         String?   @unique
   currency    String    @default("INR")
   status      String    @default("paid")
   createdAt   DateTime  @default(now())

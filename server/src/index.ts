@@ -368,6 +368,14 @@ try {
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 0;
       ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "balanceBefore" INTEGER;
       ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "balanceAfter" INTEGER;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "utrNumber" TEXT;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "utr" TEXT;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "tokenRefunded" BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "refundKey" TEXT;
+      ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "utr" TEXT;
+      CREATE UNIQUE INDEX IF NOT EXISTS "Transaction_utr_key" ON "Transaction"("utr");
+      CREATE UNIQUE INDEX IF NOT EXISTS "Session_utrNumber_key" ON "Session"("utrNumber");
+      CREATE UNIQUE INDEX IF NOT EXISTS "Session_utr_key" ON "Session"("utr");
       DO $$
       BEGIN
         IF NOT EXISTS (
@@ -1213,6 +1221,12 @@ function sendSessionsToParticipants(session: any) {
   pIds.forEach(uId => sendSessionsToUser(uId));
 }
 
+function emitScopedTransactions(userId: string) {
+  if (!userId) return;
+  const userTxs = inMemoryTransactions.filter(t => t.userId === userId);
+  io.to('user:' + userId).emit('network-transactions-updated', userTxs);
+}
+
 function notifySessionParticipants(session: any, eventName: string, payload: any) {
   const pIds = getSessionParticipantUserIds(session);
   pIds.forEach(uId => {
@@ -1260,17 +1274,6 @@ function checkAndExpirePendingSessions() {
       const expiryTime = Math.min(scheduledTime, twentyFourHoursAfterCreated);
 
       if (now > expiryTime) {
-        s.status = 'cancelled';
-        s.cancellationReason = 'Expired: Not accepted before scheduled start time';
-        changed = true;
-
-        if (process.env.DATABASE_URL && prisma) {
-          prisma.session.update({
-            where: { id: s.id },
-            data: { status: 'cancelled' }
-          }).catch(err => logger.error({ err, sessionId: s.id }, 'Failed to persist session expiry'));
-        }
-
         const studentId = s.studentId || (Array.isArray(s.students) && s.students[0]?.id);
         const isTokenHeld = s.paymentStatus === 'held' || s.paymentId?.startsWith('tx-token');
         if (isTokenHeld && studentId && !s.tokenRefunded) {
@@ -1289,8 +1292,20 @@ function checkAndExpirePendingSessions() {
               reason: `Refund: Expired unconfirmed session "${s.title || s.id}"`,
               newSessionStatus: 'cancelled'
             });
+            changed = true;
           } catch (err) {
             logger.error({ err, sessionId: s.id }, 'Error refunding expired session tokens');
+            return; // Keep retryable on next run
+          }
+        } else {
+          s.status = 'cancelled';
+          s.cancellationReason = 'Expired: Not accepted before scheduled start time';
+          changed = true;
+          if (process.env.DATABASE_URL && prisma) {
+            prisma.session.update({
+              where: { id: s.id },
+              data: { status: 'cancelled' }
+            }).catch((err: any) => logger.error({ err, sessionId: s.id }, 'Failed to persist session expiry'));
           }
         }
 
@@ -1312,35 +1327,37 @@ expireSessionsInterval.unref();
 // Socket.io Handshake Authentication Middleware
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token || (socket.handshake.headers?.authorization && socket.handshake.headers.authorization.startsWith('Bearer ') ? socket.handshake.headers.authorization.split(' ')[1] : null);
-  if (token) {
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      const uId = decoded.userId || decoded.id;
-      const memUser = inMemoryUsers.find(u => u.id === uId);
-      if (memUser && typeof memUser.tokenVersion === 'number' && decoded.tokenVersion !== undefined && decoded.tokenVersion < memUser.tokenVersion) {
-        return next(new Error('Authentication error: Token revoked. Stale tokenVersion.'));
-      }
+  if (!token) {
+    return next(new Error('Authentication error: Valid authentication token required.'));
+  }
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET) as any;
+    const uId = decoded.userId || decoded.id;
+    const memUser = inMemoryUsers.find(u => u.id === uId);
+    if (memUser && typeof memUser.tokenVersion === 'number' && decoded.tokenVersion !== undefined && decoded.tokenVersion < memUser.tokenVersion) {
+      return next(new Error('Authentication error: Token revoked. Stale tokenVersion.'));
+    }
+    (socket as any).userId = uId;
+    (socket as any).userRole = decoded.role;
+    socket.data.userId = uId;
+    socket.data.userRole = decoded.role;
+    socket.data.tokenVersion = decoded.tokenVersion;
+    next();
+  } catch {
+    if (token.startsWith('dev-token-')) {
+      const uId = token.replace('dev-token-', '');
       (socket as any).userId = uId;
-      (socket as any).userRole = decoded.role;
       socket.data.userId = uId;
-      socket.data.userRole = decoded.role;
-      socket.data.tokenVersion = decoded.tokenVersion;
-    } catch {
-      if (token.startsWith('dev-token-')) {
-        const uId = token.replace('dev-token-', '');
-        (socket as any).userId = uId;
-        socket.data.userId = uId;
-        const matched = inMemoryUsers.find(u => u.id === uId);
-        if (matched) {
-          (socket as any).userRole = matched.role;
-          socket.data.userRole = matched.role;
-        }
-      } else {
-        return next(new Error('Authentication error: Invalid authentication token.'));
+      const matched = inMemoryUsers.find(u => u.id === uId);
+      if (matched) {
+        (socket as any).userRole = matched.role;
+        socket.data.userRole = matched.role;
       }
+      next();
+    } else {
+      return next(new Error('Authentication error: Invalid authentication token.'));
     }
   }
-  next();
 });
 
 io.on('connection', (socket) => {
@@ -1577,33 +1594,42 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   });
 
-  socket.on('book-session-sync', (session) => {
+  socket.on('book-session-sync', (session: any) => {
     const callerId = (socket as any).userId || socket.data?.userId;
     if (!callerId) {
       socket.emit('socket-error', { message: 'Authentication required for book-session-sync' });
       return;
     }
-    const participantIds = getSessionParticipantUserIds(session);
+    if (!session || !session.id) return;
+    const existing = inMemorySessions.find(s => s.id === session.id);
+    if (!existing) {
+      socket.emit('socket-error', { message: 'Session must be created through REST API before sync' });
+      return;
+    }
+    const participantIds = getSessionParticipantUserIds(existing);
     if (!participantIds.includes(callerId) && socket.data?.userRole !== 'admin') {
       socket.emit('socket-error', { message: 'Forbidden: You are not a participant in this session' });
       return;
     }
-    if (session && session.id) {
-      const idx = inMemorySessions.findIndex(s => s.id === session.id);
-      if (idx >= 0) inMemorySessions[idx] = session;
-      else inMemorySessions.push(session);
-    }
-    sendSessionsToParticipants(session);
-    const approverId = getSessionApproverId(session);
+    sendSessionsToParticipants(existing);
+    const approverId = getSessionApproverId(existing);
     if (approverId) {
-      io.to('user:' + approverId).emit('session-request-created', session);
+      io.to('user:' + approverId).emit('session-request-created', existing);
     }
   });
 
-  socket.on('patch-session-sync', async ({ id, status }) => {
+  socket.on('patch-session-sync', async ({ id, status, ...metadata }: any) => {
     const callerId = (socket as any).userId || socket.data?.userId;
     if (!callerId) {
       socket.emit('socket-error', { message: 'Authentication required for patch-session-sync' });
+      return;
+    }
+    // Session status transitions and financial accounting cannot be performed via socket
+    if (status !== undefined) {
+      socket.emit('socket-error', {
+        message: 'Forbidden: Session status transitions and financial accounting cannot be performed via socket. Use REST PATCH /api/sessions/:id',
+        code: 'REST_PATH_REQUIRED'
+      });
       return;
     }
     const sess = inMemorySessions.find(s => s.id === id);
@@ -1613,88 +1639,11 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
         socket.emit('socket-error', { message: 'Forbidden: You are not authorized to modify this session' });
         return;
       }
-      const prevStatus = sess.status;
-      sess.status = status;
-
-      if (status === 'completed' && prevStatus !== 'completed') {
-        const rate = sess.teacher?.hourlyRate || 10;
-        const isHighTrust = (sess.teacher?.trustScore || 5.0) >= 4.9;
-        const studentDeduct = Math.max(5, Math.ceil((sess.durationMin / 60) * rate));
-        const teacherEarn = isHighTrust ? Math.round(studentDeduct * 1.15) : studentDeduct;
-
-        if (sess.studentId && sess.paymentStatus !== 'paid' && !sess.isSwap) {
-          try {
-            await deductTokensAtomic({
-              prisma,
-              inMemoryUsers,
-              inMemorySessions,
-              inMemoryTransactions,
-              saveDb
-            }, {
-              userId: sess.studentId,
-              amount: studentDeduct,
-              reason: `Lecture fee for completed session: ${sess.title || 'Mentoring'}`,
-              sessionId: sess.id,
-              peerName: sess.teacher?.name || 'Mentor',
-              currency: 'TOKENS'
-            });
-            sess.paymentStatus = 'paid';
-          } catch (err: any) {
-            logger.warn({ err }, 'Could not deduct student tokens on session completion');
-          }
-        }
-
-        if (sess.teacherId) {
-          try {
-            await creditTokensAtomic({
-              prisma,
-              inMemoryUsers,
-              inMemorySessions,
-              inMemoryTransactions,
-              saveDb
-            }, {
-              userId: sess.teacherId,
-              amount: teacherEarn,
-              reason: `Earned: Mentoring completed on ${sess.title || 'Mentoring'}`,
-              sessionId: sess.id,
-              peerName: sess.student?.name || 'Student',
-              currency: 'TOKENS'
-            });
-          } catch (err: any) {
-            logger.warn({ err }, 'Could not credit teacher tokens on session completion');
-          }
-        }
-
-        io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
-
-        // Student-centric Reward Points Awarding (students only, teachers never earn loyalty points)
-        const sessionRewardPts = calcSessionRewardPoints(sess.durationMin);
-        const recipientStudentIds: string[] = [];
-        const tId = sess.teacherId || sess.teacher?.id;
-        if (sess.studentId && sess.studentId !== tId) {
-          recipientStudentIds.push(sess.studentId);
-        }
-        if (Array.isArray(sess.students)) {
-          sess.students.forEach((st: any) => {
-            const sid = typeof st === 'string' ? st : st?.id;
-            if (sid && sid !== tId && !recipientStudentIds.includes(sid)) {
-              recipientStudentIds.push(sid);
-            }
-          });
-        }
-        for (const sid of recipientStudentIds) {
-          await awardRewardPoints(sid, sessionRewardPts, `Completed session: ${sess.title || 'Learning Session'}`, sess.id);
-          await recordUserActivity(sid, 'session');
-        }
-        if (tId) {
-          await recordUserActivity(tId, 'session');
-        }
+      if (metadata.studyNotes !== undefined) {
+        sess.studyNotes = metadata.studyNotes;
         saveDb();
-        io.emit('network-rewards-updated', inMemoryRedemptions);
-        io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+        sendSessionsToParticipants(sess);
       }
-
-      sendSessionsToParticipants(sess);
     }
   });
 
@@ -1757,31 +1706,37 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
       socket.emit('socket-error', { message: 'Authentication required for payment-handshake-submitted' });
       return;
     }
-    const { sessionId, teacherId, studentId, studentName, amount, utrNumber, note } = payload || {};
-    if (studentId && studentId !== callerId && socket.data?.userRole !== 'admin') {
-      socket.emit('socket-error', { message: 'Forbidden: Cannot submit payment handshake for another user' });
+    const { sessionId, utrNumber, note } = payload || {};
+    if (!sessionId) {
+      socket.emit('socket-error', { message: 'Session ID is required for payment handshake' });
       return;
     }
-    if (teacherId) {
-      io.to('user:' + teacherId).emit('teacher-payment-alert', {
-        sessionId,
-        studentId,
-        studentName: studentName || 'Student',
-        amount: amount || 0,
-        utrNumber: utrNumber || 'DEMO-INSTANT',
+    const session = inMemorySessions.find(s => s.id === sessionId);
+    if (!session) {
+      socket.emit('socket-error', { message: 'Session not found for payment handshake' });
+      return;
+    }
+    const isStudent = session.studentId === callerId || (Array.isArray(session.students) && session.students.some((s: any) => (s.id || s) === callerId));
+    if (!isStudent && socket.data?.userRole !== 'admin') {
+      socket.emit('socket-error', { message: 'Forbidden: Only the enrolled student can submit payment handshake' });
+      return;
+    }
+    const targetTeacherId = session.teacherId || session.teacher?.id;
+    if (targetTeacherId) {
+      io.to('user:' + targetTeacherId).emit('teacher-payment-alert', {
+        sessionId: session.id,
+        studentId: callerId,
+        studentName: session.student?.name || 'Student',
+        amount: session.amount || session.pricePerStudent || 0,
+        utrNumber: utrNumber || session.utrNumber || 'DEMO-INSTANT',
         note,
         timestamp: new Date().toISOString()
       });
     }
-    if (sessionId) {
-      const session = inMemorySessions.find(s => s.id === sessionId);
-      if (session) {
-        session.paymentStatus = 'submitted_provisional';
-        session.utrNumber = utrNumber || session.utrNumber;
-        saveDb();
-        sendSessionsToParticipants(session);
-      }
-    }
+    session.paymentStatus = 'submitted_provisional';
+    if (utrNumber) session.utrNumber = utrNumber;
+    saveDb();
+    sendSessionsToParticipants(session);
   });
 
   socket.on('study-notes-update', (data: any) => {
@@ -3118,8 +3073,27 @@ app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/pa
   }
 });
 
-// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID & verification
-app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
+const mentorUpiRateLimitMap = new Map<string, { count: number; resetAt: number }>();
+function checkMentorUpiRateLimit(callerId: string): boolean {
+  const now = Date.now();
+  const record = mentorUpiRateLimitMap.get(callerId);
+  if (!record || now > record.resetAt) {
+    mentorUpiRateLimitMap.set(callerId, { count: 1, resetAt: now + 60000 });
+    return true;
+  }
+  if (record.count >= 60) {
+    return false;
+  }
+  record.count++;
+  return true;
+}
+
+// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID & verification (Authenticated & Rate-Limited)
+app.get('/api/payment/mentor-upi/:teacherId', requireAuth, (req: any, res: any) => {
+  if (!checkMentorUpiRateLimit(req.userId)) {
+    return res.status(429).json({ error: 'Too many requests for mentor payment details. Please retry in 1 minute.' });
+  }
+
   const teacherId = req.params.teacherId;
   const payoutAcc = inMemoryPayoutAccounts[teacherId];
   const user = inMemoryUsers.find(u => u.id === teacherId);
@@ -3192,7 +3166,7 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       return res.status(400).json({ error: 'Payment amount does not match session price.' });
     }
 
-    const finalTeacherId = targetSession ? (targetSession.teacherId || targetSession.teacher?.id) : (teacherId || 'teacher-default');
+    const finalTeacherId = targetSession.teacherId || targetSession.teacher?.id;
     const teacherPayoutAcc = inMemoryPayoutAccounts[finalTeacherId];
     const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
     const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
@@ -3217,9 +3191,17 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       if (process.env.DATABASE_URL && prisma) {
         try {
           const dbSess = await prisma.session.findFirst({
-            where: { utrNumber: cleanUtr }
+            where: {
+              OR: [
+                { utrNumber: cleanUtr },
+                { utr: cleanUtr }
+              ]
+            }
           });
-          if (dbSess) {
+          const dbTx = await prisma.transaction.findFirst({
+            where: { utr: cleanUtr }
+          });
+          if (dbSess || dbTx) {
             inMemoryUsedUtrs.add(cleanUtr);
             return res.status(409).json({ error: 'This UPI reference (UTR) has already been registered in the database.' });
           }
@@ -3240,6 +3222,7 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
     // 1. Update session payment status
     if (targetSession) {
       targetSession.utrNumber = generatedUtr;
+      targetSession.utr = generatedUtr;
       if (!Array.isArray(targetSession.students)) {
         targetSession.students = targetSession.studentId ? [{ id: targetSession.studentId, name: targetSession.student?.name || studentObj.name, enrolledAt: new Date().toISOString(), paymentStatus: targetSession.paymentStatus || 'pending' }] : [];
       }
@@ -3275,6 +3258,8 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
             where: { id: targetSession.id },
             data: { 
               paymentStatus: targetSession.paymentStatus,
+              utrNumber: generatedUtr,
+              utr: generatedUtr,
               status: isDemoAllowed ? 'confirmed' : undefined
             }
           });
@@ -3496,7 +3481,7 @@ app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
       }).catch(err => console.error('Payout confirmation email error:', err));
     }
 
-    io.emit('network-transactions-updated', inMemoryTransactions);
+    emitScopedTransactions(targetUser);
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     const responseBody = {
@@ -3754,10 +3739,17 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
     return res.status(400).json({ error: 'Cannot book a session with a profile registered as student. Mentoring sessions can only be booked with teachers or profiles with both role.' });
   }
   const maxCap = Math.min(Math.max(parseInt(maxCapacity, 10) || 1, 1), 5);
+  const duration = Math.max(15, parseInt(durationMin, 10) || 60);
+  const hourlyRate = (typeof teacherObj.hourlyRate === 'number' && teacherObj.hourlyRate >= 0) ? teacherObj.hourlyRate : 499;
+
   // D2 = A: A swap is one session. The listed student pays the listed teacher the session price. A swap with price 0 stays free.
-  const seatPrice = isSwapSession
-    ? (pricePerStudent !== undefined ? parseInt(pricePerStudent, 10) : (req.body.amount !== undefined ? parseInt(req.body.amount, 10) : 0))
-    : (pricePerStudent ? parseInt(pricePerStudent, 10) : (req.body.amount ? parseInt(req.body.amount, 10) : teacherObj.hourlyRate || 499));
+  let seatPrice = 0;
+  if (isSwapSession) {
+    seatPrice = pricePerStudent !== undefined ? parseInt(pricePerStudent, 10) : (req.body.amount !== undefined ? parseInt(req.body.amount, 10) : 0);
+  } else {
+    // Non-swaps: server computes price from mentor hourly rate and duration; ignore client-supplied price
+    seatPrice = Math.round((hourlyRate * duration) / 60);
+  }
   const reqTime = new Date(scheduledAt || Date.now()).getTime();
 
   // If booking direct UPI and mentor has not configured VPA
@@ -3776,7 +3768,10 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
     });
   }
   if (isTokenPayment) {
-    const finalTokenCost = Math.max(1, parseInt(tokenCost || tokens || 1, 10));
+    // Server computes token cost from mentor hourly rate, ignoring client body value
+    const finalTokenCost = hourlyRate > 10
+      ? Math.max(1, Math.round(((hourlyRate / 100) * duration) / 60))
+      : Math.max(1, Math.round((hourlyRate * duration) / 60));
 
     // Concurrency conflict check for slot
     const conflictingSession = inMemorySessions.find(s => {
@@ -4096,7 +4091,7 @@ app.post('/api/sessions/:id/pay-tokens', requireAuth, async (req: any, res: any)
     saveDb();
     sendSessionsToParticipants(session);
     io.emit('network-sessions-updated', inMemorySessions);
-    io.emit('network-transactions-updated', inMemoryTransactions);
+    emitScopedTransactions(studentId);
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     res.json({
@@ -4422,26 +4417,20 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
 
       if (memSess.paymentStatus === 'paid' || memSess.paymentStatus === 'held') {
         if (isTokenPaid && studentId && !memSess.tokenRefunded) {
-          memSess.tokenRefunded = true;
-          memSess.paymentStatus = 'refunded';
           const refundTokens = Math.max(1, Number(memSess.amount || memSess.pricePerStudent || 1));
-          try {
-            await creditTokensAtomic({
-              prisma,
-              inMemoryUsers,
-              inMemorySessions,
-              inMemoryTransactions,
-              saveDb
-            }, {
-              userId: studentId,
-              amount: refundTokens,
-              reason: `Refund: ${status === 'declined' ? 'Declined' : 'Cancelled'} session "${memSess.title || id}"`,
-              sessionId: id,
-              currency: 'TOKENS'
-            });
-          } catch (rErr) {
-            logger.error({ rErr }, 'Token refund on session rejection encountered error');
-          }
+          await refundSessionTokensDurable({
+            prisma,
+            inMemoryUsers,
+            inMemorySessions,
+            inMemoryTransactions,
+            saveDb
+          }, {
+            sessionId: id,
+            studentId,
+            amount: refundTokens,
+            reason: `Refund: ${status === 'declined' ? 'Declined' : 'Cancelled'} session "${memSess.title || id}"`,
+            newSessionStatus: status
+          });
         } else if (memSess.utrNumber || memSess.paymentStatus === 'paid') {
           // Direct UPI payment: external settlement requires direct refund negotiation
           memSess.paymentStatus = 'cancellation_direct_refund_pending';
@@ -4473,7 +4462,7 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
         logger.warn({ err }, 'Could not credit teacher earnings on session completion');
       }
 
-      io.emit('network-transactions-updated', inMemoryTransactions);
+      emitScopedTransactions(teacherId);
 
       // Student-centric Reward Points Awarding (students only, teachers never earn loyalty points)
       const sessionRewardPts = calcSessionRewardPoints(memSess.durationMin);
@@ -4939,7 +4928,7 @@ app.post('/api/rewards/redeem', requireAuth, async (req: any, res: any) => {
         peerName: 'Rewards Store',
         currency: 'TOKENS'
       });
-      io.emit('network-transactions-updated', inMemoryTransactions);
+      emitScopedTransactions(user.id);
     } else if (reward.type === 'badge') {
       if (!Array.isArray(user.badges)) {
         user.badges = [];
@@ -5427,7 +5416,6 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
   io.emit('network-sessions-updated', inMemorySessions);
   io.emit('network-messages-updated', inMemoryMessages);
   io.emit('network-reviews-updated', inMemoryReviews);
-  io.emit('network-transactions-updated', inMemoryTransactions);
 
   res.json({ success: true, message: `User ${targetId} account deactivated and anonymized successfully.` });
 });
@@ -5437,7 +5425,6 @@ app.post('/api/admin/reload-db', requireAdmin, (_req: any, res: any) => {
   loadDb();
   io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   io.emit('network-sessions-updated', inMemorySessions);
-  io.emit('network-transactions-updated', inMemoryTransactions);
   res.json({ success: true, count: inMemoryUsers.length, users: toPublicUser(inMemoryUsers) });
 });
 
@@ -5483,6 +5470,25 @@ app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res:
       });
     }
 
+    // Idempotency check: Double clicks or retries do not credit twice
+    if (session.paymentStatus === 'paid') {
+      return res.json({ success: true, message: 'Payment already confirmed.', session, alreadyProcessed: true });
+    }
+
+    if (!session.utrNumber && !session.utr) {
+      return res.status(400).json({
+        error: 'Cannot confirm payment without a recorded UTR reference.',
+        code: 'MISSING_UTR'
+      });
+    }
+
+    if (session.paymentStatus !== 'pending_mentor_confirmation') {
+      return res.status(400).json({
+        error: 'Payment can only be confirmed when in pending_mentor_confirmation state.',
+        code: 'INVALID_PAYMENT_STATE'
+      });
+    }
+
     const finalTeacherId = session.teacherId || session.teacher?.id;
     const teacherUser = inMemoryUsers.find(u => u.id === finalTeacherId);
     const finalAmount = Number(session.amount ?? session.pricePerStudent ?? teacherUser?.hourlyRate ?? 499);
@@ -5492,11 +5498,6 @@ app.post('/api/sessions/:id/confirm-payment', requireAuth, async (req: any, res:
     }
     if (req.body?.teacherId !== undefined && req.body.teacherId !== finalTeacherId) {
       return res.status(400).json({ error: 'Teacher ID mismatch for session.' });
-    }
-
-    // Idempotency check: Double clicks or retries do not credit twice
-    if (session.paymentStatus === 'paid') {
-      return res.json({ success: true, message: 'Payment already confirmed.', session, alreadyProcessed: true });
     }
 
     session.paymentStatus = 'paid';

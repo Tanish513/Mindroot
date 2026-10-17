@@ -669,11 +669,27 @@ export async function refundSessionTokensDurable(
       try {
         await deps.prisma.$transaction(async (tx: any) => {
           // 1. Fetch and lock session
-          const dbSession = await tx.session.findUnique({ where: { id: sessionId } });
+          let dbSession = await tx.session.findUnique({ where: { id: sessionId } });
+          if (!dbSession && memSession) {
+            dbSession = await tx.session.create({
+              data: {
+                id: sessionId,
+                title: memSession.title || 'Session',
+                teacherId: memSession.teacherId || 'teacher-default',
+                studentId: memSession.studentId || studentId,
+                status: memSession.status || 'confirmed',
+                paymentStatus: memSession.paymentStatus || 'paid',
+                paymentId: memSession.paymentId || null,
+                amount: Math.round(Number(memSession.amount || amount)),
+                pricePerStudent: Math.round(Number(memSession.pricePerStudent || amount)),
+                scheduledAt: new Date(memSession.scheduledAt || Date.now())
+              }
+            });
+          }
           if (!dbSession) {
             throw new Error(`Session with ID "${sessionId}" not found in database.`);
           }
-          if (dbSession.paymentStatus === 'refunded') {
+          if (dbSession.paymentStatus === 'refunded' || dbSession.tokenRefunded) {
             alreadyRefunded = true;
             return;
           }
@@ -708,7 +724,9 @@ export async function refundSessionTokensDurable(
             where: { id: sessionId },
             data: {
               status: newSessionStatus,
-              paymentStatus: 'refunded'
+              paymentStatus: 'refunded',
+              tokenRefunded: true,
+              refundKey
             }
           });
 

@@ -220,7 +220,8 @@ async function runExtendedRaceTests() {
       teacherId: payMentorId,
       studentId: studentIds[0],
       amount: 499,
-      paymentStatus: 'pending',
+      utrNumber: '987654321012',
+      paymentStatus: 'pending_mentor_confirmation',
       status: 'confirmed'
     };
     inMemorySessions.push(paymentSession);

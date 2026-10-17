@@ -99,6 +99,7 @@ async function runAuditGapsTests() {
       teacherId: teacher1Id,
       studentId: student1Id,
       amount: 499,
+      utrNumber: '123456789012',
       paymentStatus: 'pending_mentor_confirmation',
       status: 'confirmed'
     });
@@ -496,7 +497,8 @@ async function runAuditGapsTests() {
     assert.strictEqual(strokeData.stroke, 'x:10,y:20', 'Peer in room should receive whiteboard-update');
 
     // 3. Unauthenticated / non-room member emission is dropped
-    const unjoinedSocket = ioClient(baseUrl, { transports: ['websocket'] });
+    const unjoinedToken = createToken(`unjoined-${Date.now()}`, 'student');
+    const unjoinedSocket = ioClient(baseUrl, { auth: { token: unjoinedToken }, transports: ['websocket'] });
     await new Promise<void>((r) => unjoinedSocket.on('connect', () => r()));
 
     let leaked = false;
