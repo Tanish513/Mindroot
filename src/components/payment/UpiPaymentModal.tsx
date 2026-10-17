@@ -5,6 +5,7 @@ export interface UpiPaymentSession {
   id?: string;
   title?: string;
   amount?: number;
+  pricePerStudent?: number;
   teacherId?: string;
   teacherName?: string;
   teacherAvatar?: string;
@@ -87,8 +88,9 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
   if (!isOpen || !session) return null;
 
+  const sessionAmount = Number(session?.pricePerStudent ?? session?.amount ?? amount ?? 499).toFixed(2);
   const upiUrl = mentorUpi 
-    ? `upi://pay?pa=${encodeURIComponent(mentorUpi)}&pn=${encodeURIComponent(mentorDetails?.accountHolderName || mentorName)}&am=${amount}&cu=INR&tn=${encodeURIComponent('Mindroot: ' + sessionTitle.slice(0, 20))}`
+    ? `upi://pay?pa=${encodeURIComponent(mentorUpi)}&pn=${encodeURIComponent(mentorDetails?.accountHolderName || mentorName)}&am=${encodeURIComponent(sessionAmount)}&cu=INR&tn=${session?.id ? encodeURIComponent('Mindroot_' + session.id) : encodeURIComponent('Mindroot: ' + sessionTitle.slice(0, 20))}`
     : '';
   const qrCodeUrl = upiUrl
     ? `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(upiUrl)}&margin=8`
@@ -435,8 +437,17 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
                       {/* Mobile Deep Link */}
                       <a
-                        href={upiUrl}
-                        className="w-full py-2.5 px-4 bg-surface-container-high hover:bg-surface-container-highest text-on-surface rounded-xl text-xs font-bold text-center block transition-all border border-outline-variant/60"
+                        href={upiUrl || '#'}
+                        onClick={(e) => {
+                          if (!mentorUpi) {
+                            e.preventDefault();
+                          }
+                        }}
+                        className={`w-full py-2.5 px-4 text-xs font-bold text-center block transition-all border rounded-xl ${
+                          mentorUpi
+                            ? 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border-outline-variant/60 cursor-pointer'
+                            : 'opacity-50 pointer-events-none bg-surface-container text-on-surface-variant border-outline-variant/30'
+                        }`}
                       >
                         📱 Open Directly in Mobile UPI App
                       </a>

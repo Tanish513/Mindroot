@@ -352,8 +352,9 @@ try {
   const dbUrl = process.env.DATABASE_URL || process.env.DIRECT_URL;
   if (dbUrl) {
     const isSsl = dbUrl.includes('sslmode=require') || dbUrl.includes('ssl=true') || dbUrl.includes('supabase.com');
+    const cleanDbUrl = isSsl ? dbUrl.replace(/[\?&]sslmode=[^&]+/, '') : dbUrl;
     const pool = new Pool({
-      connectionString: dbUrl,
+      connectionString: cleanDbUrl,
       ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {})
     });
     const adapter = new PrismaPg(pool);
@@ -425,6 +426,7 @@ const inMemoryMessages: any[] = [];
 const inMemoryReviews: any[] = [];
 const inMemoryTransactions: any[] = [];
 const inMemoryPayoutAccounts: Record<string, any> = {};
+const inMemoryPayoutAuditLogs: any[] = [];
 const inMemoryRedemptions: any[] = [];
 const inMemoryDisputes: any[] = [];
 const inMemoryDiscussions: any[] = [
@@ -801,6 +803,7 @@ function saveDb() {
       reviews: inMemoryReviews,
       transactions: inMemoryTransactions,
       payoutAccounts: inMemoryPayoutAccounts,
+      payoutAuditLogs: inMemoryPayoutAuditLogs,
       redemptions: inMemoryRedemptions,
       discussions: inMemoryDiscussions,
       disputes: inMemoryDisputes,
@@ -941,6 +944,10 @@ function loadDb() {
         if (data.payoutAccounts && typeof data.payoutAccounts === 'object') {
           Object.keys(inMemoryPayoutAccounts).forEach(k => delete inMemoryPayoutAccounts[k]);
           Object.assign(inMemoryPayoutAccounts, data.payoutAccounts);
+        }
+        if (Array.isArray(data.payoutAuditLogs)) {
+          inMemoryPayoutAuditLogs.length = 0;
+          data.payoutAuditLogs.forEach((l: any) => inMemoryPayoutAuditLogs.push(l));
         }
         if (Array.isArray(data.usedUtrs)) {
           inMemoryUsedUtrs.clear();
@@ -3291,13 +3298,61 @@ function checkMentorUpiRateLimit(callerId: string): boolean {
   return true;
 }
 
-// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID & verification (Authenticated & Rate-Limited)
-app.get('/api/payment/mentor-upi/:teacherId', requireAuth, (req: any, res: any) => {
-  if (!checkMentorUpiRateLimit(req.userId)) {
-    return res.status(429).json({ error: 'Too many requests for mentor payment details. Please retry in 1 minute.' });
-  }
+function maskVpa(vpa: string | null | undefined): string | null {
+  if (!vpa) return null;
+  const trimmed = vpa.trim();
+  const parts = trimmed.split('@');
+  if (parts.length !== 2) return '***';
+  const username = parts[0];
+  const handle = parts[1];
+  const prefix = username.slice(0, Math.min(2, username.length));
+  return `${prefix}***@${handle}`;
+}
 
-  const teacherId = req.params.teacherId;
+async function recordPayoutAuditLog({
+  userId,
+  field,
+  oldMasked,
+  newMasked,
+  changedBy
+}: {
+  userId: string;
+  field: string;
+  oldMasked: string | null;
+  newMasked: string | null;
+  changedBy: string;
+}) {
+  const entry = {
+    id: `audit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    userId,
+    field,
+    oldMasked,
+    newMasked,
+    changedBy,
+    createdAt: new Date().toISOString()
+  };
+  inMemoryPayoutAuditLogs.push(entry);
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      await prisma.payoutAuditLog.create({
+        data: {
+          id: entry.id,
+          userId,
+          field,
+          oldMasked,
+          newMasked,
+          changedBy,
+          createdAt: new Date(entry.createdAt)
+        }
+      });
+    } catch (err) {
+      logger.warn({ err }, 'Failed to persist PayoutAuditLog in DB');
+    }
+  }
+  return entry;
+}
+
+function getMentorVpa(teacherId: string) {
   const payoutAcc = inMemoryPayoutAccounts[teacherId];
   const user = inMemoryUsers.find(u => u.id === teacherId);
   
@@ -3306,25 +3361,51 @@ app.get('/api/payment/mentor-upi/:teacherId', requireAuth, (req: any, res: any) 
   const rawUpiId = (payoutAcc?.upiId || user?.upiId || '').toLowerCase().trim();
   const isConfigured = Boolean(rawUpiId && VPA_REGEX.test(rawUpiId));
   const vpaVerified = Boolean(isConfigured && (payoutAcc?.vpaVerified || user?.vpaVerified));
+  const vpaVerifiedAt = vpaVerified ? (payoutAcc?.vpaVerifiedAt || user?.vpaVerifiedAt || null) : null;
   const upiId = isConfigured ? rawUpiId : null;
   const upiQrImage = user?.upiQrImage || payoutAcc?.upiQrImage || null;
   const officialIdType = user?.officialIdType || payoutAcc?.officialIdType || null;
   const officialIdStatus = user?.officialIdStatus || payoutAcc?.officialIdStatus || ((user?.officialIdDocument || user?.officialIdNumber) ? 'verified' : 'unverified');
   const isIdVerified = officialIdStatus === 'verified';
-  
-  res.json({
-    success: true,
+
+  return {
     teacherId,
     mentorName,
     accountHolderName,
+    rawUpiId,
     upiId,
+    isConfigured,
+    vpaVerified,
+    vpaVerifiedAt,
     upiQrImage,
     officialIdType,
     officialIdStatus,
-    isIdVerified,
-    isCustomUpi: isConfigured,
-    isConfigured,
-    vpaVerified
+    isIdVerified
+  };
+}
+
+// GET /api/payment/mentor-upi/:teacherId — Retrieve mentor's registered UPI ID & verification (Authenticated & Rate-Limited)
+app.get('/api/payment/mentor-upi/:teacherId', requireAuth, (req: any, res: any) => {
+  if (!checkMentorUpiRateLimit(req.userId)) {
+    return res.status(429).json({ error: 'Too many requests for mentor payment details. Please retry in 1 minute.' });
+  }
+
+  const teacherId = req.params.teacherId;
+  const vpaInfo = getMentorVpa(teacherId);
+
+  res.json({
+    success: true,
+    teacherId: vpaInfo.teacherId,
+    mentorName: vpaInfo.mentorName,
+    accountHolderName: vpaInfo.accountHolderName,
+    upiId: vpaInfo.upiId,
+    upiQrImage: vpaInfo.upiQrImage,
+    officialIdType: vpaInfo.officialIdType,
+    officialIdStatus: vpaInfo.officialIdStatus,
+    isIdVerified: vpaInfo.isIdVerified,
+    isCustomUpi: vpaInfo.isConfigured,
+    isConfigured: vpaInfo.isConfigured,
+    vpaVerified: vpaInfo.vpaVerified
   });
 });
 
@@ -3370,10 +3451,9 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
     }
 
     const finalTeacherId = targetSession.teacherId || targetSession.teacher?.id;
-    const teacherPayoutAcc = inMemoryPayoutAccounts[finalTeacherId];
-    const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: 'Mentor', hourlyRate: 499 };
-    const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
-    const isMentorVpaConfigured = Boolean(teacherVpa && VPA_REGEX.test(teacherVpa));
+    const mentorVpaInfo = getMentorVpa(finalTeacherId);
+    const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || targetSession?.teacher || { id: finalTeacherId || 'teacher-default', name: mentorVpaInfo.mentorName, hourlyRate: 499 };
+    const isMentorVpaConfigured = mentorVpaInfo.isConfigured;
 
     const isDemoAllowed = Boolean(isDemo && DEMO_MODE);
     const cleanUtr = String(utr || '').trim();
@@ -3563,7 +3643,7 @@ app.get('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
 });
 
 // POST /api/wallet/payout-account — Save or update teacher's bank/UPI payout settings & Official ID
-app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
+app.post('/api/wallet/payout-account', requireAuth, async (req: any, res: any) => {
   const { 
     accountHolderName, 
     accountNumber, 
@@ -3595,8 +3675,27 @@ app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
   let vpaVerifiedAt = existingAcc.vpaVerifiedAt || null;
 
   if (upiChanged) {
+    const oldVerified = vpaVerified;
     vpaVerified = false;
     vpaVerifiedAt = null;
+
+    await recordPayoutAuditLog({
+      userId: targetUser,
+      field: 'upiId',
+      oldMasked: maskVpa(existingUpi),
+      newMasked: maskVpa(incomingUpi),
+      changedBy: targetUser
+    });
+
+    if (oldVerified) {
+      await recordPayoutAuditLog({
+        userId: targetUser,
+        field: 'vpaVerified',
+        oldMasked: 'true',
+        newMasked: 'false',
+        changedBy: targetUser
+      });
+    }
   }
   if (req.userRole === 'admin' && req.body.vpaVerified !== undefined) {
     vpaVerified = Boolean(req.body.vpaVerified);
@@ -3634,6 +3733,58 @@ app.post('/api/wallet/payout-account', requireAuth, (req: any, res: any) => {
     user.officialIdStatus = determinedStatus;
     user.vpaVerified = vpaVerified;
     user.vpaVerifiedAt = vpaVerifiedAt;
+  }
+
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      await prisma.user.update({
+        where: { id: targetUser },
+        data: {
+          upiId: incomingUpi || null,
+          upiQrImage: inMemoryPayoutAccounts[targetUser].upiQrImage || null,
+          vpaVerified,
+          vpaVerifiedAt: vpaVerifiedAt ? new Date(vpaVerifiedAt) : null
+        }
+      });
+      await prisma.payoutAccount.upsert({
+        where: { userId: targetUser },
+        update: {
+          accountHolderName: inMemoryPayoutAccounts[targetUser].accountHolderName,
+          accountNumber: inMemoryPayoutAccounts[targetUser].accountNumber,
+          ifscCode: inMemoryPayoutAccounts[targetUser].ifscCode,
+          bankName: inMemoryPayoutAccounts[targetUser].bankName,
+          upiId: incomingUpi || null,
+          payoutMethod: inMemoryPayoutAccounts[targetUser].payoutMethod,
+          upiQrImage: inMemoryPayoutAccounts[targetUser].upiQrImage || null,
+          officialIdType: inMemoryPayoutAccounts[targetUser].officialIdType || null,
+          officialIdNumber: inMemoryPayoutAccounts[targetUser].officialIdNumber || null,
+          officialIdDocument: inMemoryPayoutAccounts[targetUser].officialIdDocument || null,
+          officialIdStatus: determinedStatus,
+          isVerified: true,
+          vpaVerified,
+          vpaVerifiedAt: vpaVerifiedAt ? new Date(vpaVerifiedAt) : null
+        },
+        create: {
+          userId: targetUser,
+          accountHolderName: inMemoryPayoutAccounts[targetUser].accountHolderName,
+          accountNumber: inMemoryPayoutAccounts[targetUser].accountNumber,
+          ifscCode: inMemoryPayoutAccounts[targetUser].ifscCode,
+          bankName: inMemoryPayoutAccounts[targetUser].bankName,
+          upiId: incomingUpi || null,
+          payoutMethod: inMemoryPayoutAccounts[targetUser].payoutMethod,
+          upiQrImage: inMemoryPayoutAccounts[targetUser].upiQrImage || null,
+          officialIdType: inMemoryPayoutAccounts[targetUser].officialIdType || null,
+          officialIdNumber: inMemoryPayoutAccounts[targetUser].officialIdNumber || null,
+          officialIdDocument: inMemoryPayoutAccounts[targetUser].officialIdDocument || null,
+          officialIdStatus: determinedStatus,
+          isVerified: true,
+          vpaVerified,
+          vpaVerifiedAt: vpaVerifiedAt ? new Date(vpaVerifiedAt) : null
+        }
+      });
+    } catch (err) {
+      logger.warn({ err }, 'Failed to persist PayoutAccount to database');
+    }
   }
 
   saveDb();
@@ -3956,9 +4107,8 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
   const reqTime = new Date(scheduledAt || Date.now()).getTime();
 
   // If booking direct UPI and mentor has not configured VPA
-  const teacherPayoutAcc = inMemoryPayoutAccounts[finalTeacherId];
-  const teacherVpa = (teacherPayoutAcc?.upiId || teacherObj?.upiId || '').toLowerCase().trim();
-  const isTeacherVpaConfigured = Boolean(teacherVpa && VPA_REGEX.test(teacherVpa));
+  const mentorVpaInfo = getMentorVpa(finalTeacherId);
+  const isTeacherVpaConfigured = mentorVpaInfo.isConfigured;
 
   // If client opted to pay or book using tokens, handle via atomic TokenService
   const isTokenPayment = Boolean(payWithTokens || paymentMethod === 'tokens' || tokens !== undefined);
@@ -4819,8 +4969,27 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
   let newVpaVerifiedAt = existingUserObj?.vpaVerifiedAt || null;
 
   if (upiChanged) {
+    const oldVerified = newVpaVerified;
     newVpaVerified = false;
     newVpaVerifiedAt = null;
+
+    await recordPayoutAuditLog({
+      userId: id,
+      field: 'upiId',
+      oldMasked: maskVpa(existingUpi),
+      newMasked: maskVpa(incomingUpi),
+      changedBy: req.userId
+    });
+
+    if (oldVerified) {
+      await recordPayoutAuditLog({
+        userId: id,
+        field: 'vpaVerified',
+        oldMasked: 'true',
+        newMasked: 'false',
+        changedBy: req.userId
+      });
+    }
   }
   if (req.userRole === 'admin' && req.body.vpaVerified !== undefined) {
     newVpaVerified = Boolean(req.body.vpaVerified);
@@ -5652,6 +5821,125 @@ app.post('/api/admin/verify-teacher-id', requireAdmin, (req: any, res: any) => {
   saveDb();
   io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   res.json({ success: true, message: `Teacher ID verification updated to ${status}`, user: toPublicUser(user) });
+});
+
+// POST /api/admin/users/:id/verify-vpa — Admin verification of mentor UPI VPA
+app.post('/api/admin/users/:id/verify-vpa', requireAdmin, async (req: any, res: any) => {
+  const targetUserId = req.params.id;
+  const user = inMemoryUsers.find(u => u.id === targetUserId);
+  const payoutAcc = inMemoryPayoutAccounts[targetUserId];
+
+  if (!user && !payoutAcc) {
+    if (process.env.DATABASE_URL && prisma) {
+      try {
+        const dbUser = await prisma.user.findUnique({ where: { id: targetUserId } });
+        if (!dbUser) {
+          return res.status(404).json({ error: 'User not found.' });
+        }
+      } catch {
+        return res.status(404).json({ error: 'User not found.' });
+      }
+    } else {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+  }
+
+  const vpaInfo = getMentorVpa(targetUserId);
+  const verified = req.body?.verified !== false;
+
+  if (verified && !vpaInfo.isConfigured) {
+    return res.status(400).json({
+      error: 'Cannot verify VPA: User does not have a valid UPI ID (VPA) configured.',
+      code: 'MENTOR_PAYOUT_NOT_CONFIGURED'
+    });
+  }
+
+  const oldStatus = Boolean(vpaInfo.vpaVerified);
+  const vpaVerifiedAt = verified ? new Date().toISOString() : null;
+
+  if (user) {
+    user.vpaVerified = verified;
+    user.vpaVerifiedAt = vpaVerifiedAt;
+  }
+  if (!inMemoryPayoutAccounts[targetUserId]) {
+    inMemoryPayoutAccounts[targetUserId] = {
+      accountHolderName: user?.name || 'Mentor Beneficiary',
+      upiId: vpaInfo.upiId || '',
+      payoutMethod: 'upi',
+      vpaVerified: verified,
+      vpaVerifiedAt
+    };
+  } else {
+    inMemoryPayoutAccounts[targetUserId].vpaVerified = verified;
+    inMemoryPayoutAccounts[targetUserId].vpaVerifiedAt = vpaVerifiedAt;
+  }
+
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      await prisma.user.update({
+        where: { id: targetUserId },
+        data: {
+          vpaVerified: verified,
+          vpaVerifiedAt: vpaVerifiedAt ? new Date(vpaVerifiedAt) : null
+        }
+      });
+      await prisma.payoutAccount.upsert({
+        where: { userId: targetUserId },
+        update: {
+          vpaVerified: verified,
+          vpaVerifiedAt: vpaVerifiedAt ? new Date(vpaVerifiedAt) : null
+        },
+        create: {
+          userId: targetUserId,
+          accountHolderName: user?.name || 'Mentor Beneficiary',
+          upiId: vpaInfo.upiId || null,
+          vpaVerified: verified,
+          vpaVerifiedAt: vpaVerifiedAt ? new Date(vpaVerifiedAt) : null
+        }
+      });
+    } catch (err) {
+      logger.warn({ err }, 'Failed to persist VPA verification to database');
+    }
+  }
+
+  const auditEntry = await recordPayoutAuditLog({
+    userId: targetUserId,
+    field: 'vpaVerified',
+    oldMasked: String(oldStatus),
+    newMasked: String(verified),
+    changedBy: req.userId
+  });
+
+  saveDb();
+  io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
+
+  return res.json({
+    success: true,
+    message: `Mentor VPA verification status updated to ${verified ? 'Verified' : 'Unverified'}.`,
+    user: {
+      id: targetUserId,
+      vpaVerified: verified,
+      vpaVerifiedAt,
+      upiId: vpaInfo.upiId
+    },
+    auditEntry
+  });
+});
+
+// GET /api/admin/users/:id/payout-audit-logs — Retrieve audit trail of VPA changes
+app.get('/api/admin/users/:id/payout-audit-logs', requireAdmin, async (req: any, res: any) => {
+  const targetUserId = req.params.id;
+  const inMem = inMemoryPayoutAuditLogs.filter(l => l.userId === targetUserId);
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      const dbLogs = await prisma.payoutAuditLog.findMany({
+        where: { userId: targetUserId },
+        orderBy: { createdAt: 'desc' }
+      });
+      return res.json({ success: true, logs: dbLogs });
+    } catch {}
+  }
+  return res.json({ success: true, logs: inMem });
 });
 
 // POST /api/sessions/:id/confirm-payment — Teacher 1-click Acknowledgment of UPI Payment
@@ -6553,8 +6841,12 @@ export {
   inMemoryDiscussions,
   inMemoryReviews,
   inMemoryPayoutAccounts,
+  inMemoryPayoutAuditLogs,
   inMemoryRedemptions,
   inMemoryUsedUtrs,
+  getMentorVpa,
+  maskVpa,
+  recordPayoutAuditLog,
   saveDb,
   syncWithDatabasePromise
 };

@@ -584,6 +584,80 @@ async function runVerificationGapsTests() {
     assert.strictEqual(teacherUserAfter?.totalEarned, 499, 'Teacher totalEarned must be credited server-owned amount (₹499)');
     console.log('✅ TEST P2.13 (P3.1) PASSED: Amount and payee server-owned; pending session payment confirmed rejected.');
 
+    // =========================================================================
+    // TEST F10.9 (Phase 4): Dedicated POST /api/admin/users/:id/verify-vpa & PayoutAuditLog
+    // =========================================================================
+    console.log('\n--- Running TEST F10.9: Admin VPA Verification & PayoutAuditLog ---');
+
+    const p4AdminId = `admin-p4-${Date.now()}`;
+    const p4AdminToken = createToken({ id: p4AdminId, email: `${p4AdminId}@mindroot.edu`, role: 'admin' });
+    await seedTestUser({ id: p4AdminId, name: 'Audit Admin', email: `${p4AdminId}@mindroot.edu`, role: 'admin' });
+
+    const p4MentorId = `mentor-p4-${Date.now()}`;
+    const p4MentorToken = createToken({ id: p4MentorId, email: `${p4MentorId}@mindroot.edu`, role: 'teacher' });
+    await seedTestUser({ id: p4MentorId, name: 'Tanishk Mentor', email: `${p4MentorId}@mindroot.edu`, role: 'teacher', upiId: null, vpaVerified: false });
+
+    // 1. Non-admin calls verify-vpa -> 403 Forbidden
+    const nonAdminVerifyRes = await fetch(`${baseUrl}/api/admin/users/${p4MentorId}/verify-vpa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p4MentorToken}` },
+      body: JSON.stringify({ verified: true })
+    });
+    assert.strictEqual(nonAdminVerifyRes.status, 403, 'Non-admin calling verify-vpa must return 403');
+
+    // 2. Admin calls verify-vpa on user with NO VPA -> 400 MENTOR_PAYOUT_NOT_CONFIGURED
+    const adminVerifyNoVpaRes = await fetch(`${baseUrl}/api/admin/users/${p4MentorId}/verify-vpa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p4AdminToken}` },
+      body: JSON.stringify({ verified: true })
+    });
+    assert.strictEqual(adminVerifyNoVpaRes.status, 400, 'Admin verifying user without VPA must return 400');
+    const noVpaJson = await adminVerifyNoVpaRes.json();
+    assert.strictEqual(noVpaJson.code, 'MENTOR_PAYOUT_NOT_CONFIGURED', 'Code must be MENTOR_PAYOUT_NOT_CONFIGURED');
+
+    // 3. Mentor configures valid VPA -> audit log recorded for upiId change
+    const setVpaRes = await fetch(`${baseUrl}/api/wallet/payout-account`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p4MentorToken}` },
+      body: JSON.stringify({ upiId: 'tanishk@okhdfcbank' })
+    });
+    assert.strictEqual(setVpaRes.status, 200, 'Setting valid VPA must succeed');
+
+    // 4. Admin verifies VPA -> 200 OK, vpaVerified = true, audit entry created
+    const p4AdminVerifyRes = await fetch(`${baseUrl}/api/admin/users/${p4MentorId}/verify-vpa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p4AdminToken}` },
+      body: JSON.stringify({ verified: true })
+    });
+    assert.strictEqual(p4AdminVerifyRes.status, 200, 'Admin verifying configured VPA must return 200');
+    const verifyJson = await p4AdminVerifyRes.json();
+    assert.strictEqual(verifyJson.user.vpaVerified, true, 'User vpaVerified must be true');
+    assert.ok(verifyJson.user.vpaVerifiedAt, 'User vpaVerifiedAt must be set');
+
+    // 5. Query audit logs -> returns recorded audit trail
+    const auditRes = await fetch(`${baseUrl}/api/admin/users/${p4MentorId}/payout-audit-logs`, {
+      method: 'GET',
+      headers: { 'Authorization': `Bearer ${p4AdminToken}` }
+    });
+    assert.strictEqual(auditRes.status, 200, 'Querying audit logs must return 200');
+    const auditJson = await auditRes.json();
+    assert.ok(Array.isArray(auditJson.logs) && auditJson.logs.length >= 2, 'Audit logs must contain upiId and vpaVerified entries');
+    const upiAudit = auditJson.logs.find((l: any) => l.field === 'upiId');
+    assert.ok(upiAudit, 'Must have upiId audit entry');
+    assert.strictEqual(upiAudit.newMasked, 'ta***@okhdfcbank', 'New VPA must be masked as ta***@okhdfcbank');
+
+    // 6. Admin revokes verification -> 200 OK, vpaVerified = false
+    const adminRevokeRes = await fetch(`${baseUrl}/api/admin/users/${p4MentorId}/verify-vpa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${p4AdminToken}` },
+      body: JSON.stringify({ verified: false })
+    });
+    assert.strictEqual(adminRevokeRes.status, 200, 'Admin revoking VPA verification must return 200');
+    const revokeJson = await adminRevokeRes.json();
+    assert.strictEqual(revokeJson.user.vpaVerified, false, 'User vpaVerified must now be false');
+
+    console.log('✅ TEST F10.9 (Phase 4) PASSED: Dedicated verify-vpa (403 non-admin, 400 unconfigured), PayoutAuditLog masking & audit trail verified.');
+
     console.log('\n====================================================');
     console.log('🎉 ALL VERIFICATION GAPS TESTS PASSED!');
     console.log('====================================================\n');

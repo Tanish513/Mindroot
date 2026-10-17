@@ -1799,6 +1799,19 @@ export const api = {
     return { success: true, teacherId, status };
   },
 
+  verifyMentorVpa: async (id: string, verified: boolean = true) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/admin/users/${id}/verify-vpa`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ verified })
+      });
+      return await safeParse(r, null);
+    } catch (err: any) {
+      return { success: false, error: err?.message || 'Failed to verify VPA' };
+    }
+  },
+
   withdrawEarnings: async (data: {
     userId?: string;
     amount: number;

@@ -40,6 +40,8 @@ model User {
   receivedReviews  Review[]                 @relation("ReceivedReviews")
   verificationTokens EmailVerificationToken[]
   resetTokens      PasswordResetToken[]
+  payoutAccount    PayoutAccount?
+  payoutAuditLogs  PayoutAuditLog[]
 }
 
 model EmailVerificationToken {
@@ -165,3 +167,41 @@ model Review {
   author User @relation("WrittenReviews", fields: [authorId], references: [id])
   target User @relation("ReceivedReviews", fields: [targetId], references: [id])
 }
+
+model PayoutAccount {
+  id                String    @id @default(uuid())
+  userId            String    @unique
+  accountHolderName String?
+  accountNumber     String?
+  ifscCode          String?
+  bankName          String?
+  upiId             String?
+  payoutMethod      String    @default("upi")
+  upiQrImage        String?
+  officialIdType    String?
+  officialIdNumber  String?
+  officialIdDocument String?
+  officialIdStatus  String    @default("unverified")
+  isVerified        Boolean   @default(false)
+  vpaVerified       Boolean   @default(false)
+  vpaVerifiedAt     DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model PayoutAuditLog {
+  id          String   @id @default(uuid())
+  userId      String
+  field       String   // 'upiId' | 'vpaVerified'
+  oldMasked   String?
+  newMasked   String?
+  changedBy   String   // user id or admin id
+  createdAt   DateTime @default(now())
+
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+}
+

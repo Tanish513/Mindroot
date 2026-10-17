@@ -1065,7 +1065,11 @@ export function AdminPortal() {
                                 onClick={async () => {
                                   try {
                                     const nextStatus = !inspectUser.vpaVerified;
-                                    await api.updateUser(inspectUser.id, { vpaVerified: nextStatus });
+                                    const res = await api.verifyMentorVpa(inspectUser.id, nextStatus);
+                                    if (res && res.success === false) {
+                                      alert(res.error || 'Failed to update VPA verification status');
+                                      return;
+                                    }
                                     setInspectUser((prev: any) => ({ ...prev, vpaVerified: nextStatus }));
                                     setUsers(prev => prev.map(u => u.id === inspectUser.id ? { ...u, vpaVerified: nextStatus } : u));
                                     setActionMessage(`VPA verification status updated to ${nextStatus ? 'Verified' : 'Unverified'} for ${inspectUser.name}.`);

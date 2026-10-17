@@ -1,0 +1,54 @@
+{
+  "timestamp": "2026-10-17T12:04:08.633Z",
+  "totalUsersInspected": 19,
+  "totalPayoutAccountsInspected": 2,
+  "fabricatedVpasNulled": [],
+  "invalidVpasNulled": [],
+  "validVpasPreserved": [
+    "User user-demo-priya-mentor (Dr. Priya Sharma): priya.sharma@okaxis"
+  ],
+  "mentorsRequiringVpaPrompt": [
+    {
+      "id": "3c5fbf59-9c8b-4c6c-8541-6268640a3ed2",
+      "name": "Pragati Nayak",
+      "hourlyRate": 499,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    },
+    {
+      "id": "82abd4c7-d43c-45cc-bb5c-c3c2e02775d5",
+      "name": "Vikram Rathod",
+      "hourlyRate": 499,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    },
+    {
+      "id": "45740cbe-dcda-43e9-8ebf-4a2d18f4c3a7",
+      "name": "Chirayusinh",
+      "hourlyRate": 99999,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    },
+    {
+      "id": "abcae6a2-63fd-4534-8a2f-08db3dac7a3b",
+      "name": "hehe",
+      "hourlyRate": 500,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    },
+    {
+      "id": "5ff5a7f9-1cd6-4904-8150-6fced1d12814",
+      "name": "Vatsal Shah",
+      "hourlyRate": 499,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    },
+    {
+      "id": "32335cfb-aab7-4207-bb5d-55ecfa96a5cc",
+      "name": "Vatsal Shah",
+      "hourlyRate": 499,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    },
+    {
+      "id": "f1c1329d-c32f-4381-93cb-75129b41398e",
+      "name": "Chirayu",
+      "hourlyRate": 499,
+      "reason": "Hourly rate configured but no valid VPA registered"
+    }
+  ]
+}
