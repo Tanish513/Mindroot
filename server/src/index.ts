@@ -351,7 +351,11 @@ try {
   const { PrismaPg } = require('@prisma/adapter-pg');
   const dbUrl = process.env.DATABASE_URL || process.env.DIRECT_URL;
   if (dbUrl) {
-    const pool = new Pool({ connectionString: dbUrl });
+    const isSsl = dbUrl.includes('sslmode=require') || dbUrl.includes('ssl=true') || dbUrl.includes('supabase.com');
+    const pool = new Pool({
+      connectionString: dbUrl,
+      ...(isSsl ? { ssl: { rejectUnauthorized: false } } : {})
+    });
     const adapter = new PrismaPg(pool);
     prisma = new PrismaClient({ adapter });
   } else {
