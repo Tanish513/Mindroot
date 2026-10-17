@@ -378,10 +378,9 @@ async function runTests() {
       await prisma.$disconnect();
     } catch {}
   }
-  process.exit(0);
 }
 
 runTests().catch(err => {
   console.error('❌ Test suite failed:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

@@ -271,11 +271,10 @@ async function runExtendedRaceTests() {
         await prisma.$disconnect();
       } catch {}
     }
-    process.exit(0);
   }
 }
 
 runExtendedRaceTests().catch(err => {
   console.error('\n❌ EXTENDED RACE TEST FAILED:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

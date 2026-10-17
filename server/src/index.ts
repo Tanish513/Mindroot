@@ -28,7 +28,9 @@ import {
   bookSessionWithTokens,
   deductTokensAtomic,
   creditTokensAtomic,
+  refundSessionTokensDurable,
   InsufficientTokensError,
+  ConcurrencyConflictError,
   userMutex,
   withOrderedLocks
 } from './lib/tokenService';
@@ -1262,28 +1264,33 @@ function checkAndExpirePendingSessions() {
         s.cancellationReason = 'Expired: Not accepted before scheduled start time';
         changed = true;
 
+        if (process.env.DATABASE_URL && prisma) {
+          prisma.session.update({
+            where: { id: s.id },
+            data: { status: 'cancelled' }
+          }).catch(err => logger.error({ err, sessionId: s.id }, 'Failed to persist session expiry'));
+        }
+
         const studentId = s.studentId || (Array.isArray(s.students) && s.students[0]?.id);
         const isTokenHeld = s.paymentStatus === 'held' || s.paymentId?.startsWith('tx-token');
         if (isTokenHeld && studentId && !s.tokenRefunded) {
-          s.tokenRefunded = true;
-          s.paymentStatus = 'cancelled';
           const refundTokens = Math.max(1, Number(s.amount || s.pricePerStudent || 1));
           try {
-            await creditTokensAtomic({
+            await refundSessionTokensDurable({
               prisma,
               inMemoryUsers,
               inMemorySessions,
               inMemoryTransactions,
               saveDb
             }, {
-              userId: studentId,
+              sessionId: s.id,
+              studentId,
               amount: refundTokens,
               reason: `Refund: Expired unconfirmed session "${s.title || s.id}"`,
-              sessionId: s.id,
-              currency: 'TOKENS'
+              newSessionStatus: 'cancelled'
             });
           } catch (err) {
-            logger.error({ err }, 'Error refunding expired session tokens');
+            logger.error({ err, sessionId: s.id }, 'Error refunding expired session tokens');
           }
         }
 
@@ -1344,15 +1351,19 @@ io.on('connection', (socket) => {
     registerUserSocket(authUserId, socket.id);
   }
 
-  // Send initial synchronized public state to newly connected laptop
+  // Send initial synchronized public state to newly connected laptop (ledger omitted for privacy)
   socket.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
-  socket.emit('network-transactions-updated', inMemoryTransactions);
   socket.emit('network-reviews-updated', inMemoryReviews);
   socket.emit('network-rewards-updated', inMemoryRedemptions);
   socket.emit('network-discussions-updated', inMemoryDiscussions);
   socket.emit('network-disputes-updated', inMemoryDisputes);
 
   socket.on('post-discussion-sync', (disc: any) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (!callerId) {
+      socket.emit('socket-error', { message: 'Authentication required for post-discussion-sync' });
+      return;
+    }
     if (disc && disc.id) {
       const idx = inMemoryDiscussions.findIndex(d => d.id === disc.id);
       if (idx >= 0) inMemoryDiscussions[idx] = disc;
@@ -1533,6 +1544,11 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
 
   // Cross-laptop user registration & session sync handlers
   socket.on('register-user-sync', (user) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (callerId && user && user.id && user.id !== callerId && socket.data?.userRole !== 'admin') {
+      socket.emit('socket-error', { message: 'Forbidden: Cannot sync another user profile' });
+      return;
+    }
     if (user && user.id) {
       registerUserSocket(user.id, socket.id);
       const idx = inMemoryUsers.findIndex(u => u.id === user.id);
@@ -1562,18 +1578,41 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
   });
 
   socket.on('book-session-sync', (session) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (!callerId) {
+      socket.emit('socket-error', { message: 'Authentication required for book-session-sync' });
+      return;
+    }
+    const participantIds = getSessionParticipantUserIds(session);
+    if (!participantIds.includes(callerId) && socket.data?.userRole !== 'admin') {
+      socket.emit('socket-error', { message: 'Forbidden: You are not a participant in this session' });
+      return;
+    }
     if (session && session.id) {
       const idx = inMemorySessions.findIndex(s => s.id === session.id);
       if (idx >= 0) inMemorySessions[idx] = session;
       else inMemorySessions.push(session);
     }
     sendSessionsToParticipants(session);
-    notifySessionParticipants(session, 'session-request-created', session);
+    const approverId = getSessionApproverId(session);
+    if (approverId) {
+      io.to('user:' + approverId).emit('session-request-created', session);
+    }
   });
 
   socket.on('patch-session-sync', async ({ id, status }) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (!callerId) {
+      socket.emit('socket-error', { message: 'Authentication required for patch-session-sync' });
+      return;
+    }
     const sess = inMemorySessions.find(s => s.id === id);
     if (sess) {
+      const participantIds = getSessionParticipantUserIds(sess);
+      if (!participantIds.includes(callerId) && socket.data?.userRole !== 'admin') {
+        socket.emit('socket-error', { message: 'Forbidden: You are not authorized to modify this session' });
+        return;
+      }
       const prevStatus = sess.status;
       sess.status = status;
 
@@ -1627,7 +1666,6 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
         }
 
         io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
-        io.emit('network-transactions-updated', inMemoryTransactions);
 
         // Student-centric Reward Points Awarding (students only, teachers never earn loyalty points)
         const sessionRewardPts = calcSessionRewardPoints(sess.durationMin);
@@ -1661,6 +1699,15 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
   });
 
   socket.on('post-review-sync', (review: any) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (!callerId) {
+      socket.emit('socket-error', { message: 'Authentication required for post-review-sync' });
+      return;
+    }
+    if (review && review.authorId && review.authorId !== callerId && socket.data?.userRole !== 'admin') {
+      socket.emit('socket-error', { message: 'Forbidden: Cannot submit reviews on behalf of another user' });
+      return;
+    }
     if (review && review.id) {
       if (!inMemoryReviews.some(r => r.id === review.id)) {
         inMemoryReviews.push(review);
@@ -1677,6 +1724,15 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
   });
 
   socket.on('send-message-sync', async (msg: any) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (!callerId) {
+      socket.emit('socket-error', { message: 'Authentication required for send-message-sync' });
+      return;
+    }
+    if (msg && msg.senderId && msg.senderId !== callerId && socket.data?.userRole !== 'admin') {
+      socket.emit('socket-error', { message: 'Forbidden: Cannot send messages as another user' });
+      return;
+    }
     if (msg && msg.id && !inMemoryMessages.some(m => m.id === msg.id)) {
       inMemoryMessages.push(msg);
       saveDb();
@@ -1695,21 +1751,17 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
     }
   });
 
-  socket.on('post-discussion-sync', (disc: any) => {
-    if (disc && disc.id) {
-      const idx = inMemoryDiscussions.findIndex(d => d.id === disc.id);
-      if (idx >= 0) {
-        inMemoryDiscussions[idx] = { ...inMemoryDiscussions[idx], ...disc };
-      } else {
-        inMemoryDiscussions.unshift(disc);
-      }
-      saveDb();
-    }
-    io.emit('network-discussions-updated', inMemoryDiscussions);
-  });
-
   socket.on('payment-handshake-submitted', (payload: any) => {
+    const callerId = (socket as any).userId || socket.data?.userId;
+    if (!callerId) {
+      socket.emit('socket-error', { message: 'Authentication required for payment-handshake-submitted' });
+      return;
+    }
     const { sessionId, teacherId, studentId, studentName, amount, utrNumber, note } = payload || {};
+    if (studentId && studentId !== callerId && socket.data?.userRole !== 'admin') {
+      socket.emit('socket-error', { message: 'Forbidden: Cannot submit payment handshake for another user' });
+      return;
+    }
     if (teacherId) {
       io.to('user:' + teacherId).emit('teacher-payment-alert', {
         sessionId,
@@ -3051,7 +3103,6 @@ app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/pa
     if (targetSession) {
       sendSessionsToParticipants(targetSession);
     }
-    io.emit('network-transactions-updated', inMemoryTransactions);
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     res.json({
@@ -3081,9 +3132,7 @@ app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
   const upiId = isConfigured ? rawUpiId : null;
   const upiQrImage = user?.upiQrImage || payoutAcc?.upiQrImage || null;
   const officialIdType = user?.officialIdType || payoutAcc?.officialIdType || null;
-  const officialIdNumber = user?.officialIdNumber || payoutAcc?.officialIdNumber || null;
-  const officialIdDocument = user?.officialIdDocument || payoutAcc?.officialIdDocument || null;
-  const officialIdStatus = user?.officialIdStatus || payoutAcc?.officialIdStatus || (officialIdDocument || officialIdNumber ? 'verified' : 'unverified');
+  const officialIdStatus = user?.officialIdStatus || payoutAcc?.officialIdStatus || ((user?.officialIdDocument || user?.officialIdNumber) ? 'verified' : 'unverified');
   const isIdVerified = officialIdStatus === 'verified';
   
   res.json({
@@ -3094,7 +3143,6 @@ app.get('/api/payment/mentor-upi/:teacherId', (req: any, res: any) => {
     upiId,
     upiQrImage,
     officialIdType,
-    officialIdNumber,
     officialIdStatus,
     isIdVerified,
     isCustomUpi: isConfigured,
@@ -3110,40 +3158,38 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
     const { sessionId, teacherId, amount, utr, isDemo, title } = req.body;
 
     const studentObj = inMemoryUsers.find(u => u.id === studentId) || { id: studentId, name: 'Peer Student' };
-    let targetSession = sessionId ? inMemorySessions.find(s => s.id === sessionId) : null;
     
-    // Fallback search if sessionId was omitted or not found
-    if (!targetSession && teacherId) {
-      targetSession = inMemorySessions.find(s => {
-        if (!s || s.paymentStatus === 'paid') return false;
-        const isStudentInSession = s.studentId === studentId || (Array.isArray(s.students) && s.students.some((st: any) => st.id === studentId && st.paymentStatus !== 'paid'));
-        const isTeacherMatch = s.teacherId === teacherId || s.teacher?.id === teacherId;
-        return isStudentInSession && isTeacherMatch;
-      }) || null;
+    // No sessionless fallback: valid sessionId is strictly required
+    if (!sessionId) {
+      return res.status(400).json({ error: 'Session ID is required. Cannot submit payment without a valid session.' });
+    }
+    const targetSession = inMemorySessions.find(s => s.id === sessionId);
+    if (!targetSession) {
+      return res.status(404).json({ error: 'Session not found. Cannot submit payment for a nonexistent session.' });
     }
 
-    if (targetSession) {
-      if (targetSession.status === 'pending') {
-        return res.status(400).json({
-          error: 'Cannot submit payment for a session that is still pending mentor approval. Please wait for the mentor to accept your request.',
-          code: 'SESSION_NOT_CONFIRMED'
-        });
-      }
-      const isStudentParticipant = targetSession.studentId === studentId ||
-        (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === studentId));
-      if (!isStudentParticipant && req.userRole !== 'admin') {
-        return res.status(403).json({ error: 'Forbidden: Only the enrolled student can submit payment for this session.' });
-      }
+    if (targetSession.status === 'pending') {
+      return res.status(400).json({
+        error: 'Cannot submit payment for a session that is still pending mentor approval. Please wait for the mentor to accept your request.',
+        code: 'SESSION_NOT_CONFIRMED'
+      });
+    }
 
-      const sessionTeacherId = targetSession.teacherId || targetSession.teacher?.id;
-      const sessionPrice = Number(targetSession.pricePerStudent ?? targetSession.amount ?? 499);
+    // Student-only contract: Only the enrolled student can submit payment (rejects bystanders and admins)
+    const isStudentParticipant = targetSession.studentId === studentId ||
+      (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === studentId));
+    if (!isStudentParticipant) {
+      return res.status(403).json({ error: 'Forbidden: Only the enrolled student can submit payment for this session.' });
+    }
 
-      if (teacherId !== undefined && teacherId !== sessionTeacherId) {
-        return res.status(400).json({ error: 'Teacher ID mismatch for session.' });
-      }
-      if (amount !== undefined && Number(amount) !== sessionPrice) {
-        return res.status(400).json({ error: 'Payment amount does not match session price.' });
-      }
+    const sessionTeacherId = targetSession.teacherId || targetSession.teacher?.id;
+    const sessionPrice = Number(targetSession.pricePerStudent ?? targetSession.amount ?? 499);
+
+    if (teacherId !== undefined && teacherId !== sessionTeacherId) {
+      return res.status(400).json({ error: 'Teacher ID mismatch for session.' });
+    }
+    if (amount !== undefined && Number(amount) !== sessionPrice) {
+      return res.status(400).json({ error: 'Payment amount does not match session price.' });
     }
 
     const finalTeacherId = targetSession ? (targetSession.teacherId || targetSession.teacher?.id) : (teacherId || 'teacher-default');
@@ -3294,7 +3340,6 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
     io.emit('session-payment-received', paymentBroadcastPayload);
     io.emit('session-payment-confirmed', paymentBroadcastPayload);
     io.emit('network-sessions-updated', inMemorySessions);
-    io.emit('network-transactions-updated', inMemoryTransactions);
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     res.json({
@@ -3670,7 +3715,7 @@ function consolidateGroupSessions() {
 }
 
 // POST /api/sessions — book a new session request (Supports Token Escrow/Payment or Peer Swap/UPI)
-app.post('/api/sessions', async (req, res) => {
+app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
   consolidateGroupSessions();
 
   const {
@@ -3694,8 +3739,11 @@ app.post('/api/sessions', async (req, res) => {
   } = req.body;
   
   const finalTeacherId = teacherId || 'teacher-default';
-  const finalStudentId = studentId || (req as any).userId || 'user-alex';
-  const finalProposerId = proposerId || (req as any).userId || finalStudentId;
+  const finalStudentId = req.userId;
+  if (studentId && studentId !== req.userId && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: Cannot create bookings on behalf of another user.' });
+  }
+  const finalProposerId = proposerId || req.userId || finalStudentId;
   const teacherObj = inMemoryUsers.find(u => u.id === finalTeacherId) || { id: finalTeacherId, name: 'Teacher', hourlyRate: 499 };
   const studentObj = inMemoryUsers.find(u => u.id === finalStudentId) || { id: finalStudentId, name: 'Student' };
 
@@ -3792,7 +3840,6 @@ app.post('/api/sessions', async (req, res) => {
         io.to('user:' + approverId1).emit('session-request-created', bookRes.session);
       }
       io.emit('network-sessions-updated', inMemorySessions);
-      io.emit('network-transactions-updated', inMemoryTransactions);
       io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
       return res.status(201).json({
@@ -3807,6 +3854,19 @@ app.post('/api/sessions', async (req, res) => {
           insufficientBalance: true,
           available: err.available,
           required: err.required
+        });
+      }
+      if (err instanceof ConcurrencyConflictError || err.statusCode === 409) {
+        const nearestISO = findNearestAvailableSlot(finalTeacherId, scheduledAt || new Date().toISOString(), durationMin);
+        const nearestDate = new Date(nearestISO);
+        const nearestFormatted = `${nearestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at ${nearestDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+
+        return res.status(409).json({
+          error: err.message || `This time slot is already booked for ${teacherObj.name}.`,
+          code: 'SLOT_CONFLICT',
+          conflict: true,
+          nearestSlot: nearestISO,
+          nearestSlotFormatted: nearestFormatted
         });
       }
       return res.status(500).json({ error: err.message || 'Failed to book session with tokens.' });
@@ -4078,29 +4138,24 @@ app.delete('/api/sessions/:id', requireAuth, async (req: any, res) => {
     const sess = inMemorySessions[idx];
 
     // Automatic token refund on cancellation of paid sessions
-    if (sess && sess.paymentStatus === 'paid' && !sess.tokenRefunded) {
+    if (sess && (sess.paymentStatus === 'paid' || sess.paymentStatus === 'held') && !sess.tokenRefunded) {
       const studentId = sess.studentId || (Array.isArray(sess.students) && sess.students[0]?.id);
       const isTokenPaid = sess.paymentId?.startsWith('tx-token') || sess.currency === 'TOKENS' || (Number(sess.amount || sess.pricePerStudent || 0) <= 20 && !sess.utrNumber);
       if (studentId && isTokenPaid) {
-        sess.tokenRefunded = true;
         const refundTokens = Math.max(1, Number(sess.amount || sess.pricePerStudent || 1));
-        try {
-          await creditTokensAtomic({
-            prisma,
-            inMemoryUsers,
-            inMemorySessions,
-            inMemoryTransactions,
-            saveDb
-          }, {
-            userId: studentId,
-            amount: refundTokens,
-            reason: `Refund: Cancelled session "${sess.title || id}"`,
-            sessionId: id,
-            currency: 'TOKENS'
-          });
-        } catch (rErr) {
-          logger.error({ rErr }, 'Token refund on session cancellation encountered error');
-        }
+        await refundSessionTokensDurable({
+          prisma,
+          inMemoryUsers,
+          inMemorySessions,
+          inMemoryTransactions,
+          saveDb
+        }, {
+          sessionId: id,
+          studentId,
+          amount: refundTokens,
+          reason: `Refund: Cancelled session "${sess.title || id}"`,
+          newSessionStatus: 'cancelled'
+        });
       } else if (sess.utrNumber || sess.paymentStatus === 'paid') {
         sess.paymentStatus = 'cancellation_direct_refund_pending';
       }
@@ -4182,9 +4237,13 @@ app.get('/api/sessions/:id/calendar.ics', requireAuth, async (req: any, res: any
   res.send(icsContent);
 });
 
-// GET /api/transactions — transactions for user from verified auth token or query
-app.get('/api/transactions', async (req: any, res) => {
-  const userId = req.query.userId || req.userId;
+// GET /api/transactions — transactions for user from verified auth token or query (requires authentication)
+app.get('/api/transactions', requireAuth, async (req: any, res: any) => {
+  const targetUserId = req.query.userId ? String(req.query.userId) : req.userId;
+  if (targetUserId !== req.userId && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden: You can only access your own transactions.' });
+  }
+  const userId = targetUserId;
   
   try {
     if (process.env.DATABASE_URL && prisma && userId) {
@@ -4201,8 +4260,10 @@ app.get('/api/transactions', async (req: any, res) => {
     return res.json(userTxs);
   }
 
-  // If no specific userId requested, return all transactions
-  res.json(inMemoryTransactions);
+  if (req.userRole === 'admin') {
+    return res.json(inMemoryTransactions);
+  }
+  res.json([]);
 });
 
 // PATCH /api/sessions/:id — approve / decline / update status / paymentStatus

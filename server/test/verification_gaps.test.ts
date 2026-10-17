@@ -587,7 +587,6 @@ async function runVerificationGapsTests() {
     console.log('\n====================================================');
     console.log('🎉 ALL VERIFICATION GAPS TESTS PASSED!');
     console.log('====================================================\n');
-    process.exit(0);
   } finally {
     activeSockets.forEach(s => {
       try { s.disconnect(); } catch {}
@@ -606,5 +605,5 @@ async function runVerificationGapsTests() {
 
 runVerificationGapsTests().catch((err) => {
   console.error('\n❌ VERIFICATION GAPS TEST FAILED:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

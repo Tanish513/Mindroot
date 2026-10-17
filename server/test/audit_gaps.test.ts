@@ -802,18 +802,10 @@ async function runAuditGapsTests() {
     console.log('\n====================================================');
     console.log('🎉 ALL AUDIT GAP VERIFICATION TESTS PASSED (9/9)');
     console.log('====================================================\n');
-    if ((serverInstance as any).closeAllConnections) {
-      (serverInstance as any).closeAllConnections();
-    }
-    await new Promise<void>((resolve) => serverInstance.close(() => resolve()));
-    if (prisma && process.env.DATABASE_URL) {
-      try {
-        await prisma.$disconnect();
-      } catch {}
-    }
-    process.exit(0);
   } catch (err) {
     console.error('\n❌ AUDIT GAPS TEST FAILED:', err);
+    process.exitCode = 1;
+  } finally {
     if ((serverInstance as any).closeAllConnections) {
       (serverInstance as any).closeAllConnections();
     }
@@ -823,11 +815,10 @@ async function runAuditGapsTests() {
         await prisma.$disconnect();
       } catch {}
     }
-    process.exit(1);
   }
 }
 
 runAuditGapsTests().catch((err) => {
   console.error('\n❌ AUDIT GAPS TEST FAILED:', err);
-  process.exit(1);
+  process.exitCode = 1;
 });

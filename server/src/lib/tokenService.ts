@@ -106,13 +106,27 @@ export async function bookSessionWithTokens(
     throw new Error('Token cost cannot be negative.');
   }
 
-  return userMutex.runExclusive(studentId, async () => {
+  return withOrderedLocks([studentId, teacherId], async () => {
     const scheduledDate = new Date(scheduledAt);
+    const reqTime = scheduledDate.getTime();
     const sessionId = 'session-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
     const txId = 'tx-token-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
 
     const teacher = params.teacherObj || deps.inMemoryUsers.find(u => u.id === teacherId) || { id: teacherId, name: 'Mentor', hourlyRate: 499 };
     const student = params.studentObj || deps.inMemoryUsers.find(u => u.id === studentId) || { id: studentId, name: 'Student' };
+
+    // Check slot conflict in memory first
+    const memConflict = deps.inMemorySessions.find(s => {
+      if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
+      const tId = s.teacherId || s.teacher?.id;
+      if (tId !== teacherId) return false;
+      const sTime = new Date(s.scheduledAt).getTime();
+      return Math.abs(sTime - reqTime) < 45 * 60 * 1000;
+    });
+
+    if (memConflict) {
+      throw new ConcurrencyConflictError(`This time slot is already booked for ${teacher.name || 'this mentor'}.`);
+    }
 
     let dbSession: any = null;
     let dbTransaction: any = null;
@@ -123,6 +137,23 @@ export async function bookSessionWithTokens(
     if (deps.prisma && process.env.DATABASE_URL) {
       try {
         const result = await deps.prisma.$transaction(async (tx: any) => {
+          // Check slot conflict in DB
+          const startWindow = new Date(reqTime - 45 * 60 * 1000);
+          const endWindow = new Date(reqTime + 45 * 60 * 1000);
+          const existingSlot = await tx.session.findFirst({
+            where: {
+              teacherId,
+              scheduledAt: {
+                gte: startWindow,
+                lte: endWindow
+              },
+              status: { notIn: ['declined', 'completed', 'cancelled'] }
+            }
+          });
+          if (existingSlot) {
+            throw new ConcurrencyConflictError(`This time slot is already booked for ${teacher.name || 'this mentor'}.`);
+          }
+
           // Row-level lock on User
           const rawUsers: any[] = await tx.$queryRaw`
             SELECT "id", "tokenBalance", "version", "name"
@@ -600,3 +631,165 @@ export async function creditTokensAtomic(
     return { balanceBefore, balanceAfter, transaction: txRecord };
   });
 }
+
+/**
+ * Durably and idempotently refund tokens for a session.
+ * Executes in a single database transaction (session status update + user token credit + audit transaction)
+ * and updates in-memory stores atomically.
+ */
+export async function refundSessionTokensDurable(
+  deps: TokenOperationDependencies,
+  params: {
+    sessionId: string;
+    studentId: string;
+    amount: number;
+    reason: string;
+    newSessionStatus: string; // 'cancelled' | 'declined' | 'expired'
+  }
+) {
+  const { sessionId, studentId, amount, reason, newSessionStatus } = params;
+
+  if (amount <= 0) {
+    throw new Error('Refund amount must be greater than zero.');
+  }
+
+  return userMutex.runExclusive(studentId, async () => {
+    const refundKey = `refund-${sessionId}`;
+    let balanceBefore = 0;
+    let balanceAfter = 0;
+    let alreadyRefunded = false;
+
+    // Check in-memory session first
+    const memSession = deps.inMemorySessions.find(s => s.id === sessionId);
+    if (memSession && (memSession.tokenRefunded || memSession.paymentStatus === 'refunded')) {
+      return { alreadyRefunded: true, session: memSession };
+    }
+
+    if (deps.prisma && process.env.DATABASE_URL) {
+      try {
+        await deps.prisma.$transaction(async (tx: any) => {
+          // 1. Fetch and lock session
+          const dbSession = await tx.session.findUnique({ where: { id: sessionId } });
+          if (!dbSession) {
+            throw new Error(`Session with ID "${sessionId}" not found in database.`);
+          }
+          if (dbSession.paymentStatus === 'refunded') {
+            alreadyRefunded = true;
+            return;
+          }
+
+          // 2. Fetch and lock user
+          const rawUsers: any[] = await tx.$queryRaw`
+            SELECT "id", "tokenBalance", "version"
+            FROM "User"
+            WHERE "id" = ${studentId}
+            FOR UPDATE
+          `;
+          let dbUser = rawUsers && rawUsers.length > 0 ? rawUsers[0] : null;
+          if (!dbUser) dbUser = await tx.user.findUnique({ where: { id: studentId } });
+          if (!dbUser) {
+            throw new Error(`Student user with ID "${studentId}" not found in database.`);
+          }
+
+          balanceBefore = dbUser.tokenBalance;
+          balanceAfter = balanceBefore + amount;
+
+          // 3. Update user balance
+          await tx.user.update({
+            where: { id: studentId },
+            data: {
+              tokenBalance: balanceAfter,
+              version: { increment: 1 }
+            }
+          });
+
+          // 4. Update session
+          await tx.session.update({
+            where: { id: sessionId },
+            data: {
+              status: newSessionStatus,
+              paymentStatus: 'refunded'
+            }
+          });
+
+          // 5. Create audit Transaction
+          await tx.transaction.create({
+            data: {
+              id: refundKey,
+              userId: studentId,
+              sessionId,
+              amount,
+              description: reason,
+              title: reason,
+              peerName: 'Platform Refund',
+              type: 'EARNED',
+              balanceBefore,
+              balanceAfter,
+              paymentId: refundKey,
+              currency: 'TOKENS',
+              status: 'paid'
+            }
+          });
+        });
+
+        if (alreadyRefunded) {
+          return { alreadyRefunded: true, session: memSession };
+        }
+      } catch (err: any) {
+        logger.error({ err, sessionId, studentId }, 'Prisma $transaction refund failed');
+        if (process.env.DATABASE_URL) {
+          if (process.env.ALLOW_UNSAFE_IN_MEMORY_FAILOVER === 'true') {
+            logger.warn('⚠️ UNSAFE FAILOVER: Falling back to in-memory refund because ALLOW_UNSAFE_IN_MEMORY_FAILOVER=true');
+          } else {
+            const dbError: any = new Error('Database service unavailable. Refund aborted to protect ledger integrity.');
+            dbError.statusCode = 503;
+            throw dbError;
+          }
+        }
+      }
+    }
+
+    // In-memory update
+    const memStudent = deps.inMemoryUsers.find(u => u.id === studentId);
+    if (balanceBefore === 0 && balanceAfter === 0 && memStudent) {
+      balanceBefore = typeof memStudent.tokenBalance === 'number' ? memStudent.tokenBalance : 0;
+      balanceAfter = balanceBefore + amount;
+    }
+
+    if (memStudent) {
+      memStudent.tokenBalance = balanceAfter;
+    }
+
+    if (memSession) {
+      memSession.status = newSessionStatus;
+      memSession.paymentStatus = 'refunded';
+      memSession.tokenRefunded = true;
+      memSession.refundKey = refundKey;
+    }
+
+    const txRecord = {
+      id: refundKey,
+      userId: studentId,
+      sessionId,
+      amount,
+      description: reason,
+      title: reason,
+      peerName: 'Platform Refund',
+      type: 'EARNED',
+      balanceBefore,
+      balanceAfter,
+      paymentId: refundKey,
+      currency: 'TOKENS',
+      status: 'paid',
+      createdAt: new Date().toISOString()
+    };
+
+    deps.inMemoryTransactions.unshift(txRecord);
+    deps.saveDb();
+
+    logger.info({ studentId, sessionId, amount, balanceBefore, balanceAfter, refundKey }, '[TokenService] Durable refund completed');
+
+    return { balanceBefore, balanceAfter, transaction: txRecord, session: memSession };
+  });
+}
+
