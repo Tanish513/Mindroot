@@ -30,3 +30,5 @@ server/db.json
 *.njsproj
 *.sln
 *.sw?
+test-results/
+playwright-report/

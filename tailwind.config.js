@@ -79,6 +79,16 @@ export default {
         "error-container": "rgb(var(--color-error-container) / <alpha-value>)",
         "on-error": "rgb(var(--color-on-error) / <alpha-value>)",
         "on-error-container": "rgb(var(--color-on-error-container) / <alpha-value>)",
+
+        // Sidebar Deep Teal Palette
+        "sidebar-bg": "var(--color-sidebar-bg)",
+        "sidebar-border": "var(--color-sidebar-border)",
+        "sidebar-icon": "var(--color-sidebar-icon)",
+        "sidebar-icon-hover": "var(--color-sidebar-icon-hover)",
+        "sidebar-hover-bg": "var(--color-sidebar-hover-bg)",
+        "sidebar-active": "var(--color-sidebar-active)",
+        "sidebar-active-icon": "var(--color-sidebar-active-icon)",
+        "sidebar-logo-tile": "var(--color-sidebar-logo-tile)",
       },
       borderRadius: {
         "DEFAULT": "0.5rem", // 8px

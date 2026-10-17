@@ -137,6 +137,24 @@ export function NotificationManager() {
     }, timeoutMs);
   }, []);
 
+  useEffect(() => {
+    const handleCustomToast = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      const detail = customEvent?.detail;
+      if (detail && detail.title) {
+        triggerToast(
+          detail.type || 'reminder',
+          detail.title,
+          detail.body || '',
+          detail.link,
+          detail.avatar
+        );
+      }
+    };
+    window.addEventListener('app-toast', handleCustomToast);
+    return () => window.removeEventListener('app-toast', handleCustomToast);
+  }, [triggerToast]);
+
   const handleAcceptRequest = async (toast: ToastItem, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!toast.sessionId || toast.inFlight) return;
@@ -144,7 +162,7 @@ export function NotificationManager() {
     try {
       await api.acceptSession(toast.sessionId);
       dismissToast(toast.id);
-      triggerToast('reminder', '✅ Booking Accepted!', `You confirmed "${toast.sessionTitle || 'Session'}". Classroom is ready.`, `/live/${toast.sessionId}`);
+      triggerToast('reminder', '✅ Booking Accepted!', `You confirmed "${toast.sessionTitle || 'Session'}". Classroom is ready.`, `/live-room/${toast.sessionId}`);
     } catch (err: any) {
       setToasts(prev => prev.map(t => t.id === toast.id ? { ...t, inFlight: false } : t));
       alert(err.message || 'Failed to accept session');
@@ -406,7 +424,7 @@ export function NotificationManager() {
               const partnerName = isTeacher ? (session.student?.name || 'Student') : (session.teacher?.name || 'Teacher');
               const title = `⏰ Lecture Starting in 5 Minutes!`;
               const body = `"${session.title}" with ${partnerName} is starting soon. Click to join classroom!`;
-              const link = `/live/${session.id}`;
+              const link = `/live-room/${session.id}`;
 
               addNotification({
                 type: 'reminder',

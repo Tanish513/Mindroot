@@ -356,7 +356,9 @@ async function runVerificationGapsTests() {
       teacherId: p32TeacherId,
       studentId: p32StudentId,
       status: 'confirmed',
-      paymentStatus: 'paid'
+      paymentStatus: 'paid',
+      scheduledAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      durationMin: 60
     });
 
     const hostSocket = ClientSocket(baseUrl, {

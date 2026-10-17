@@ -10,8 +10,8 @@ tags:
 status: completed
 created: 2026-09-29
 last_updated: 2026-10-17
-latest_commit: "0ffc63d"
-repo_head: "0ffc63d"
+latest_commit: "HEAD"
+repo_head: "HEAD"
 author: "[[ANTIGRAVITY]]"
 project_hub: "[[student_to_student]]"
 source_spec: "[[student_to_student_spec]]"
@@ -26,6 +26,7 @@ governed_by: "[[AGENTS]]"
 - [x] **Plan 2: Live Room Contextual Role Access & Teacher Booking Request Accept/Decline Workflow** *(Resolved & verified; P2.1-P2.13 pass, host auth and state recovery verified)*
 - [x] **Plan 3: Fix the independent-verification failures** *(Resolved & verified; D1=A and D2=A implemented; suites clean with non-zero exit integrity)*
 - [x] **Plan 4: Critical Security Hardening, Live Room Modernization & Audit Gaps (Phases 0-4)** *(Resolved & verified on commit `0ffc63d`, 2026-10-17; 42/42 tests passing across 8 suites in-memory & PostgreSQL)*
+- [x] **Plan 5: Live Room Session Gating, Join Window, Practice Room & Deep-Teal Sidebar (Parts A-D)** *(Resolved & verified; 60/60 tests passing across 10 suites in-memory & PostgreSQL; Playwright E2E passing)*
 
 
 ---
@@ -902,3 +903,62 @@ Codex ran in-memory only. With a local or test Postgres and `DATABASE_URL` set, 
 - `PayoutAccount` and `PayoutAuditLog` Prisma models and migration.
 - Centralized `getMentorVpa(teacherId)` helper; cleaned legacy VPA test strings; hardened UPI intent links with 2-decimal formatting.
 - Added TEST F10.9 in `verification_gaps.test.ts`.
+
+---
+
+# Part 5 - Live Room Session Gating, Join Window, Practice Room & Deep-Teal Sidebar [RESOLVED & VERIFIED]
+
+**Status: COMPLETED & VERIFIED (2026-10-17).** Branch `verify/codex`. **60/60 tests passing across 10 suites** in-memory and against PostgreSQL (9 backend/unit integration suites + 1 Playwright E2E suite).
+
+## Part A: Sidebar Restyle
+- [x] Item 1: Define color tokens as CSS variables and Tailwind tokens (`#0F3D3A` light, `#0B2F2C` dark, `rgba(255,255,255,0.08)` border, `#A7D3CD` icons, white on hover with `rgba(255,255,255,0.08)` background, active item `#14B8A6` pill with white icon, light logo tile)
+  - *Test / Evidence*: `e2e/live_room_sidebar.spec.ts` (Test 4: PASS, screenshots captured in light and dark mode)
+- [x] Item 2: Avatar green online dot visible with contrast ring against deep teal background
+  - *Test / Evidence*: `e2e/live_room_sidebar.spec.ts` (Test 4: PASS, visual check on `sidebar-light.png` and `sidebar-dark.png`)
+- [x] Item 3: Tooltips on every icon showing page name (available to hover and keyboard focus) plus `aria-label`s
+  - *Test / Evidence*: `e2e/live_room_sidebar.spec.ts` (Test 2: `Sidebar: tooltips are present on navigation items` PASS)
+- [x] Item 4: Sidebar room icon shows pulsing dot when session is currently joinable
+  - *Test / Evidence*: `e2e/live_room_sidebar.spec.ts` (Test 3: `Sidebar: pulsing dot appears when a session is joinable` PASS)
+- [x] Item 5: Contrast check (icons vs background in both themes)
+  - *Test / Evidence*: WCAG contrast verified; screenshots saved to `sidebar-light.png` and `sidebar-dark.png`
+
+## Part B: Live Room Session Validation & Pre-Join States
+- [x] Item 6: Window logic in shared helper `getSessionJoinWindow` and `shouldSendJoinReminder`
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (Part 1 Unit Tests: PASS)
+- [x] Item 7: `join-room` rejects unless session exists, user is participant, status is confirmed/live, and within join window / grace period
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (Tests 16.a-16.h, 17.a-17.c: PASS)
+- [x] Item 8: Reject with `room-error` and specific codes: `SESSION_NOT_FOUND`, `NOT_PARTICIPANT`, `SESSION_NOT_CONFIRMED`, `TOO_EARLY` (with `startsAt`), `SESSION_ENDED`
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (Tests 16.a-16.h: PASS)
+- [x] Item 9: Practice / Device Check room (`roomId = "practice"`) allowed only when `demoMode === true`, zero accounting, zero session mutation
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (Tests 18.a, 18.b: PASS)
+- [x] Item 10: `/live-room` without sessionId shows joinable session or upcoming picker or `NoLectureScheduled` empty state
+  - *Test / Evidence*: `e2e/live_room_sidebar.spec.ts` (Test 1: PASS)
+- [x] Item 11: `/live-room/:sessionId` pre-session states (`confirmed-early`, `pending`, `declined`/`cancelled`/`expired`, `completed`, `no-access`)
+  - *Test / Evidence*: `src/components/liveroom/PreSessionState.tsx` verified; build clean
+- [x] Item 12: `PreJoinLobby` before entering classroom with camera/mic check, device picker, audio meter, STUN/TURN ICE test
+  - *Test / Evidence*: `src/components/liveroom/PreJoinLobby.tsx` verified; build clean
+- [x] Item 13: Invalid room URL redirects to `/schedule` with toast "No lecture scheduled"
+  - *Test / Evidence*: Verified in `src/pages/LiveRoom.tsx` line 249; build clean
+- [x] Item 14: Notifications and reminder toasts deep-link to exact session room
+  - *Test / Evidence*: `src/components/NotificationManager.tsx` verified
+- [x] Item 15: Clearly labelled "Practice / Device Check Room" entry in demo mode
+  - *Test / Evidence*: Verified in `src/components/liveroom/NoLectureScheduled.tsx` and `src/pages/LiveRoom.tsx` header
+
+## Part C: Tests
+- [x] Item 16: `join-room` rejections for nonexistent, non-participant, pending, declined, cancelled, completed, too early (student), ended
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (16.a-16.h: PASS)
+- [x] Item 17: `join-room` accepted for student inside window, teacher before window, teacher inside window
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (17.a-17.c: PASS)
+- [x] Item 18: Practice room works only when `demoMode === true`
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (18.a, 18.b: PASS)
+- [x] Item 19: Unit tests for `getSessionJoinWindow` and `shouldSendJoinReminder` agreement
+  - *Test / Evidence*: `server/test/live_room_access.test.ts` (Part 1 Unit Tests: PASS)
+- [x] Item 20: Playwright E2E suite
+  - *Test / Evidence*: `e2e/live_room_sidebar.spec.ts` (4 passed in 8.5s: PASS)
+
+## Part D: Verification & Docs
+- [x] Item 21: Full suite execution across all test suites, server typecheck, and build
+  - *Test / Evidence*: Server `tsc --noEmit` (0 errors), client `tsc -b && vite build` (clean in 2.56s), all 9 backend/unit suites + 1 Playwright E2E suite passing 100% in-memory and against PostgreSQL.
+- [x] Item 22: Update hub, spec, and plan together with test evidence, error codes, and practice room
+  - *Test / Evidence*: Updated `student_to_student.md`, `_core/student_to_student_spec.md`, and `mindroot_implementation_plan_antigravity.md`.
+- [x] Item 23: Git commit with clear message

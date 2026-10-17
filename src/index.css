@@ -85,6 +85,16 @@
     --scrollbar-track: 241 245 249;
     --scrollbar-thumb: 203 213 225;
     --scrollbar-thumb-hover: 148 163 184;
+
+    /* Sidebar Deep Teal Palette (Light Mode) */
+    --color-sidebar-bg: #0F3D3A;
+    --color-sidebar-border: rgba(255, 255, 255, 0.08);
+    --color-sidebar-icon: #A7D3CD;
+    --color-sidebar-icon-hover: #FFFFFF;
+    --color-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+    --color-sidebar-active: #14B8A6;
+    --color-sidebar-active-icon: #FFFFFF;
+    --color-sidebar-logo-tile: #14B8A6;
   }
 
   .dark {
@@ -172,6 +182,16 @@
     --scrollbar-track: 19 22 27;
     --scrollbar-thumb: 44 50 63;
     --scrollbar-thumb-hover: 71 85 105;
+
+    /* Sidebar Deep Teal Palette (Dark Mode) */
+    --color-sidebar-bg: #0B2F2C;
+    --color-sidebar-border: rgba(255, 255, 255, 0.08);
+    --color-sidebar-icon: #A7D3CD;
+    --color-sidebar-icon-hover: #FFFFFF;
+    --color-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
+    --color-sidebar-active: #14B8A6;
+    --color-sidebar-active-icon: #FFFFFF;
+    --color-sidebar-logo-tile: #14B8A6;
   }
 
   body {

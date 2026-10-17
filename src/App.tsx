@@ -159,6 +159,14 @@ function App() {
               } 
             />
             <Route 
+              path="/live-room/:sessionId?" 
+              element={<LiveRoom />} 
+            />
+            <Route 
+              path="/classroom/:sessionId?" 
+              element={<LiveRoom />} 
+            />
+            <Route 
               path="/live/:sessionId?" 
               element={<LiveRoom />} 
             />

@@ -81,7 +81,11 @@ import {
   WhiteboardCanvas,
   NotesEditor,
   CodeRunnerPad,
-  RoomChat
+  RoomChat,
+  NoLectureScheduled,
+  PreJoinLobby,
+  PreSessionState,
+  type SessionAccessState
 } from '../components/liveroom';
 
 export function LiveRoom() {
@@ -93,6 +97,12 @@ export function LiveRoom() {
   const [currentSession, setCurrentSession] = useState<any | null>(null);
   const userRole = resolveSessionRole(currentSession, currentUser?.id, currentUser?.role);
   const isTeacher = userRole === 'teacher';
+
+  // Live Room State Machine & Pre-Join States
+  const [sessionState, setSessionState] = useState<SessionAccessState | 'lobby' | 'picker' | 'empty' | 'loading'>('loading');
+  const [isLobbyJoined, setIsLobbyJoined] = useState(false);
+  const [upcomingSessions, setUpcomingSessions] = useState<any[]>([]);
+  const [demoMode, setDemoMode] = useState(false);
 
   const [workspace, setWorkspace] = useState<Workspace>('whiteboard');
   const [viewMode, setViewMode] = useState<'studio' | 'gallery'>('studio');
@@ -131,19 +141,179 @@ export function LiveRoom() {
   const [notes, setNotes] = useState('## 🎯 Cohort Lesson Plan & Objectives\n\n- [x] Topic Introduction & Theory overview\n- [ ] Deep Dive with Interactive Diagrams on Whiteboard\n- [ ] Hands-on Live Code Session & Execution\n- [ ] Student Q&A and Concept Review\n\n> 💡 Tip: Click "Fullscreen Explanation Mode" on the top right for a wide focused workspace!');
   const [code, setCode] = useState('// 🚀 Live Interactive Cohort Code Pad\n// All students & the teacher can write and execute code together!\n\nfunction calculateCohortProgress(students: string[], topic: string) {\n  return {\n    topic,\n    totalStudents: students.length,\n    batchStatus: "3-Student Cohort Active 🎓",\n    studentList: students,\n    message: `All ${students.length} students are live with the instructor!`\n  };\n}\n\nconst cohort = calculateCohortProgress(["Alex", "Liam", "Sarah"], "React & TypeScript Systems");\nconsole.log("Cohort Session Info:", JSON.stringify(cohort, null, 2));\n');
 
+  // Verify and resolve session access state
   useEffect(() => {
-    if (sessionId) {
-      api.getSessions().then(list => {
-        const found = list.find((s: any) => s.id === sessionId);
-        if (found) {
-          setCurrentSession(found);
-          if (found.studyNotes) {
-            setNotes(found.studyNotes);
+    let active = true;
+
+    const resolveSessionAccess = async () => {
+      try {
+        setSessionState('loading');
+        const [configRes, sessionsList] = await Promise.all([
+          api.getConfig().catch(() => ({ demoMode: false })),
+          api.getSessions().catch(() => [])
+        ]);
+
+        if (!active) return;
+        const isDemo = Boolean(configRes?.demoMode);
+        setDemoMode(isDemo);
+
+        const currentUserId = currentUser?.id;
+        const now = Date.now();
+
+        // CASE A: /live-room with no sessionId, or sidebar click
+        if (!sessionId) {
+          if (!currentUserId || !Array.isArray(sessionsList) || sessionsList.length === 0) {
+            setSessionState('empty');
+            return;
           }
+
+          // Filter sessions where current user is participant
+          const mySessions = sessionsList.filter((s: any) => {
+            if (!s || (s.status !== 'confirmed' && s.status !== 'live')) return false;
+            const isT = s.teacherId === currentUserId || s.teacher?.id === currentUserId;
+            const isS = s.studentId === currentUserId || s.student?.id === currentUserId ||
+              (Array.isArray(s.students) && s.students.some((st: any) => (st.id || st) === currentUserId));
+            return isT || isS;
+          });
+
+          // Check if any session is in its join window right now
+          const joinable = mySessions.find((s: any) => {
+            const isT = s.teacherId === currentUserId || s.teacher?.id === currentUserId;
+            const rawDate = s.scheduledAt || s.date || s.time;
+            if (!rawDate) return false;
+            const start = new Date(rawDate).getTime();
+            if (isNaN(start)) return false;
+            const dur = (s.durationMin || s.duration || 60) * 60 * 1000;
+            const grace = 15 * 60 * 1000;
+            const ended = now > start + dur + grace;
+            if (ended) return false;
+            if (isT) return true;
+            return now >= start - 10 * 60 * 1000;
+          });
+
+          if (joinable) {
+            navigate(`/live-room/${joinable.id}`, { replace: true });
+            return;
+          }
+
+          // Check upcoming sessions (not ended)
+          const upcoming = mySessions.filter((s: any) => {
+            const rawDate = s.scheduledAt || s.date || s.time;
+            if (!rawDate) return false;
+            const start = new Date(rawDate).getTime();
+            if (isNaN(start)) return false;
+            const dur = (s.durationMin || s.duration || 60) * 60 * 1000;
+            const grace = 15 * 60 * 1000;
+            return now < start + dur + grace;
+          });
+
+          if (upcoming.length > 1) {
+            setUpcomingSessions(upcoming);
+            setSessionState('picker');
+          } else if (upcoming.length === 1) {
+            navigate(`/live-room/${upcoming[0].id}`, { replace: true });
+          } else {
+            setSessionState('empty');
+          }
+          return;
         }
-      }).catch(console.error);
-    }
-  }, [sessionId]);
+
+        // CASE B: Practice / Device Check room
+        if (sessionId === 'practice') {
+          if (!isDemo) {
+            window.dispatchEvent(new CustomEvent('app-toast', {
+              detail: { type: 'reminder', title: 'No lecture scheduled', body: 'Practice room is only available in demo mode.' }
+            }));
+            navigate('/schedule', { replace: true });
+            return;
+          }
+
+          setCurrentSession({
+            id: 'practice',
+            title: 'Practice Room (Device Check)',
+            status: 'confirmed',
+            scheduledAt: new Date().toISOString()
+          });
+          setSessionState('lobby');
+          return;
+        }
+
+        // CASE C: Specific Session ID
+        const target = Array.isArray(sessionsList) ? sessionsList.find((s: any) => s.id === sessionId || s.meetingLink === `/live/${sessionId}` || s.meetingLink === `/live-room/${sessionId}` || s.meetingLink === sessionId) : null;
+
+        if (!target) {
+          window.dispatchEvent(new CustomEvent('app-toast', {
+            detail: { type: 'reminder', title: 'No lecture scheduled', body: 'The requested lecture session was not found.' }
+          }));
+          navigate('/schedule', { replace: true });
+          return;
+        }
+
+        setCurrentSession(target);
+        if (target.studyNotes) {
+          setNotes(target.studyNotes);
+        }
+
+        // Participant check
+        const isT = target.teacherId === currentUserId || target.teacher?.id === currentUserId;
+        const isS = target.studentId === currentUserId || target.student?.id === currentUserId ||
+          (Array.isArray(target.students) && target.students.some((st: any) => (st.id || st) === currentUserId));
+        const isAdmin = currentUser?.role === 'admin';
+
+        if (!isT && !isS && !isAdmin) {
+          setSessionState('no-access');
+          return;
+        }
+
+        // Status checks
+        if (target.status === 'pending') {
+          setSessionState('pending');
+          return;
+        }
+        if (target.status === 'declined' || target.status === 'cancelled' || target.status === 'expired') {
+          setSessionState(target.status as SessionAccessState);
+          return;
+        }
+        if (target.status === 'completed') {
+          setSessionState('completed');
+          return;
+        }
+
+        if (target.status === 'confirmed' || target.status === 'live') {
+          const rawDate = target.scheduledAt || target.date || target.time;
+          const start = new Date(rawDate).getTime();
+          const dur = (target.durationMin || target.duration || 60) * 60 * 1000;
+          const grace = 15 * 60 * 1000;
+
+          if (!isNaN(start)) {
+            const hasEnded = now > start + dur + grace;
+            if (hasEnded) {
+              setSessionState('ended');
+              return;
+            }
+
+            const isEarly = now < start - 10 * 60 * 1000;
+            if (!isT && !isAdmin && isEarly) {
+              setSessionState('confirmed-early');
+              return;
+            }
+          }
+
+          // Inside join window (or teacher before start)
+          setSessionState('lobby');
+        } else {
+          setSessionState('no-access');
+        }
+      } catch (err) {
+        console.error('Error verifying session:', err);
+        setSessionState('empty');
+      }
+    };
+
+    resolveSessionAccess();
+
+    return () => { active = false; };
+  }, [sessionId, currentUser?.id, navigate]);
 
   // Auto-save study notes to session history
   useEffect(() => {
@@ -723,8 +893,92 @@ export function LiveRoom() {
     }
   };
 
+  // Pre-join Lobby media initialization (camera & microphone device access)
   useEffect(() => {
+    if (sessionState !== 'lobby') return;
     let disposed = false;
+
+    const initMedia = async () => {
+      let videoTrack: MediaStreamTrack | null = null;
+      let audioTrack: MediaStreamTrack | null = null;
+      let physicalCam = false;
+      let physicalMic = false;
+
+      const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
+
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        try {
+          const combined = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioConstraints });
+          videoTrack = combined.getVideoTracks()[0] || null;
+          audioTrack = combined.getAudioTracks()[0] || null;
+          if (videoTrack) physicalCam = true;
+          if (audioTrack) physicalMic = true;
+        } catch {
+          try {
+            const vStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+            videoTrack = vStream.getVideoTracks()[0] || null;
+            if (videoTrack) physicalCam = true;
+          } catch (e) {
+            console.warn('Physical camera unavailable:', e);
+          }
+
+          try {
+            const aStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: audioConstraints });
+            audioTrack = aStream.getAudioTracks()[0] || null;
+            if (audioTrack) physicalMic = true;
+          } catch (e) {
+            console.warn('Physical microphone unavailable:', e);
+          }
+        }
+      }
+
+      if (!videoTrack) {
+        const syntheticVStream = createSyntheticVideoStream(userName);
+        videoTrack = syntheticVStream.getVideoTracks()[0] || null;
+      }
+
+      if (!audioTrack) {
+        audioTrack = createSyntheticAudioTrack();
+      }
+
+      const stream = new MediaStream();
+      if (videoTrack) {
+        stream.addTrack(videoTrack);
+        cameraTrackRef.current = videoTrack;
+      }
+      if (audioTrack) {
+        stream.addTrack(audioTrack);
+        micTrackRef.current = audioTrack;
+      }
+
+      if (disposed) {
+        stream.getTracks().forEach(t => t.stop());
+        return;
+      }
+
+      localStreamRef.current = stream;
+      setLocalStream(stream);
+      setHardwareInfo({ cam: physicalCam, mic: physicalMic });
+
+      if (localVideo.current) {
+        localVideo.current.srcObject = stream;
+        localVideo.current.play().catch(() => undefined);
+      }
+
+      await loadDevices();
+    };
+
+    initMedia();
+
+    return () => {
+      disposed = true;
+    };
+  }, [sessionState, userName, loadDevices]);
+
+  // Main Classroom Signaling & Mesh Peer Connection Effect
+  useEffect(() => {
+    // Only connect socket when user has passed lobby verification and joined room
+    if (!isLobbyJoined || sessionState !== 'lobby') return;
 
     // 1. BroadcastChannel for instant local multi-tab testing
     const channel = new BroadcastChannel(`mindroot-room-${roomId}`);
@@ -950,6 +1204,32 @@ export function LiveRoom() {
       setNotice('Connected to cohort studio signaling server.');
     });
 
+    socket.on('room-error', (err: any) => {
+      console.error('Room access error from server:', err);
+      if (err?.code === 'SESSION_NOT_FOUND') {
+        window.dispatchEvent(new CustomEvent('app-toast', {
+          detail: { type: 'reminder', title: 'No lecture scheduled', body: err.error || 'Session not found.' }
+        }));
+        navigate('/schedule', { replace: true });
+      } else if (err?.code === 'NOT_PARTICIPANT') {
+        setSessionState('no-access');
+        setIsLobbyJoined(false);
+      } else if (err?.code === 'TOO_EARLY') {
+        setSessionState('confirmed-early');
+        setIsLobbyJoined(false);
+      } else if (err?.code === 'SESSION_ENDED') {
+        setSessionState('ended');
+        setIsLobbyJoined(false);
+      } else if (err?.code === 'DEMO_ONLY') {
+        window.dispatchEvent(new CustomEvent('app-toast', {
+          detail: { type: 'reminder', title: 'Demo Only', body: err.error || 'Practice room is only available in demo mode.' }
+        }));
+        navigate('/schedule', { replace: true });
+      } else {
+        setNotice(err?.error || 'Classroom access error');
+      }
+    });
+
     socket.on('room-participants', (d) => handleSignalData({ type: 'room-participants', ...d }));
     socket.on('peer-joined', (d) => handleSignalData({ type: 'peer-joined', ...d }));
     socket.on('sdp-offer', (d) => handleSignalData({ type: 'sdp-offer', ...d }));
@@ -991,80 +1271,8 @@ export function LiveRoom() {
     // Announce join to other open tabs / peers
     broadcastSignal('join-room', {});
 
-    // Media stream acquisition with robust dual video+audio fallback
-    const startMedia = async () => {
-      let videoTrack: MediaStreamTrack | null = null;
-      let audioTrack: MediaStreamTrack | null = null;
-      let physicalCam = false;
-      let physicalMic = false;
-
-      const audioConstraints = { echoCancellation: true, noiseSuppression: true, autoGainControl: true };
-
-      // 1. Try to get physical hardware
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        try {
-          const combined = await navigator.mediaDevices.getUserMedia({ video: true, audio: audioConstraints });
-          videoTrack = combined.getVideoTracks()[0] || null;
-          audioTrack = combined.getAudioTracks()[0] || null;
-          if (videoTrack) physicalCam = true;
-          if (audioTrack) physicalMic = true;
-        } catch {
-          try {
-            const vStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            videoTrack = vStream.getVideoTracks()[0] || null;
-            if (videoTrack) physicalCam = true;
-          } catch (e) {
-            console.warn('Physical camera unavailable:', e);
-          }
-
-          try {
-            const aStream = await navigator.mediaDevices.getUserMedia({ video: false, audio: audioConstraints });
-            audioTrack = aStream.getAudioTracks()[0] || null;
-            if (audioTrack) physicalMic = true;
-          } catch (e) {
-            console.warn('Physical microphone unavailable:', e);
-          }
-        }
-      }
-
-      // 2. Guarantee Video Track exists
-      if (!videoTrack) {
-        const syntheticVStream = createSyntheticVideoStream(userName);
-        videoTrack = syntheticVStream.getVideoTracks()[0] || null;
-      }
-
-      // 3. Guarantee Audio Track exists
-      if (!audioTrack) {
-        audioTrack = createSyntheticAudioTrack();
-      }
-
-      const stream = new MediaStream();
-      if (videoTrack) {
-        stream.addTrack(videoTrack);
-        cameraTrackRef.current = videoTrack;
-      }
-      if (audioTrack) {
-        stream.addTrack(audioTrack);
-        micTrackRef.current = audioTrack;
-      }
-
-      if (disposed) {
-        stream.getTracks().forEach(t => t.stop());
-        return;
-      }
-
-      localStreamRef.current = stream;
-      setLocalStream(stream);
-      setHardwareInfo({ cam: physicalCam, mic: physicalMic });
-
-      if (localVideo.current) {
-        localVideo.current.srcObject = stream;
-        localVideo.current.play().catch(() => undefined);
-      }
-
-      await loadDevices();
-
-      // Sync tracks to all active mesh peers and renegotiate if already stable
+    // Sync existing local tracks to all active mesh peers
+    if (localStreamRef.current) {
       peersRef.current.forEach(async (peer, remoteId) => {
         syncLocalTracksToPeer(peer);
         if (peer.signalingState === 'stable') {
@@ -1078,9 +1286,7 @@ export function LiveRoom() {
           } catch {}
         }
       });
-    };
-
-    startMedia();
+    }
 
     // Auto-recovery mesh interval: check and restart failed ICE connections
     const recoveryInterval = setInterval(() => {
@@ -1094,7 +1300,6 @@ export function LiveRoom() {
     }, 4000);
 
     return () => {
-      disposed = true;
       clearInterval(recoveryInterval);
       channel.close();
       socket.emit('leave-room', { roomId, senderId: peerId.current });
@@ -1105,7 +1310,7 @@ export function LiveRoom() {
       localStreamRef.current?.getTracks().forEach(track => track.stop());
       displayStreamRef.current?.getTracks().forEach(track => track.stop());
     };
-  }, [addMessage, drawLine, getOrCreatePeerConnection, roomId, loadDevices, broadcastSignal, userName, syncLocalTracksToPeer]);
+  }, [addMessage, drawLine, getOrCreatePeerConnection, roomId, loadDevices, broadcastSignal, userName, syncLocalTracksToPeer, isLobbyJoined, sessionState, navigate, userRole]);
 
   useEffect(() => {
     if (localStreamRef.current) {
@@ -1530,6 +1735,135 @@ export function LiveRoom() {
     setIsHalfscreenWorkspace(prev => !prev);
   };
 
+  if (sessionState === 'loading') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-120px)] p-6 select-none">
+        <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-4 animate-spin">
+          <span className="material-symbols-outlined text-3xl">sync</span>
+        </div>
+        <p className="text-sm font-bold text-on-surface-variant">Checking lecture access...</p>
+      </div>
+    );
+  }
+
+  if (sessionState === 'empty') {
+    return <NoLectureScheduled demoMode={demoMode} />;
+  }
+
+  if (sessionState === 'picker') {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[calc(100vh-120px)] p-6 select-none">
+        <div className="w-full max-w-2xl bg-surface border border-outline-variant rounded-3xl p-8 shadow-elevation-2">
+          <div className="flex items-center gap-3 mb-6">
+            <div className="w-12 h-12 rounded-2xl bg-primary-container text-primary flex items-center justify-center shadow-elevation-1">
+              <span className="material-symbols-outlined text-2xl">event_upcoming</span>
+            </div>
+            <div>
+              <h1 className="text-xl font-black text-on-surface">Upcoming Lectures</h1>
+              <p className="text-xs text-on-surface-variant font-bold">You have multiple scheduled sessions. Choose one to enter:</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            {upcomingSessions.map((s: any) => {
+              const start = new Date(s.scheduledAt || s.date || s.time);
+              const formattedTime = isNaN(start.getTime()) ? 'Scheduled' : start.toLocaleString([], {
+                weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit'
+              });
+              const isTeacher = s.teacherId === currentUser?.id || s.teacher?.id === currentUser?.id;
+
+              return (
+                <div
+                  key={s.id}
+                  className="p-4 rounded-2xl border border-outline-variant bg-surface-container hover:border-primary/40 transition-all flex items-center justify-between gap-4"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-primary/10 text-primary border border-primary/20">
+                        {isTeacher ? 'Host / Mentor' : 'Student'}
+                      </span>
+                      <span className="text-xs font-bold text-on-surface-variant flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px]">schedule</span>
+                        {formattedTime}
+                      </span>
+                    </div>
+                    <h3 className="font-bold text-sm text-on-surface truncate">{s.title || 'Live Mentoring Session'}</h3>
+                    <p className="text-xs text-on-surface-variant truncate">
+                      {isTeacher ? `Student: ${s.student?.name || 'Classmate'}` : `Mentor: ${s.teacher?.name || 'Instructor'}`}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => navigate(`/live-room/${s.id}`)}
+                    className="px-4 py-2 bg-primary text-on-primary rounded-xl font-bold text-xs shadow-elevation-1 hover:brightness-110 shrink-0 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Enter Session</span>
+                    <span className="material-symbols-outlined text-sm">arrow_forward</span>
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="mt-6 pt-6 border-t border-outline-variant flex items-center justify-between">
+            <button
+              onClick={() => navigate('/schedule')}
+              className="px-4 py-2 rounded-xl text-xs font-bold text-on-surface-variant hover:bg-surface-container-high transition-all cursor-pointer"
+            >
+              Back to Schedule
+            </button>
+            {demoMode && (
+              <button
+                onClick={() => navigate('/live-room/practice')}
+                className="px-4 py-2 rounded-xl text-xs font-bold text-amber-500 hover:bg-amber-500/10 border border-amber-500/20 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-sm">handyman</span>
+                <span>Open Practice Room</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (sessionState && sessionState !== 'lobby') {
+    return (
+      <PreSessionState
+        state={sessionState}
+        session={currentSession}
+        userRole={userRole}
+        onJoinLobby={() => {
+          setSessionState('lobby');
+        }}
+      />
+    );
+  }
+
+  if (sessionState === 'lobby' && !isLobbyJoined) {
+    return (
+      <PreJoinLobby
+        session={currentSession}
+        isPractice={roomId === 'practice'}
+        userRole={userRole}
+        userName={userName}
+        micOn={micOn}
+        setMicOn={setMicOn}
+        cameraOn={cameraOn}
+        setCameraOn={setCameraOn}
+        selectedAudioDevice={selectedAudioId}
+        setSelectedAudioDevice={setSelectedAudioId}
+        selectedVideoDevice={selectedVideoId}
+        setSelectedVideoDevice={setSelectedVideoId}
+        audioDevices={audioDevices}
+        videoDevices={videoDevices}
+        localStream={localStream}
+        onJoin={() => {
+          setIsLobbyJoined(true);
+        }}
+      />
+    );
+  }
+
   const totalParticipantsCount = 1 + remoteParticipants.length;
   const batchCapacity = currentSession?.maxCapacity || 3;
   const maxVideoPeers = 3; // 3 remote + 1 local = 4 total video tiles max
@@ -1570,11 +1904,17 @@ export function LiveRoom() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h1 className="text-xs sm:text-sm font-black text-on-surface truncate">
-                  {currentSession?.title || (batchCapacity > 1 ? `${batchCapacity}-Student Batch Studio` : 'Live Mentoring Studio')}
+                  {roomId === 'practice' ? 'Practice Room (Device Check)' : (currentSession?.title || (batchCapacity > 1 ? `${batchCapacity}-Student Batch Studio` : 'Live Mentoring Studio'))}
                 </h1>
-                <span className="px-2 py-0.5 bg-primary-container text-on-primary-container border border-primary/20 rounded-full text-[10px] font-black uppercase shrink-0">
-                  {batchCapacity > 1 ? `${batchCapacity}-Student Batch` : '1-on-1'}
-                </span>
+                {roomId === 'practice' ? (
+                  <span className="px-2 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-full text-[10px] font-black uppercase shrink-0">
+                    Practice Room
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 bg-primary-container text-on-primary-container border border-primary/20 rounded-full text-[10px] font-black uppercase shrink-0">
+                    {batchCapacity > 1 ? `${batchCapacity}-Student Batch` : '1-on-1'}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-0.5">
                 <p className="text-[11px] text-on-surface-variant font-bold truncate">

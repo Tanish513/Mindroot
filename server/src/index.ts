@@ -1347,6 +1347,70 @@ export function resolveSessionRole(session: any, userId?: string, clientDeclared
   return 'observer';
 }
 
+export const JOIN_WINDOW_MINUTES = Number(process.env.JOIN_WINDOW_MINUTES || 10);
+export const GRACE_MINUTES = Number(process.env.SESSION_GRACE_MINUTES || 15);
+
+export interface SessionJoinWindow {
+  startTime: number;
+  endTime: number;
+  endTimeWithGrace: number;
+  joinOpenTime: number;
+  isEarlyForStudent: boolean;
+  hasEnded: boolean;
+  canStudentJoin: boolean;
+  canTeacherJoin: boolean;
+}
+
+export function getSessionJoinWindow(
+  session: any,
+  now: Date | number = new Date(),
+  joinWindowMinutes = JOIN_WINDOW_MINUTES,
+  graceMinutes = GRACE_MINUTES
+): SessionJoinWindow | null {
+  if (!session) return null;
+  const rawDate = session.scheduledAt || session.date || session.time;
+  if (!rawDate) return null;
+  const startTime = new Date(rawDate).getTime();
+  if (isNaN(startTime)) return null;
+
+  const durationMin = Number(session.durationMin || session.duration || 60);
+  const endTime = startTime + durationMin * 60 * 1000;
+  const endTimeWithGrace = endTime + graceMinutes * 60 * 1000;
+  const joinOpenTime = startTime - joinWindowMinutes * 60 * 1000;
+
+  const nowMs = typeof now === 'number' ? now : now.getTime();
+  const isEarlyForStudent = nowMs < joinOpenTime;
+  const hasEnded = nowMs > endTimeWithGrace;
+
+  return {
+    startTime,
+    endTime,
+    endTimeWithGrace,
+    joinOpenTime,
+    isEarlyForStudent,
+    hasEnded,
+    canStudentJoin: !isEarlyForStudent && !hasEnded,
+    canTeacherJoin: !hasEnded
+  };
+}
+
+export function shouldSendJoinReminder(
+  session: any,
+  now: Date | number = new Date(),
+  reminderWindowMs = 30 * 60 * 1000
+): boolean {
+  if (!session || session.status !== 'confirmed' || session.reminderEmailSent) {
+    return false;
+  }
+  const window = getSessionJoinWindow(session, now);
+  if (!window) return false;
+  if (window.hasEnded) return false;
+
+  const nowMs = typeof now === 'number' ? now : now.getTime();
+  const diff = window.startTime - nowMs;
+  return diff > -10 * 60 * 1000 && diff <= reminderWindowMs;
+}
+
 function checkAndExpirePendingSessions() {
   const now = Date.now();
   let changed = false;
@@ -1480,69 +1544,59 @@ io.on('connection', (socket) => {
     const roomId = typeof data === 'string' ? data : data?.roomId;
     const senderId = typeof data === 'object' ? (data.senderId || socket.id) : socket.id;
     const userName = typeof data === 'object' ? data.userName : undefined;
-    const userRole = typeof data === 'object' ? data.userRole : undefined;
     const callerId = (socket as any).userId || (typeof data === 'object' ? data.userId : null);
 
-    if (roomId) {
-      // Membership validation for session rooms
-      const targetSession = inMemorySessions.find(s => s.id === roomId || s.meetingLink === `/live/${roomId}` || s.meetingLink === roomId);
-      if (targetSession && !DEMO_MODE) {
-        const isParticipant = (
-          (socket as any).userRole === 'admin' ||
-          targetSession.teacherId === callerId ||
-          targetSession.teacher?.id === callerId ||
-          targetSession.studentId === callerId ||
-          targetSession.student?.id === callerId ||
-          (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === callerId))
-        );
-        if (!isParticipant && callerId) {
-          socket.emit('room-error', { error: 'Unauthorized: You are not an enrolled participant of this session.' });
-          return;
-        }
+    if (!roomId) {
+      socket.emit('room-error', { error: 'Session not found.', code: 'SESSION_NOT_FOUND' });
+      return;
+    }
+
+    // 9. Practice / Device Check room: id "practice", allowed only when demoMode === true
+    if (roomId === 'practice') {
+      const isDemoModeActive = process.env.DEMO_MODE === 'true';
+      if (!isDemoModeActive) {
+        socket.emit('room-error', { 
+          error: 'Practice room is only allowed in demo mode.', 
+          code: 'DEMO_ONLY' 
+        });
+        return;
       }
 
-      socket.join(roomId);
-
-      if (!liveRoomRegistry.has(roomId)) {
-        liveRoomRegistry.set(roomId, new Map());
+      socket.join('practice');
+      if (!liveRoomRegistry.has('practice')) {
+        liveRoomRegistry.set('practice', new Map());
       }
-      const roomMap = liveRoomRegistry.get(roomId)!;
-
-      // Existing participants in this room before newcomer
+      const roomMap = liveRoomRegistry.get('practice')!;
       const existingParticipants = Array.from(roomMap.values()).filter(p => p.socketId !== socket.id && p.peerId !== senderId);
+      const practiceRole = (socket as any).userRole || (typeof data === 'object' ? data.userRole : 'student') || 'student';
 
-      // Derive authenticated role on server to prevent client role spoofing
-      const serverRole = targetSession ? resolveSessionRole(targetSession, callerId, userRole) : (userRole || 'student');
-
-      // Register current participant
       roomMap.set(socket.id, {
         socketId: socket.id,
         peerId: senderId,
-        userName: userName || 'Peer',
-        userRole: serverRole
+        userName: userName || 'Practice Peer',
+        userRole: practiceRole
       });
 
-      console.log(`🏠 Socket ${socket.id} (user: ${userName || senderId}, server-stamped role: ${serverRole}) joined room ${roomId}. Total in room: ${roomMap.size}`);
-
-      // 1. Send existing participants to newcomer so newcomer can initiate peer connections
       socket.emit('room-participants', {
-        roomId,
+        roomId: 'practice',
+        isPractice: true,
+        roomLabel: 'Practice Room',
         participants: existingParticipants
       });
 
-      // 2. Broadcast to all existing peers in the room that a newcomer joined
-      socket.to(roomId).emit('peer-joined', {
-        roomId,
+      socket.to('practice').emit('peer-joined', {
+        roomId: 'practice',
         senderId,
-        userName,
-        userRole: serverRole,
+        userName: userName || 'Practice Peer',
+        userRole: practiceRole,
         socketId: socket.id
       });
 
-      // 3. Emit full synchronized room state to newcomer for instant state recovery (host drop/refresh/late join)
-      const roomState = getOrCreateRoomState(roomId);
+      const roomState = getOrCreateRoomState('practice');
       socket.emit('room-state-sync', {
-        roomId,
+        roomId: 'practice',
+        isPractice: true,
+        roomLabel: 'Practice Room',
         workspace: roomState.workspace,
         notes: roomState.notes,
         code: roomState.code,
@@ -1552,7 +1606,124 @@ io.on('connection', (socket) => {
         whiteboardElements: roomState.whiteboardElements,
         chatMessages: roomState.chatMessages
       });
+      return;
     }
+
+    // Load the session
+    const targetSession = inMemorySessions.find(s => 
+      s.id === roomId || 
+      s.meetingLink === `/live/${roomId}` || 
+      s.meetingLink === `/live-room/${roomId}` || 
+      s.meetingLink === `/classroom/${roomId}` ||
+      s.meetingLink === `/room/${roomId}` || 
+      s.meetingLink === roomId
+    );
+
+    if (!targetSession) {
+      socket.emit('room-error', { error: 'Session not found.', code: 'SESSION_NOT_FOUND' });
+      return;
+    }
+
+    // Membership validation: must be teacher or enrolled student (or admin)
+    const isTeacher = (
+      (targetSession.teacherId && targetSession.teacherId === callerId) ||
+      (targetSession.teacher?.id && targetSession.teacher.id === callerId)
+    );
+    const isStudent = (
+      (targetSession.studentId && targetSession.studentId === callerId) ||
+      (targetSession.student?.id && targetSession.student.id === callerId) ||
+      (Array.isArray(targetSession.students) && targetSession.students.some((st: any) => (st.id || st) === callerId))
+    );
+    const isAdmin = (socket as any).userRole === 'admin';
+
+    if (!isTeacher && !isStudent && !isAdmin) {
+      socket.emit('room-error', { 
+        error: 'Unauthorized: You are not an enrolled participant of this session.', 
+        code: 'NOT_PARTICIPANT' 
+      });
+      return;
+    }
+
+    // Status check: must be confirmed or live
+    if (targetSession.status !== 'confirmed' && targetSession.status !== 'live') {
+      socket.emit('room-error', { 
+        error: 'Session is not confirmed or live.', 
+        code: 'SESSION_NOT_CONFIRMED' 
+      });
+      return;
+    }
+
+    // Window timing check
+    const joinWindow = getSessionJoinWindow(targetSession, new Date());
+    if (!joinWindow) {
+      socket.emit('room-error', { error: 'Session schedule invalid.', code: 'SESSION_NOT_FOUND' });
+      return;
+    }
+
+    if (joinWindow.hasEnded) {
+      socket.emit('room-error', { 
+        error: 'Session has already ended.', 
+        code: 'SESSION_ENDED' 
+      });
+      return;
+    }
+
+    // Teacher exempt from early limit; student cannot join before window
+    if (!isTeacher && !isAdmin && joinWindow.isEarlyForStudent) {
+      socket.emit('room-error', { 
+        error: `Session has not started yet. Students may join up to ${JOIN_WINDOW_MINUTES} minutes before start.`, 
+        code: 'TOO_EARLY', 
+        startsAt: targetSession.scheduledAt 
+      });
+      return;
+    }
+
+    // All validation passed: join room
+    socket.join(roomId);
+
+    if (!liveRoomRegistry.has(roomId)) {
+      liveRoomRegistry.set(roomId, new Map());
+    }
+    const roomMap = liveRoomRegistry.get(roomId)!;
+    const existingParticipants = Array.from(roomMap.values()).filter(p => p.socketId !== socket.id && p.peerId !== senderId);
+
+    // Derive server-authenticated role to ignore client-supplied role or session data
+    const serverRole = resolveSessionRole(targetSession, callerId, undefined);
+
+    roomMap.set(socket.id, {
+      socketId: socket.id,
+      peerId: senderId,
+      userName: userName || (isTeacher ? targetSession.teacher?.name : targetSession.student?.name) || 'Peer',
+      userRole: serverRole
+    });
+
+    console.log(`🏠 Socket ${socket.id} (user: ${userName || senderId}, server-stamped role: ${serverRole}) joined room ${roomId}. Total in room: ${roomMap.size}`);
+
+    socket.emit('room-participants', {
+      roomId,
+      participants: existingParticipants
+    });
+
+    socket.to(roomId).emit('peer-joined', {
+      roomId,
+      senderId,
+      userName: userName || 'Peer',
+      userRole: serverRole,
+      socketId: socket.id
+    });
+
+    const roomState = getOrCreateRoomState(roomId);
+    socket.emit('room-state-sync', {
+      roomId,
+      workspace: roomState.workspace,
+      notes: roomState.notes,
+      code: roomState.code,
+      codeLanguage: roomState.codeLanguage,
+      canvasDataUrl: roomState.canvasDataUrl,
+      isFullscreen: roomState.isFullscreen,
+      whiteboardElements: roomState.whiteboardElements,
+      chatMessages: roomState.chatMessages
+    });
   });
 
   const validateRoomMember = (roomId?: string): boolean => {
@@ -6707,18 +6878,9 @@ const sessionReminderInterval = setInterval(async () => {
   try {
     const now = Date.now();
     for (const s of inMemorySessions) {
-      if (s.status !== 'confirmed') continue;
-      if (s.reminderEmailSent) continue;
-      if (!s.scheduledAt) continue;
-
-      const startTime = new Date(s.scheduledAt).getTime();
-      if (isNaN(startTime)) continue;
-
-      const diff = startTime - now;
-      // Trigger if session starts in <= 30 mins and is not in the deep past (> -10 mins)
-      if (diff > -10 * 60 * 1000 && diff <= REMINDER_WINDOW_MS) {
-        s.reminderEmailSent = true;
-        saveDb();
+      if (!shouldSendJoinReminder(s, now, REMINDER_WINDOW_MS)) continue;
+      s.reminderEmailSent = true;
+      saveDb();
 
         const teacherObj = inMemoryUsers.find(u => u.id === s.teacherId) || s.teacher;
         const studentObj = inMemoryUsers.find(u => u.id === s.studentId) || s.student;
@@ -6768,7 +6930,6 @@ const sessionReminderInterval = setInterval(async () => {
             peerName: studentObj?.name || (Array.isArray(s.students) && s.students.length > 0 ? `${s.students.length} Learners` : 'Student')
           }).catch(err => logger.error({ err, sessionId: s.id }, 'Error sending teacher reminder email'));
         }
-      }
     }
   } catch (err) {
     logger.error({ err }, 'Error in automated session reminder background worker');
@@ -6848,5 +7009,6 @@ export {
   maskVpa,
   recordPayoutAuditLog,
   saveDb,
-  syncWithDatabasePromise
+  syncWithDatabasePromise,
+  DEMO_MODE
 };

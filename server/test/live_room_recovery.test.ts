@@ -60,6 +60,15 @@ async function runLiveRoomRecoveryTests() {
     });
 
     const testRoom = 'room-recovery-test-' + Date.now();
+    inMemorySessions.push({
+      id: testRoom,
+      title: 'Live Room Recovery Test',
+      status: 'confirmed',
+      teacherId: 'live-host-1',
+      studentId: 'live-peer-1',
+      scheduledAt: new Date(Date.now() + 5 * 60 * 1000).toISOString(),
+      duration: 60
+    });
     hostSocket.emit('join-room', { roomId: testRoom, role: 'teacher', name: 'Host Teacher' });
 
     // Wait a brief moment for join
