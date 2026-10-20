@@ -39,6 +39,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         else if (key === 'm') { e.preventDefault(); navigate('/marketplace'); }
         else if (key === 'f') { e.preventDefault(); navigate('/match-finder'); }
         else if (key === 's') { e.preventDefault(); navigate('/schedule'); }
+        else if (key === 'n') { e.preventDefault(); navigate('/notes'); }
         else if (key === 'e') { e.preventDefault(); navigate('/messages'); }
         else if (key === 'w') { e.preventDefault(); navigate('/wallet'); }
         else if (key === 't') { e.preventDefault(); navigate('/teacher'); }

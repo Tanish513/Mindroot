@@ -258,12 +258,12 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   };
 
   return (
-    <header className="h-[64px] flex items-center justify-between px-4 md:px-8 w-full bg-surface border-b border-outline-variant shadow-elevation-1 z-40 shrink-0 select-none">
+    <header className="h-[64px] flex items-center justify-between px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
       <div className="flex items-center gap-4 flex-1">
         <button 
           onClick={onOpenMobileMenu}
           aria-label="Open navigation menu"
-          className="md:hidden text-on-surface-variant hover:text-on-surface p-2 rounded-xl hover:bg-surface-container transition-colors"
+          className="md:hidden text-text hover:text-text p-2 rounded-xl hover:bg-surface transition-colors"
           title="Open Menu"
         >
           <span className="material-symbols-outlined">menu</span>
@@ -272,10 +272,10 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         {/* Global Spotlight Search Input & Dropdown */}
         <div ref={searchContainerRef} className="relative w-full max-w-xs sm:max-w-sm md:max-w-md">
           <form onSubmit={handleSearchSubmit} className="relative">
-            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-sm">search</span>
+            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm">search</span>
             <input 
               ref={searchInputRef}
-              className="w-full pl-9 pr-16 py-2 bg-surface-container hover:bg-surface-container-high border border-outline-variant rounded-xl text-xs font-medium text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary focus:bg-surface transition-all" 
+              className="w-full pl-9 pr-16 py-2 bg-surface hover:bg-surface border border-border rounded-xl text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all" 
               placeholder="Search skills, peers, sessions..." 
               type="text" 
               value={searchQuery}
@@ -289,13 +289,13 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   setSearchQuery('');
                   searchInputRef.current?.focus();
                 }}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-on-surface-variant hover:text-on-surface rounded-full"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-muted hover:text-text rounded-full"
                 title="Clear Search"
               >
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             ) : (
-              <span className="hidden sm:inline-flex items-center gap-0.5 absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-on-surface-variant bg-surface border border-outline-variant rounded shadow-xs pointer-events-none">
+              <span className="hidden sm:inline-flex items-center gap-0.5 absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-muted bg-surface-2 border border-border rounded pointer-events-none">
                 ⌘K
               </span>
             )}
@@ -303,19 +303,19 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
 
           {/* Spotlight Search Results Dropdown */}
           {isSearchFocused && (
-            <div className="absolute left-0 right-0 mt-2 bg-surface border border-outline-variant rounded-2xl shadow-elevation-3 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[460px] overflow-y-auto custom-scrollbar">
+            <div className="absolute left-0 right-0 mt-2 bg-surface border border-border rounded-2xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[460px] overflow-y-auto custom-scrollbar">
               {query && !hasAnyResults ? (
-                <div className="p-6 text-center text-on-surface-variant text-xs">
-                  <span className="material-symbols-outlined text-3xl text-outline mb-1">search_off</span>
-                  <p className="font-bold text-on-surface">No results found for "{searchQuery}"</p>
-                  <p className="text-[11px] text-on-surface-variant mt-1">Try searching for "React", "Python", "Maya", or "Cohort"</p>
+                <div className="p-6 text-center text-muted text-xs">
+                  <span className="material-symbols-outlined text-3xl text-muted mb-1">search_off</span>
+                  <p className="font-bold text-text">No results found for "{searchQuery}"</p>
+                  <p className="text-[11px] text-muted mt-1">Try searching for "React", "Python", "Maya", or "Cohort"</p>
                 </div>
               ) : (
                 <div className="p-2 space-y-3">
                   {/* Matching Peers / Mentors */}
                   {matchingPeers.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant px-2.5 py-1 flex items-center gap-1">
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
                         <span className="material-symbols-outlined text-xs text-primary">group</span>
                         <span>Mentors & Peers</span>
                       </div>
@@ -324,13 +324,13 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                           <div
                             key={peer.id}
                             onClick={() => handleSelectResult(`/marketplace?peer=${peer.id}`)}
-                            className="flex items-center justify-between p-2 rounded-xl hover:bg-surface-container cursor-pointer transition-colors"
+                            className="flex items-center justify-between p-2 rounded-xl hover:bg-surface-2 cursor-pointer transition-colors"
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
-                              <img src={peer.avatar || 'https://i.pravatar.cc/150?img=11'} alt={peer.name} className="w-7 h-7 rounded-full object-cover border border-outline-variant" />
+                              <img src={peer.avatar || 'https://i.pravatar.cc/150?img=11'} alt={peer.name} className="w-7 h-7 rounded-full object-cover border border-border" />
                               <div className="min-w-0">
-                                <p className="text-xs font-bold text-on-surface truncate">{peer.name}</p>
-                                <p className="text-[10px] text-on-surface-variant truncate">
+                                <p className="text-xs font-bold text-text truncate">{peer.name}</p>
+                                <p className="text-[10px] text-muted truncate">
                                   Teaches: {Array.isArray(peer.skillsTaught) ? peer.skillsTaught.join(', ') : 'Coding & Design'}
                                 </p>
                               </div>
@@ -347,8 +347,8 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   {/* Matching Skills */}
                   {matchingSkills.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant px-2.5 py-1 flex items-center gap-1">
-                        <span className="material-symbols-outlined text-xs text-teaching-emerald">school</span>
+                      <div className="text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs text-primary">school</span>
                         <span>Skills & Topics</span>
                       </div>
                       <div className="flex flex-wrap gap-1.5 px-2 mt-1">
@@ -357,7 +357,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                             key={skill}
                             type="button"
                             onClick={() => handleSelectResult(`/marketplace?skill=${encodeURIComponent(skill)}`)}
-                            className="px-2.5 py-1 bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1 hover:bg-teaching-emerald-container/80"
+                            className="px-2.5 py-1 bg-primary-tint text-primary-text border border-primary/20 rounded-lg text-xs font-bold transition-all flex items-center gap-1 hover:bg-primary-tint/80"
                           >
                             <span>{skill}</span>
                             <span className="material-symbols-outlined text-[13px]">arrow_forward</span>
@@ -370,7 +370,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   {/* Matching Sessions */}
                   {matchingSessions.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-on-surface-variant px-2.5 py-1 flex items-center gap-1">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
                         <span className="material-symbols-outlined text-xs text-primary">videocam</span>
                         <span>Live Classes & Cohorts</span>
                       </div>
@@ -379,15 +379,15 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                           <div
                             key={session.id}
                             onClick={() => handleSelectResult(`/live/${session.id}`)}
-                            className="flex items-center justify-between p-2 rounded-xl hover:bg-surface-container cursor-pointer transition-colors"
+                            className="flex items-center justify-between p-2 rounded-xl hover:bg-surface-2 cursor-pointer transition-colors"
                           >
                             <div className="min-w-0">
-                              <p className="text-xs font-semibold text-on-surface truncate">{session.title}</p>
-                              <p className="text-[10px] text-on-surface-variant">
+                              <p className="text-xs font-semibold text-text truncate">{session.title}</p>
+                              <p className="text-[10px] text-muted">
                                 {session.maxCapacity ? `${session.maxCapacity}-Student Batch` : '1-on-1'} · Teacher: {session.teacher?.name || 'Mentor'}
                               </p>
                             </div>
-                            <span className="px-2 py-0.5 bg-surface-container text-primary border border-outline-variant text-[10px] font-semibold rounded-md shrink-0">
+                            <span className="px-2 py-0.5 bg-surface-2 text-primary border border-border text-[10px] font-semibold rounded-md shrink-0">
                               Join Room
                             </span>
                           </div>
@@ -398,8 +398,8 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
 
                   {/* Quick Platform Navigation Pages */}
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-wider text-on-surface-variant px-2.5 py-1 flex items-center gap-1">
-                      <span className="material-symbols-outlined text-xs text-on-surface-variant">explore</span>
+                    <div className="text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs text-muted">explore</span>
                       <span>Quick Navigation</span>
                     </div>
                     <div className="space-y-0.5 mt-1">
@@ -407,14 +407,14 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                         <div
                           key={page.path}
                           onClick={() => handleSelectResult(page.path)}
-                          className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-surface-container cursor-pointer transition-colors"
+                          className="flex items-center gap-2.5 p-2 rounded-xl hover:bg-surface-2 cursor-pointer transition-colors"
                         >
-                          <span className="material-symbols-outlined text-base text-on-surface-variant">{page.icon}</span>
+                          <span className="material-symbols-outlined text-base text-muted">{page.icon}</span>
                           <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-on-surface">{page.label}</p>
-                            <p className="text-[10px] text-on-surface-variant truncate">{page.desc}</p>
+                            <p className="text-xs font-bold text-text">{page.label}</p>
+                            <p className="text-[10px] text-muted truncate">{page.desc}</p>
                           </div>
-                          <span className="material-symbols-outlined text-xs text-outline">chevron_right</span>
+                          <span className="material-symbols-outlined text-xs text-muted">chevron_right</span>
                         </div>
                       ))}
                     </div>
@@ -423,9 +423,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               )}
 
               {/* Dropdown Footer */}
-              <div className="p-2 border-t border-outline-variant bg-surface-container-low flex items-center justify-between text-[11px] text-on-surface-variant font-medium px-3">
-                <span>Press <strong className="font-mono text-on-surface">Enter</strong> to search all in Marketplace</span>
-                <span><strong className="font-mono text-on-surface">Esc</strong> to close</span>
+              <div className="p-2 border-t border-border bg-surface-2 flex items-center justify-between text-[11px] text-muted font-medium px-3">
+                <span>Press <strong className="font-mono text-text">Enter</strong> to search all in Marketplace</span>
+                <span><strong className="font-mono text-text">Esc</strong> to close</span>
               </div>
             </div>
           )}
@@ -434,28 +434,28 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         <Link 
           to="/wallet"
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-teaching-emerald-container hover:bg-teaching-emerald-container/80 rounded-xl border border-teaching-emerald/20 text-on-teaching-emerald-container transition-colors cursor-pointer"
+          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-primary-tint hover:bg-primary-tint/80 rounded-xl border border-primary/20 text-primary-text transition-colors cursor-pointer"
           title="Open Payments & Earnings Wallet"
         >
-          <span className="material-symbols-outlined text-teaching-emerald text-base">payments</span>
+          <span className="material-symbols-outlined text-primary-text text-base">payments</span>
           <span className="text-xs font-bold">Payments & Wallet</span>
         </Link>
         <Link 
           to="/wallet"
-          className="flex sm:hidden items-center gap-1 px-2.5 py-1 bg-teaching-emerald-container rounded-lg border border-teaching-emerald/20 text-[11px] font-bold text-on-teaching-emerald-container shrink-0"
+          className="flex sm:hidden items-center gap-1 px-2.5 py-1 bg-primary-tint hover:bg-primary-tint/80 rounded-lg border border-primary/20 text-[11px] font-bold text-primary-text shrink-0"
         >
-          <span className="material-symbols-outlined text-sm">payments</span>
+          <span className="material-symbols-outlined text-primary-text text-sm">payments</span>
           <span>Wallet</span>
         </Link>
-        <div className="hidden sm:block px-3 py-1 bg-surface-container rounded-xl border border-outline-variant">
-          <span className="text-xs font-semibold text-on-surface-variant capitalize">{role} Mode</span>
+        <div className="hidden sm:block px-3 py-1 bg-surface hover:bg-primary-tint hover:text-primary-text rounded-xl border border-border text-text transition-colors">
+          <span className="text-xs font-semibold capitalize">{role} Mode</span>
         </div>
 
         {/* 5th-Sem / Hackathon Demo Suite Dropdown */}
         <div ref={demoContainerRef} className="relative">
           <button
             onClick={() => setShowDemoMenu(prev => !prev)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-xl text-xs font-black transition-all shadow-xs"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
             title="Switch Demo Persona or Seed 1-Minute Live Demo"
           >
             <span className="material-symbols-outlined text-base">bolt</span>
@@ -464,61 +464,61 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           </button>
 
           {showDemoMenu && (
-            <div className="absolute right-0 mt-2 w-64 bg-surface border border-outline-variant rounded-2xl shadow-elevation-3 z-50 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-2 py-1 border-b border-outline-variant/60">
+            <div className="absolute right-0 mt-2 w-64 bg-surface border border-border rounded-2xl shadow-lg z-50 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-2 py-1 border-b border-border/60">
                 <p className="text-[10px] font-black uppercase tracking-wider text-primary">5th-Sem Presentation Suite</p>
-                <p className="text-[11px] text-on-surface-variant font-medium">Switch persona or seed 1-min live demo</p>
+                <p className="text-[11px] text-muted font-medium">Switch persona or seed 1-min live demo</p>
               </div>
 
               <div className="space-y-0.5">
                 <button
                   onClick={() => handleQuickSwitchRole('student')}
-                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-on-surface hover:bg-surface-container transition-colors text-left"
+                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
                 >
                   <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-base text-primary">school</span>
                     <div>
                       <p className="leading-tight">Aarav Patel</p>
-                      <p className="text-[10px] text-on-surface-variant font-normal">Student Persona</p>
+                      <p className="text-[10px] text-muted font-normal">Student Persona</p>
                     </div>
                   </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-primary/10 text-primary rounded font-mono">Learner</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-primary-tint text-primary-text rounded font-mono">Learner</span>
                 </button>
 
                 <button
                   onClick={() => handleQuickSwitchRole('teacher')}
-                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-on-surface hover:bg-surface-container transition-colors text-left"
+                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base text-teaching-emerald">workspace_premium</span>
+                    <span className="material-symbols-outlined text-base text-primary">workspace_premium</span>
                     <div>
                       <p className="leading-tight">Dr. Priya Sharma</p>
-                      <p className="text-[10px] text-on-surface-variant font-normal">Verified Mentor (Faculty ID)</p>
+                      <p className="text-[10px] text-muted font-normal">Verified Mentor (Faculty ID)</p>
                     </div>
                   </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-teaching-emerald/15 text-teaching-emerald rounded font-mono">Mentor</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-primary-tint text-primary-text rounded font-mono">Mentor</span>
                 </button>
 
                 <button
                   onClick={() => handleQuickSwitchRole('admin')}
-                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-on-surface hover:bg-surface-container transition-colors text-left"
+                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
                 >
                   <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base text-trust-purple">admin_panel_settings</span>
+                    <span className="material-symbols-outlined text-base text-muted">admin_panel_settings</span>
                     <div>
                       <p className="leading-tight">System Admin</p>
-                      <p className="text-[10px] text-on-surface-variant font-normal">Approvals & Disputes</p>
+                      <p className="text-[10px] text-muted font-normal">Approvals & Disputes</p>
                     </div>
                   </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-trust-purple/15 text-trust-purple rounded font-mono">Admin</span>
+                  <span className="text-[10px] px-1.5 py-0.5 bg-surface-2 text-muted rounded font-mono">Admin</span>
                 </button>
               </div>
 
-              <div className="pt-1 border-t border-outline-variant/60">
+              <div className="pt-1 border-t border-border/60">
                 <button
                   onClick={handleSeedDemo}
                   disabled={seedingDemo}
-                  className="w-full py-2 px-3 bg-gradient-to-r from-primary to-primary-hover text-white rounded-xl text-xs font-black shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
+                  className="w-full py-2 px-3 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
                 >
                   <span className="material-symbols-outlined text-sm">rocket_launch</span>
                   <span>{seedingDemo ? 'Seeding Demo...' : '⚡ Seed 1-Min Live Demo'}</span>
@@ -531,7 +531,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         {/* Project Specs & Architecture Button for Professor Q&A */}
         <button
           onClick={() => setShowArchitectureModal(true)}
-          className="hidden md:flex items-center gap-1 px-2.5 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant rounded-xl text-xs font-bold transition-colors"
+          className="hidden md:flex items-center gap-1 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
           title="Project Architecture & Syllabus Specs for Professor Evaluation"
         >
           <span className="material-symbols-outlined text-base">architecture</span>
@@ -541,22 +541,29 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         {/* Theme Toggle Button & Dropdown Menu */}
         <div ref={themeContainerRef} className="relative">
           <button
-            onClick={() => setShowThemeMenu(prev => !prev)}
+            onClick={() => {
+              const currentDark = document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark');
+              setTheme(currentDark ? 'light' : 'dark');
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setShowThemeMenu(prev => !prev);
+            }}
             aria-label="Toggle theme mode"
-            className="p-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-full transition-colors relative flex items-center justify-center"
-            title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)}`}
+            className="p-2 bg-transparent text-text hover:bg-surface rounded-full transition-colors relative flex items-center justify-center cursor-pointer"
+            title={`Theme: ${theme.charAt(0).toUpperCase() + theme.slice(1)} (Click to switch, right-click for options)`}
           >
-            <span className="material-symbols-outlined transition-transform duration-200">
-              {theme === 'dark' ? 'dark_mode' : theme === 'light' ? 'light_mode' : 'desktop_windows'}
+            <span className="material-symbols-outlined text-text transition-transform duration-200">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
             </span>
           </button>
 
           {showThemeMenu && (
-            <div className="absolute right-0 mt-2 w-36 bg-surface border border-outline-variant rounded-2xl shadow-elevation-3 z-50 p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="absolute right-0 mt-2 w-36 bg-surface border border-border rounded-2xl shadow z-50 p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
               <button
                 onClick={() => { setTheme('light'); setShowThemeMenu(false); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                  theme === 'light' ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  theme === 'light' ? 'bg-primary-tint text-primary-text' : 'text-muted hover:bg-surface-2 hover:text-text'
                 }`}
               >
                 <span className="material-symbols-outlined text-base">light_mode</span>
@@ -565,7 +572,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               <button
                 onClick={() => { setTheme('dark'); setShowThemeMenu(false); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                  theme === 'dark' ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  theme === 'dark' ? 'bg-primary-tint text-primary-text' : 'text-muted hover:bg-surface-2 hover:text-text'
                 }`}
               >
                 <span className="material-symbols-outlined text-base">dark_mode</span>
@@ -574,7 +581,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               <button
                 onClick={() => { setTheme('system'); setShowThemeMenu(false); }}
                 className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-                  theme === 'system' ? 'bg-primary-container text-on-primary-container' : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  theme === 'system' ? 'bg-primary-tint text-primary-text' : 'text-muted hover:bg-surface-2 hover:text-text'
                 }`}
               >
                 <span className="material-symbols-outlined text-base">desktop_windows</span>
@@ -594,24 +601,24 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               }
             }}
             aria-label="Notifications"
-            className="p-2 text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-full transition-colors relative"
+            className="p-2 bg-transparent text-text hover:bg-surface rounded-full transition-colors relative cursor-pointer"
             title="View Notifications"
           >
-            <span className="material-symbols-outlined">notifications</span>
+            <span className="material-symbols-outlined text-text">notifications</span>
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-alert-rose text-on-alert-rose rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-surface">
+              <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-surface-2">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-surface border border-outline-variant rounded-2xl shadow-elevation-3 z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="p-3.5 border-b border-outline-variant bg-surface-container-low flex items-center justify-between">
+            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-surface border border-border rounded-2xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-3.5 border-b border-border bg-surface-2 flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-bold text-on-surface">Notifications</h4>
+                  <h4 className="text-xs font-bold text-text">Notifications</h4>
                   {unreadCount > 0 && (
-                    <span className="bg-primary-container text-on-primary-container text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    <span className="bg-primary-tint text-primary-text text-[10px] font-bold px-2 py-0.5 rounded-full">
                       {unreadCount} new
                     </span>
                   )}
@@ -620,26 +627,26 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   {notifications.length > 0 && (
                     <button 
                       onClick={clearNotifications}
-                      className="text-[11px] font-semibold text-on-surface-variant hover:text-on-surface transition-colors"
+                      className="text-[11px] font-semibold text-muted hover:text-text transition-colors"
                     >
                       Clear all
                     </button>
                   )}
                   <button 
                     onClick={() => setShowNotifications(false)}
-                    className="text-on-surface-variant hover:text-on-surface p-0.5 rounded-lg"
+                    className="text-muted hover:text-text p-0.5 rounded-lg"
                   >
                     <span className="material-symbols-outlined text-base">close</span>
                   </button>
                 </div>
               </div>
 
-              <div className="max-h-80 overflow-y-auto divide-y divide-outline-variant bg-surface">
+              <div className="max-h-80 overflow-y-auto divide-y divide-border bg-surface">
                 {notifications.length === 0 ? (
-                  <div className="p-8 text-center text-on-surface-variant space-y-2">
-                    <span className="material-symbols-outlined text-3xl text-outline">notifications_off</span>
-                    <p className="text-xs font-semibold text-on-surface">No notifications yet</p>
-                    <p className="text-[11px] text-on-surface-variant">You'll receive alerts for messages & session reminders here.</p>
+                  <div className="p-8 text-center text-muted space-y-2">
+                    <span className="material-symbols-outlined text-3xl text-muted">notifications_off</span>
+                    <p className="text-xs font-semibold text-text">No notifications yet</p>
+                    <p className="text-[11px] text-muted">You'll receive alerts for messages & session reminders here.</p>
                   </div>
                 ) : (
                   notifications.map((item) => (
@@ -647,17 +654,17 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                       key={item.id}
                       to={item.link || '#'}
                       onClick={() => setShowNotifications(false)}
-                      className={`p-3.5 flex items-start gap-3 hover:bg-surface-container transition-colors ${!item.read ? 'bg-primary-container/40' : ''}`}
+                      className={`p-3.5 flex items-start gap-3 hover:bg-surface-2 transition-colors ${!item.read ? 'bg-primary-tint/30' : ''}`}
                     >
-                      <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-white ${item.type === 'reminder' ? 'bg-learning-amber' : 'bg-primary'}`}>
+                      <div className={`w-8 h-8 rounded-full shrink-0 flex items-center justify-center text-on-primary ${item.type === 'reminder' ? 'bg-accent' : 'bg-primary'}`}>
                         <span className="material-symbols-outlined text-sm">{item.type === 'reminder' ? 'alarm' : 'chat'}</span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-0.5">
-                          <h5 className="text-xs font-bold text-on-surface truncate">{item.title}</h5>
-                          <span className="text-[10px] font-medium text-on-surface-variant shrink-0">{item.time}</span>
+                          <h5 className="text-xs font-bold text-text truncate">{item.title}</h5>
+                          <span className="text-[10px] font-medium text-muted shrink-0">{item.time}</span>
                         </div>
-                        <p className="text-[11px] text-on-surface-variant font-medium line-clamp-2 leading-relaxed">{item.body}</p>
+                        <p className="text-[11px] text-muted font-medium line-clamp-2 leading-relaxed">{item.body}</p>
                       </div>
                     </Link>
                   ))
@@ -667,19 +674,19 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           )}
         </div>
 
-        <Link to="/profile" className="flex items-center gap-2.5 pl-2 border-l border-outline-variant group cursor-pointer">
+        <Link to="/profile" className="flex items-center gap-2.5 pl-2 border-l border-border group cursor-pointer">
           <div className="relative">
             <img 
               alt="User Profile"
-              className="w-8 h-8 rounded-full object-cover border border-outline-variant group-hover:border-primary transition-colors" 
+              className="w-8 h-8 rounded-full object-cover border border-border group-hover:border-primary transition-colors" 
               src={currentUser?.avatar || "https://lh3.googleusercontent.com/aida-public/AB6AXuAaAgIRwgg6AHDtczrU68mOSN4JcfnjovtSCOiLGT7b9aHQCCSmWVuhAowg82R3WeVuVFHWlSJCTam-aKq6HmH9QkteM5OmXlo5HupxoJgAQbhfykTOUjpS9nDTbUCsSltlwdhwMOFZs_TfIAC5jK9XGG5vjaH5AjFw4YeTAltPCkVfGvG5iu96iuovUv1BOnte-ybUhtOGFPRZJjrrUjcCKz4MN4fI8bDiKqAzLSz-NAtJkERLcuf7"} 
             />
-            <span className="absolute bottom-0 right-0 w-2 h-2 bg-teaching-emerald rounded-full ring-2 ring-surface" />
+            <span className="absolute bottom-0 right-0 w-2 h-2 bg-primary rounded-full ring-2 ring-surface-2" />
           </div>
           {currentUser && (
             <div className="hidden lg:flex flex-col text-left">
-              <span className="text-xs font-semibold text-on-surface group-hover:text-primary transition-colors">{currentUser.name}</span>
-              <span className="text-[10px] text-on-surface-variant capitalize font-medium">
+              <span className="text-xs font-semibold text-text group-hover:text-primary transition-colors">{currentUser.name}</span>
+              <span className="text-[10px] text-muted capitalize font-medium">
                 {currentUser?.role === 'both' ? `${role} (Hybrid)` : (currentUser?.role || role)}
               </span>
             </div>

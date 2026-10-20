@@ -8,11 +8,11 @@ const navItems = [
   { path: '/dashboard', icon: 'dashboard', label: 'Dashboard', shortcut: '⌘D', roles: ['student'] },
   { path: '/teacher', icon: 'school', label: 'Teacher Portal', shortcut: '⌘T', roles: ['teacher'] },
   { path: '/discussions', icon: 'forum', label: 'Community', shortcut: '⌘U', roles: ['student', 'teacher'] },
-  { path: '/profile', icon: 'account_circle', label: 'My Profile', shortcut: '⌘P', roles: ['student', 'teacher'] },
   { path: '/marketplace', icon: 'storefront', label: 'Marketplace', shortcut: '⌘M', roles: ['student'] },
   { path: '/rewards', icon: 'stars', label: 'Rewards Store', shortcut: '⌘R', roles: ['student'] },
   { path: '/match-finder', icon: 'search_check', label: 'Match Finder', shortcut: '⌘F', roles: ['student'] },
   { path: '/schedule', icon: 'calendar_today', label: 'Schedule', shortcut: '⌘S', roles: ['student', 'teacher'] },
+  { path: '/notes', icon: 'edit_note', label: 'Notes', shortcut: '⌘N', roles: ['student', 'teacher'] },
   { path: '/messages', icon: 'chat_bubble', label: 'Messages', shortcut: '⌘E', roles: ['student', 'teacher'] },
   { path: '/live-room', icon: 'video_chat', label: 'Live Room', shortcut: '⌘L', roles: ['student', 'teacher'] },
   { path: '/wallet', icon: 'account_balance_wallet', label: 'Wallet', shortcut: '⌘W', roles: ['student', 'teacher'] },
@@ -144,7 +144,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
       {/* Brand Header */}
       <div className="flex items-center mb-4 h-11 w-full justify-between overflow-hidden">
         <div 
-          className="flex items-center gap-3 overflow-hidden cursor-pointer group/brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-active rounded-xl"
+          className="flex items-center gap-3 overflow-hidden cursor-pointer group/brand focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary rounded-xl"
           onClick={() => isCollapsed && toggleSidebarCollapsed()}
           title={isCollapsed ? "Click to expand sidebar (⌘[)" : undefined}
           tabIndex={isCollapsed ? 0 : -1}
@@ -155,8 +155,8 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
             }
           }}
         >
-          <div className="w-11 h-11 rounded-xl bg-sidebar-logo-tile/20 border border-sidebar-logo-tile/40 flex items-center justify-center text-white shadow-sm shrink-0 group-hover/brand:scale-105 transition-transform">
-            <span className="material-symbols-outlined text-2xl text-sidebar-logo-tile">psychology</span>
+          <div className="w-11 h-11 rounded-xl bg-sidebar-logo-tile border border-sidebar-border flex items-center justify-center text-sidebar-icon shadow-xs shrink-0 group-hover/brand:scale-105 transition-transform">
+            <span className="material-symbols-outlined text-2xl text-sidebar-icon">psychology</span>
           </div>
           <div
             className={clsx(
@@ -164,10 +164,10 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               isCollapsed ? "max-w-0 opacity-0 -translate-x-2 pointer-events-none" : "max-w-[130px] opacity-100 translate-x-0"
             )}
           >
-            <h1 className="text-base font-black tracking-tight text-white leading-none truncate">
+            <h1 className="text-base font-black tracking-tight text-sidebar-active-text leading-none truncate">
               Mindroot
             </h1>
-            <span className="inline-block text-[10px] font-bold text-sidebar-icon/80 mt-0.5 tracking-wider uppercase truncate">
+            <span className="inline-block text-[10px] font-bold text-sidebar-icon opacity-80 mt-0.5 tracking-wider uppercase truncate">
               Skill Exchange
             </span>
           </div>
@@ -216,29 +216,36 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               onClick={handleNavClick}
               aria-label={item.label}
               className={clsx(
-                "group relative flex items-center h-11 w-full rounded-xl font-semibold text-xs transition-colors duration-150 focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-active",
+                "group relative flex items-center h-11 w-full rounded-xl font-semibold text-xs transition-colors duration-150 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg",
                 isActive 
-                  ? "text-sidebar-active-icon bg-sidebar-active shadow-md" 
-                  : "text-sidebar-icon hover:bg-sidebar-hover-bg hover:text-sidebar-icon-hover"
+                  ? "bg-primary-tint text-primary-text font-bold before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-primary before:rounded-r" 
+                  : "text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
               )}
             >
-              {/* Stationary Anchor Icon */}
+              {/* Stationary Anchor Icon with soft rounded background when active */}
               <div className="w-11 h-11 flex items-center justify-center shrink-0 relative">
-                <span
-                  className={clsx(
-                    "material-symbols-outlined text-xl transition-colors",
-                    isActive ? "text-sidebar-active-icon" : "text-sidebar-icon group-hover:text-sidebar-icon-hover"
-                  )}
-                  style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}
-                >
-                  {item.icon}
-                </span>
+                <div className={clsx(
+                  "w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-150",
+                  isActive ? "bg-sidebar-active-icon-bg shadow-xs" : ""
+                )}>
+                  <span
+                    className={clsx(
+                      "material-symbols-outlined text-xl transition-colors duration-150",
+                      isActive 
+                        ? "text-primary-text" 
+                        : "text-sidebar-icon [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text"
+                    )}
+                    style={isActive ? { fontVariationSettings: "'FILL' 1" } : {}}
+                  >
+                    {item.icon}
+                  </span>
+                </div>
 
                 {/* Pulsing joinable session dot on Live Room icon */}
                 {item.label === 'Live Room' && hasJoinableSession && (
                   <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5" title="Live lecture joinable now">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-400 ring-2 ring-sidebar-bg"></span>
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary ring-2 ring-sidebar-bg"></span>
                   </span>
                 )}
               </div>
@@ -247,13 +254,13 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               <div 
                 role="tooltip" 
                 className={clsx(
-                  "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-white bg-slate-900 rounded-lg shadow-xl border border-white/10 whitespace-nowrap transition-opacity duration-150",
+                  "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
                   isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
                 )}
               >
                 <span>{item.label}</span>
                 {item.shortcut && (
-                  <span className="ml-1.5 opacity-60 font-mono text-[10px] bg-white/10 px-1 py-0.5 rounded">
+                  <span className="ml-1.5 text-muted font-mono text-[10px] bg-surface-2 px-1 py-0.5 rounded border border-border">
                     {item.shortcut}
                   </span>
                 )}
@@ -267,19 +274,24 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                 )}
               >
                 <div className="flex items-center gap-1.5 truncate">
-                  <span className="truncate">{item.label}</span>
+                  <span className={clsx(
+                    "truncate transition-colors duration-150",
+                    isActive 
+                      ? "text-primary-text" 
+                      : "text-sidebar-icon [@media(hover:hover)]:group-hover:text-text group-focus-visible:text-text"
+                  )}>
+                    {item.label}
+                  </span>
                   {item.label === 'Live Room' && hasJoinableSession && (
-                    <span className="px-1.5 py-0.5 text-[9px] uppercase font-black bg-emerald-400 text-slate-950 rounded-full animate-pulse shrink-0">
+                    <span className="px-1.5 py-0.5 text-[9px] uppercase font-bold bg-primary text-on-primary rounded-full animate-pulse shrink-0">
                       LIVE
                     </span>
                   )}
                 </div>
                 <span
                   className={clsx(
-                    "text-[10px] font-mono px-1.5 py-0.5 rounded border transition-colors shrink-0 ml-2",
-                    isActive 
-                      ? "bg-white/20 border-white/30 text-white font-bold" 
-                      : "bg-white/5 border-white/10 text-sidebar-icon/80 opacity-70 group-hover:opacity-100"
+                    "text-[10px] font-mono px-1.5 py-0.5 rounded transition-all duration-150 shrink-0 ml-2",
+                    "bg-surface border border-border text-muted opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-visible:opacity-100"
                   )}
                 >
                   {item.shortcut}
@@ -293,50 +305,82 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
       {/* User Info & Footer Controls */}
       <div className="mt-auto pt-3 space-y-1.5 border-t border-sidebar-border overflow-hidden">
         {/* User Mini Profile Card */}
-        {currentUser && (
-          <Link
-            to="/profile"
-            onClick={() => setMobileOpen?.(false)}
-            aria-label={`${currentUser.name} Profile`}
-            className="group relative flex items-center h-11 w-full rounded-xl bg-white/5 hover:bg-sidebar-hover-bg border border-sidebar-border transition-colors cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-active"
-          >
-            <div className="w-11 h-11 flex items-center justify-center shrink-0">
-              <div className="relative w-8 h-8">
-                <img 
-                  src={currentUser.avatar || "https://i.pravatar.cc/150?img=11"} 
-                  alt={currentUser.name} 
-                  className="w-8 h-8 rounded-full object-cover border border-white/10" 
-                />
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-sidebar-bg" />
+        {currentUser && (() => {
+          const isProfileActive = location.pathname === '/profile';
+          return (
+            <Link
+              to="/profile"
+              onClick={handleNavClick}
+              aria-label="Open your profile"
+              className={clsx(
+                "group relative flex items-center h-11 w-full rounded-xl transition-colors duration-150 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg",
+                isProfileActive 
+                  ? "bg-primary-tint text-primary-text font-bold before:absolute before:left-0 before:top-2 before:bottom-2 before:w-[3px] before:bg-primary before:rounded-r shadow-xs" 
+                  : "text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
+              )}
+            >
+              <div className="w-11 h-11 flex items-center justify-center shrink-0">
+                <div className="relative w-8 h-8">
+                  <img 
+                    src={currentUser.avatar || "https://i.pravatar.cc/150?img=11"} 
+                    alt={currentUser.name} 
+                    className={clsx(
+                      "w-8 h-8 rounded-full object-cover border transition-colors duration-150",
+                      isProfileActive 
+                        ? "border-primary" 
+                        : "border-sidebar-border [@media(hover:hover)]:group-hover:border-primary group-focus-visible:border-primary"
+                    )} 
+                  />
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-primary ring-2 ring-sidebar-bg" />
+                </div>
               </div>
-            </div>
 
-            {/* Tooltip on collapsed profile */}
-            <div 
-              role="tooltip" 
-              className={clsx(
-                "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-white bg-slate-900 rounded-lg shadow-xl border border-white/10 whitespace-nowrap",
-                isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
-              )}
-            >
-              <span>{currentUser.name} (Profile)</span>
-            </div>
+              {/* Tooltip on collapsed profile */}
+              <div 
+                role="tooltip" 
+                className={clsx(
+                  "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
+                  isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
+                )}
+              >
+                <span>View profile</span>
+              </div>
 
-            <div
-              className={clsx(
-                "flex-1 min-w-0 pr-2.5 pl-1 transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] overflow-hidden whitespace-nowrap",
-                isCollapsed ? "max-w-0 opacity-0 -translate-x-2 pointer-events-none" : "max-w-[160px] opacity-100 translate-x-0"
-              )}
-            >
-              <p className="text-xs font-bold text-white truncate group-hover:text-sidebar-icon-hover transition-colors">
-                {currentUser.name}
-              </p>
-              <p className="text-[10px] text-sidebar-icon/80 capitalize font-medium truncate">
-                {activeRole} • {activeRole === 'student' ? `${Math.min(100, Math.round((currentUser.trustScore || 5) * 20))}%` : `${currentUser.trustScore || '4.95'}⭐`}
-              </p>
-            </div>
-          </Link>
-        )}
+              <div
+                className={clsx(
+                  "flex-1 min-w-0 pr-2.5 pl-1 transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] overflow-hidden whitespace-nowrap flex items-center justify-between gap-1",
+                  isCollapsed ? "max-w-0 opacity-0 -translate-x-2 pointer-events-none" : "max-w-[170px] opacity-100 translate-x-0"
+                )}
+              >
+                <div className="min-w-0 flex-1">
+                  <p className={clsx(
+                    "text-xs font-bold truncate transition-colors duration-150",
+                    isProfileActive 
+                      ? "text-primary-text" 
+                      : "text-sidebar-icon [@media(hover:hover)]:group-hover:text-text group-focus-visible:text-text"
+                  )}>
+                    {currentUser.name}
+                  </p>
+                  <p className={clsx(
+                    "text-[10px] capitalize font-medium truncate transition-colors duration-150",
+                    isProfileActive ? "text-primary-text/80" : "text-muted"
+                  )}>
+                    {activeRole} • {activeRole === 'student' ? `${Math.min(100, Math.round((currentUser.trustScore || 5) * 20))}%` : `${currentUser.trustScore || '4.95'}⭐`}
+                  </p>
+                </div>
+
+                <span className={clsx(
+                  "material-symbols-outlined text-base shrink-0 transition-colors duration-150",
+                  isProfileActive 
+                    ? "text-primary-text" 
+                    : "text-muted [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text"
+                )}>
+                  chevron_right
+                </span>
+              </div>
+            </Link>
+          );
+        })()}
 
         {/* Switch Role Button: Only available if account is both/hybrid */}
         {canSwitchRole && (
@@ -346,20 +390,17 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               setMobileOpen?.(false);
             }}
             aria-label={`Switch to ${activeRole === 'student' ? 'Teacher' : 'Student'}`}
-            className={clsx(
-              "group relative w-full h-10 rounded-xl text-xs font-bold shadow-md transition-all flex items-center active:scale-98 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-active",
-              activeRole === 'student' ? "bg-amber-600 hover:bg-amber-500 text-white" : "bg-emerald-600 hover:bg-emerald-500 text-white"
-            )}
+            className="group relative w-full h-10 rounded-xl text-xs font-bold transition-colors duration-150 flex items-center active:scale-98 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg border border-sidebar-border text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
           >
             <div className="w-11 h-10 flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-lg">swap_horiz</span>
+              <span className="material-symbols-outlined text-lg text-sidebar-icon [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text transition-colors duration-150">swap_horiz</span>
             </div>
 
             {/* Tooltip on collapsed switch role */}
             <div 
               role="tooltip" 
               className={clsx(
-                "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-white bg-slate-900 rounded-lg shadow-xl border border-white/10 whitespace-nowrap",
+                "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
                 isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
               )}
             >
@@ -372,7 +413,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                 isCollapsed ? "max-w-0 opacity-0 -translate-x-2 pointer-events-none" : "max-w-[170px] opacity-100 translate-x-0"
               )}
             >
-              <span>Switch to {activeRole === 'student' ? 'Teacher' : 'Student'}</span>
+              <span className="[@media(hover:hover)]:group-hover:text-text group-focus-visible:text-text transition-colors duration-150">Switch to {activeRole === 'student' ? 'Teacher' : 'Student'}</span>
             </div>
           </button>
         )}
@@ -381,17 +422,17 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
         <button 
           onClick={handleLogout}
           aria-label="Sign Out"
-          className="group relative w-full h-10 rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon hover:bg-sidebar-hover-bg hover:text-sidebar-icon-hover transition-all flex items-center cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-sidebar-active"
+          className="group relative w-full h-10 rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text transition-colors duration-150 flex items-center cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg"
         >
           <div className="w-11 h-10 flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-lg">logout</span>
+            <span className="material-symbols-outlined text-lg text-sidebar-icon [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text transition-colors duration-150">logout</span>
           </div>
 
           {/* Tooltip on collapsed logout */}
           <div 
             role="tooltip" 
             className={clsx(
-              "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-white bg-slate-900 rounded-lg shadow-xl border border-white/10 whitespace-nowrap",
+                "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
               isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
             )}
           >
@@ -404,7 +445,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               isCollapsed ? "max-w-0 opacity-0 -translate-x-2 pointer-events-none" : "max-w-[170px] opacity-100 translate-x-0"
             )}
           >
-            <span>Sign Out</span>
+            <span className="[@media(hover:hover)]:group-hover:text-text group-focus-visible:text-text transition-colors duration-150">Sign Out</span>
           </div>
         </button>
       </div>

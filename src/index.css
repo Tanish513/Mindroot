@@ -3,231 +3,333 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    /* Primary Brand Color - Teal */
-    --color-primary: 13 148 136;             /* #0D9488 teal-600 */
-    --color-primary-hover: 15 118 110;       /* #0F766E teal-700 */
-    --color-primary-active: 17 94 89;        /* #115E59 teal-800 */
-    --color-primary-container: 240 253 250;  /* #F0FDFA teal-50 */
+  :root,
+  [data-theme="light"] {
+    /* Mindroot Semantic Design Tokens - Light */
+    --bg: #F7FAF9;
+    --surface: #FFFFFF;
+    --surface-2: #E3EEEA;
+    --border: #E1E8E5;
+    --text: #0F1A17;
+    --muted: #5B6B66;
+    --primary: #0A7C5A;
+    --primary-hover: #086348;
+    --on-primary: #FFFFFF;
+    --primary-tint: #E3F4EC;
+    --primary-text: #086348;
+    --accent: #F59E0B;
+    --accent-tint: #FFF4DB;
+    --accent-text: #B45309;
+    --danger: #DC2626;
+    --hero: linear-gradient(135deg, #E3F4EC 0%, #FFF4DB 100%);
+    --shadow: 0 1px 2px rgba(15, 26, 23, 0.06), 0 4px 16px rgba(15, 26, 23, 0.04);
+
+    /* Aliases & Fallbacks */
+    --text-muted: var(--muted);
+    --primary-soft: var(--primary-tint);
+    --accent-soft: var(--accent-tint);
+    --success: var(--primary);
+    --warning: var(--accent);
+    --info: var(--primary);
+
+    --sidebar-bg: var(--surface-2);
+    --sidebar-border: var(--border);
+    --sidebar-icon: #37685B;
+    --sidebar-icon-hover: var(--primary-text);
+    --nav-hover: rgba(10, 124, 90, 0.10);
+    --sidebar-hover-bg: var(--nav-hover);
+    --sidebar-active-bg: var(--primary-tint);
+    --sidebar-active-icon: var(--primary-text);
+    --sidebar-active-icon-bg: var(--primary-tint);
+    --sidebar-active-text: var(--primary-text);
+    --sidebar-logo-tile: #C9DED5;
+
+    /* Legacy RGB Fallbacks for backward compatibility */
+    --color-primary: 10 124 90;
+    --color-primary-hover: 8 99 72;
+    --color-primary-active: 6 78 57;
+    --color-primary-container: 227 244 236;
     --color-on-primary: 255 255 255;
-    --color-on-primary-container: 17 94 89;
+    --color-on-primary-container: 8 99 72;
 
-    /* Secondary - Neutral Slate */
-    --color-secondary: 71 85 105;            /* #475569 slate-600 */
-    --color-secondary-hover: 51 65 85;       /* #334155 slate-700 */
-    --color-secondary-container: 241 245 249; /* #F1F5F9 slate-100 */
+    --color-secondary: 91 107 102;
+    --color-secondary-hover: 15 26 23;
+    --color-secondary-container: 238 244 241;
     --color-on-secondary: 255 255 255;
-    --color-on-secondary-container: 30 41 59;
+    --color-on-secondary-container: 15 26 23;
 
-    /* Neutrals & Surface Hierarchy (Light Mode) */
-    --color-background: 248 250 252;
+    --color-background: 247 250 249;
     --color-surface: 255 255 255;
     --color-surface-bright: 255 255 255;
     --color-surface-container-lowest: 255 255 255;
-    --color-surface-container-low: 248 250 252;
-    --color-surface-container: 241 245 249;
-    --color-surface-container-high: 226 232 240;
-    --color-surface-container-highest: 203 213 225;
-    --color-on-background: 15 23 42;
-    --color-on-surface: 15 23 42;
-    --color-on-surface-variant: 71 85 105;
-    --color-outline: 148 163 184;
-    --color-outline-variant: 226 232 240;
-    --color-neutral-subtle: 148 163 184;
-    --color-neutral-muted: 100 116 139;
-    --color-neutral-dark: 30 41 59;
+    --color-surface-container-low: 255 255 255;
+    --color-surface-container: 238 244 241;
+    --color-surface-container-high: 225 232 229;
+    --color-surface-container-highest: 210 220 216;
+    --color-on-background: 15 26 23;
+    --color-on-surface: 15 26 23;
+    --color-on-surface-variant: 91 107 102;
+    --color-outline: 225 232 229;
+    --color-outline-variant: 225 232 229;
+    --color-neutral-subtle: 91 107 102;
+    --color-neutral-muted: 91 107 102;
+    --color-neutral-dark: 15 26 23;
 
-    /* Semantic Accents */
-    --color-teaching-emerald: 5 150 105;
-    --color-teaching-emerald-hover: 4 120 87;
-    --color-teaching-emerald-container: 236 253 245;
+    --color-teaching-emerald: 10 124 90;
+    --color-teaching-emerald-hover: 8 99 72;
+    --color-teaching-emerald-container: 227 244 236;
     --color-on-teaching-emerald: 255 255 255;
-    --color-on-teaching-emerald-container: 6 95 70;
+    --color-on-teaching-emerald-container: 8 99 72;
 
-    --color-learning-amber: 217 119 6;
+    --color-learning-amber: 245 158 11;
     --color-learning-amber-hover: 180 83 9;
-    --color-learning-amber-container: 255 251 235;
+    --color-learning-amber-container: 255 244 219;
     --color-on-learning-amber: 255 255 255;
-    --color-on-learning-amber-container: 120 53 15;
+    --color-on-learning-amber-container: 180 83 9;
 
-    --color-electric-cyan: 14 116 144;
-    --color-electric-cyan-container: 240 253 250;
-    --color-on-electric-cyan-container: 21 94 117;
+    --color-electric-cyan: 10 124 90;
+    --color-electric-cyan-container: 227 244 236;
+    --color-on-electric-cyan-container: 8 99 72;
 
-    --color-trust-purple: 109 40 217;
-    --color-trust-purple-container: 250 245 255;
-    --color-on-trust-purple-container: 88 28 135;
+    --color-trust-purple: 10 124 90;
+    --color-trust-purple-container: 227 244 236;
+    --color-on-trust-purple-container: 8 99 72;
 
-    --color-sky-blue: 2 132 199;
-    --color-sky-blue-container: 240 249 255;
-    --color-on-sky-blue-container: 7 89 133;
+    --color-sky-blue: 10 124 90;
+    --color-sky-blue-container: 227 244 236;
+    --color-on-sky-blue-container: 8 99 72;
 
-    --color-alert-rose: 225 29 72;
-    --color-alert-rose-hover: 190 18 60;
-    --color-alert-rose-container: 255 241 242;
+    --color-alert-rose: 220 38 38;
+    --color-alert-rose-hover: 185 28 28;
+    --color-alert-rose-container: 254 226 226;
     --color-on-alert-rose: 255 255 255;
-    --color-on-alert-rose-container: 159 18 57;
+    --color-on-alert-rose-container: 153 27 27;
 
     --color-error: 220 38 38;
     --color-error-hover: 185 28 28;
-    --color-error-container: 254 242 242;
+    --color-error-container: 254 226 226;
     --color-on-error: 255 255 255;
     --color-on-error-container: 153 27 27;
 
-    /* Light Mode Shadows */
-    --shadow-elevation-1: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
-    --shadow-elevation-2: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.04);
-    --shadow-elevation-3: 0 12px 24px rgba(15, 23, 42, 0.08), 0 4px 8px rgba(15, 23, 42, 0.04);
-    --shadow-lifted: 0 4px 12px rgba(15, 23, 42, 0.06);
-    --shadow-lifted-hover: 0 10px 20px rgba(15, 23, 42, 0.08);
+    --shadow-elevation-1: var(--shadow);
+    --shadow-elevation-2: var(--shadow);
+    --shadow-elevation-3: var(--shadow);
+    --shadow-lifted: var(--shadow);
+    --shadow-lifted-hover: var(--shadow);
 
-    /* Scrollbars */
-    --scrollbar-track: 241 245 249;
-    --scrollbar-thumb: 203 213 225;
-    --scrollbar-thumb-hover: 148 163 184;
+    --scrollbar-track: 238 244 241;
+    --scrollbar-thumb: 225 232 229;
+    --scrollbar-thumb-hover: 91 107 102;
 
-    /* Sidebar Deep Teal Palette (Light Mode) */
-    --color-sidebar-bg: #0F3D3A;
-    --color-sidebar-border: rgba(255, 255, 255, 0.08);
-    --color-sidebar-icon: #A7D3CD;
-    --color-sidebar-icon-hover: #FFFFFF;
-    --color-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
-    --color-sidebar-active: #14B8A6;
-    --color-sidebar-active-icon: #FFFFFF;
-    --color-sidebar-logo-tile: #14B8A6;
+    --color-sidebar-bg: var(--sidebar-bg);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-icon: var(--sidebar-icon);
+    --color-sidebar-icon-hover: var(--sidebar-icon-hover);
+    --color-sidebar-hover-bg: var(--sidebar-hover-bg);
+    --color-sidebar-active: var(--sidebar-active-bg);
+    --color-sidebar-active-icon: var(--sidebar-active-icon);
+    --color-sidebar-logo-tile: var(--sidebar-logo-tile);
   }
 
+  [data-theme="dark"],
   .dark {
-    /* Primary Brand Color - Teal */
-    --color-primary: 45 212 191;             /* #2DD4BF teal-400 */
-    --color-primary-hover: 94 234 212;       /* #5EEAD4 teal-300 */
-    --color-primary-active: 153 246 228;     /* #99F6E4 teal-200 */
-    --color-primary-container: 19 78 74;     /* #134E4A teal-900 */
-    --color-on-primary: 15 23 42;
-    --color-on-primary-container: 153 246 228;
+    /* Mindroot Semantic Design Tokens - Dark */
+    --bg: #0A1612;
+    --surface: #11201B;
+    --surface-2: #142A26;
+    --border: #233A33;
+    --text: #E8F1EE;
+    --muted: #97ADA5;
+    --primary: #2BC48A;
+    --primary-hover: #34D399;
+    --on-primary: #04241A;
+    --primary-tint: rgba(43, 196, 138, 0.14);
+    --primary-text: #6EE7B7;
+    --accent: #FBBF24;
+    --accent-tint: rgba(251, 191, 36, 0.12);
+    --accent-text: #FCD34D;
+    --danger: #F87171;
+    --hero: linear-gradient(135deg, #0F2E27 0%, #1F2A1A 100%);
+    --shadow: none;
 
-    /* Secondary - Neutral Slate */
-    --color-secondary: 148 163 184;          /* #94A3B8 slate-400 */
-    --color-secondary-hover: 203 213 225;    /* #CBD5E1 slate-300 */
-    --color-secondary-container: 30 41 59;   /* #1E293B slate-800 */
-    --color-on-secondary: 15 23 42;
-    --color-on-secondary-container: 226 232 240;
+    /* Aliases & Fallbacks */
+    --text-muted: var(--muted);
+    --primary-soft: var(--primary-tint);
+    --accent-soft: var(--accent-tint);
+    --success: var(--primary);
+    --warning: var(--accent);
+    --info: var(--primary);
 
-    /* Neutrals & Clean Surface Hierarchy (3-4 flat, solid surface steps) */
-    --color-background: 13 15 18;
-    --color-surface: 19 22 27;
-    --color-surface-bright: 28 32 40;
-    --color-surface-container-lowest: 13 15 18;
-    --color-surface-container-low: 16 19 23;
-    --color-surface-container: 26 30 38;
-    --color-surface-container-high: 34 39 49;
-    --color-surface-container-highest: 44 50 63;
-    --color-on-background: 241 245 249;
-    --color-on-surface: 241 245 249;
-    --color-on-surface-variant: 148 163 184;
-    --color-outline: 64 74 92;
-    --color-outline-variant: 35 41 53;
-    --color-neutral-subtle: 100 116 139;
-    --color-neutral-muted: 148 163 184;
-    --color-neutral-dark: 241 245 249;
+    --sidebar-bg: var(--surface-2);
+    --sidebar-border: var(--border);
+    --sidebar-icon: #A9C9BE;
+    --sidebar-icon-hover: var(--primary-text);
+    --nav-hover: rgba(255, 255, 255, 0.07);
+    --sidebar-hover-bg: var(--nav-hover);
+    --sidebar-active-bg: var(--primary-tint);
+    --sidebar-active-icon: var(--primary-text);
+    --sidebar-active-icon-bg: var(--primary-tint);
+    --sidebar-active-text: var(--primary-text);
+    --sidebar-logo-tile: #245044;
 
-    /* Semantic Status ONLY (Real status meaning: Success / Verified) */
-    --color-teaching-emerald: 16 185 129;
-    --color-teaching-emerald-hover: 52 211 153;
-    --color-teaching-emerald-container: 20 35 28;
-    --color-on-teaching-emerald: 255 255 255;
-    --color-on-teaching-emerald-container: 52 211 153;
+    /* Legacy RGB Fallbacks for backward compatibility */
+    --color-primary: 43 196 138;
+    --color-primary-hover: 110 231 183;
+    --color-primary-active: 167 243 208;
+    --color-primary-container: 17 32 27;
+    --color-on-primary: 4 36 26;
+    --color-on-primary-container: 110 231 183;
 
-    /* Semantic Status ONLY (Real status meaning: Warning / Pending) */
-    --color-learning-amber: 245 158 11;
-    --color-learning-amber-hover: 251 191 36;
-    --color-learning-amber-container: 36 28 16;
-    --color-on-learning-amber: 255 255 255;
-    --color-on-learning-amber-container: 251 191 36;
+    --color-secondary: 151 173 165;
+    --color-secondary-hover: 232 241 238;
+    --color-secondary-container: 23 42 36;
+    --color-on-secondary: 232 241 238;
+    --color-on-secondary-container: 232 241 238;
 
-    /* Semantic Category & Tag Tokens (Rich distinct hues for content-driven living color) */
-    --color-electric-cyan: 34 211 238;          /* cyan-400 */
-    --color-electric-cyan-container: 18 43 51;   /* dark cyan container */
-    --color-on-electric-cyan-container: 165 243 252;
+    --color-background: 10 22 18;
+    --color-surface: 17 32 27;
+    --color-surface-bright: 23 42 36;
+    --color-surface-container-lowest: 10 22 18;
+    --color-surface-container-low: 17 32 27;
+    --color-surface-container: 23 42 36;
+    --color-surface-container-high: 35 58 51;
+    --color-surface-container-highest: 45 74 65;
+    --color-on-background: 232 241 238;
+    --color-on-surface: 232 241 238;
+    --color-on-surface-variant: 151 173 165;
+    --color-outline: 35 58 51;
+    --color-outline-variant: 35 58 51;
+    --color-neutral-subtle: 151 173 165;
+    --color-neutral-muted: 151 173 165;
+    --color-neutral-dark: 232 241 238;
 
-    --color-trust-purple: 168 85 247;           /* purple-500 / 400 */
-    --color-trust-purple-container: 42 24 64;    /* dark purple container */
-    --color-on-trust-purple-container: 233 213 255;
+    --color-teaching-emerald: 43 196 138;
+    --color-teaching-emerald-hover: 110 231 183;
+    --color-teaching-emerald-container: 17 32 27;
+    --color-on-teaching-emerald: 4 36 26;
+    --color-on-teaching-emerald-container: 110 231 183;
 
-    --color-sky-blue: 56 189 248;               /* sky-400 */
-    --color-sky-blue-container: 12 40 60;       /* dark sky container */
-    --color-on-sky-blue-container: 186 230 253;
+    --color-learning-amber: 251 191 36;
+    --color-learning-amber-hover: 252 211 77;
+    --color-learning-amber-container: 40 32 15;
+    --color-on-learning-amber: 30 20 5;
+    --color-on-learning-amber-container: 252 211 77;
 
-    /* Semantic Status ONLY (Real status meaning: Error / Danger) */
-    --color-alert-rose: 244 63 94;
-    --color-alert-rose-hover: 251 113 133;
-    --color-alert-rose-container: 45 20 25;
-    --color-on-alert-rose: 255 255 255;
-    --color-on-alert-rose-container: 251 113 133;
+    --color-electric-cyan: 43 196 138;
+    --color-electric-cyan-container: 17 32 27;
+    --color-on-electric-cyan-container: 110 231 183;
 
-    --color-error: 239 68 68;
-    --color-error-hover: 248 113 113;
-    --color-error-container: 45 20 20;
-    --color-on-error: 255 255 255;
+    --color-trust-purple: 43 196 138;
+    --color-trust-purple-container: 17 32 27;
+    --color-on-trust-purple-container: 110 231 183;
+
+    --color-sky-blue: 43 196 138;
+    --color-sky-blue-container: 17 32 27;
+    --color-on-sky-blue-container: 110 231 183;
+
+    --color-alert-rose: 248 113 113;
+    --color-alert-rose-hover: 252 165 165;
+    --color-alert-rose-container: 55 20 20;
+    --color-on-alert-rose: 45 10 10;
+    --color-on-alert-rose-container: 248 113 113;
+
+    --color-error: 248 113 113;
+    --color-error-hover: 252 165 165;
+    --color-error-container: 55 20 20;
+    --color-on-error: 45 10 10;
     --color-on-error-container: 248 113 113;
 
-    /* Flattened Dark Mode Shadows (Reduced blur/opacity, no inset highlights; depth from surface steps) */
-    --shadow-elevation-1: 0 1px 2px rgba(0, 0, 0, 0.25);
-    --shadow-elevation-2: 0 2px 6px rgba(0, 0, 0, 0.3);
-    --shadow-elevation-3: 0 4px 12px rgba(0, 0, 0, 0.35);
-    --shadow-lifted: 0 2px 6px rgba(0, 0, 0, 0.3);
-    --shadow-lifted-hover: 0 4px 12px rgba(0, 0, 0, 0.35);
+    --shadow-elevation-1: none;
+    --shadow-elevation-2: none;
+    --shadow-elevation-3: none;
+    --shadow-lifted: none;
+    --shadow-lifted-hover: none;
 
-    /* Clean Dark Mode Scrollbars */
-    --scrollbar-track: 19 22 27;
-    --scrollbar-thumb: 44 50 63;
-    --scrollbar-thumb-hover: 71 85 105;
+    --scrollbar-track: 17 32 27;
+    --scrollbar-thumb: 35 58 51;
+    --scrollbar-thumb-hover: 60 90 80;
 
-    /* Sidebar Deep Teal Palette (Dark Mode) */
-    --color-sidebar-bg: #0B2F2C;
-    --color-sidebar-border: rgba(255, 255, 255, 0.08);
-    --color-sidebar-icon: #A7D3CD;
-    --color-sidebar-icon-hover: #FFFFFF;
-    --color-sidebar-hover-bg: rgba(255, 255, 255, 0.08);
-    --color-sidebar-active: #14B8A6;
-    --color-sidebar-active-icon: #FFFFFF;
-    --color-sidebar-logo-tile: #14B8A6;
+    --color-sidebar-bg: var(--sidebar-bg);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-icon: var(--sidebar-icon);
+    --color-sidebar-icon-hover: var(--sidebar-icon-hover);
+    --color-sidebar-hover-bg: var(--sidebar-hover-bg);
+    --color-sidebar-active: var(--sidebar-active-bg);
+    --color-sidebar-active-icon: var(--sidebar-active-icon);
+    --color-sidebar-logo-tile: var(--sidebar-logo-tile);
+  }
+
+  /* Smooth 150ms transition on background-color, border-color, and color when switching themes */
+  *,
+  *::before,
+  *::after {
+    transition-property: background-color, border-color, color;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
   }
 
   body {
-    @apply bg-background text-on-background font-body-md transition-colors duration-200;
+    background-color: var(--bg);
+    color: var(--text);
     font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+  }
+
+  input,
+  textarea,
+  select {
+    background-color: var(--surface);
+    color: var(--text);
+    border-color: var(--border);
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--text-muted);
   }
 }
 
 @layer utilities {
   .shadow-elevation-1 {
-    box-shadow: var(--shadow-elevation-1);
+    box-shadow: var(--shadow);
   }
   .shadow-elevation-2 {
-    box-shadow: var(--shadow-elevation-2);
+    box-shadow: var(--shadow);
   }
   .shadow-elevation-3 {
-    box-shadow: var(--shadow-elevation-3);
+    box-shadow: var(--shadow);
   }
 
-  /* Custom clean scrollbars */
+  /* Clean Scrollbars */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--surface-2);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+  }
+
   .custom-scrollbar::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
   .custom-scrollbar::-webkit-scrollbar-track {
-    background: rgb(var(--scrollbar-track));
-    border-radius: 3px;
+    background: var(--surface-2);
   }
   .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(var(--scrollbar-thumb));
+    background: var(--border);
     border-radius: 3px;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(var(--scrollbar-thumb-hover));
+    background: var(--text-muted);
   }
 }
-

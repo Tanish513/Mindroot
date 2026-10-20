@@ -140,10 +140,10 @@ export function AIAssistant() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-            className="w-80 md:w-96 bg-surface rounded-2xl shadow-elevation-3 border border-outline-variant overflow-hidden flex flex-col max-h-[540px]"
+            className="w-80 md:w-96 bg-surface rounded-2xl shadow-lg border border-border overflow-hidden flex flex-col max-h-[540px]"
           >
             {/* Header */}
-            <div className="bg-primary text-on-primary p-4 flex items-center justify-between shadow-elevation-1">
+            <div className="bg-primary text-on-primary p-4 flex items-center justify-between shadow">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-full bg-on-primary/15 p-1 flex items-center justify-center">
                   <span className="material-symbols-outlined text-on-primary text-sm">smart_toy</span>
@@ -151,7 +151,7 @@ export function AIAssistant() {
                 <div>
                   <h4 className="font-extrabold text-sm leading-tight text-on-primary">Mindroot AI Assistant</h4>
                   <p className="text-[9px] text-on-primary/80 uppercase tracking-widest font-extrabold flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-teaching-emerald animate-pulse" /> Interactive Assistant
+                    <span className="h-1.5 w-1.5 rounded-full bg-on-primary animate-pulse" /> Interactive Assistant
                   </p>
                 </div>
               </div>
@@ -161,13 +161,13 @@ export function AIAssistant() {
             </div>
 
             {/* Messages Area */}
-            <div className="flex-1 overflow-y-auto p-4 bg-surface-container-low/50 space-y-3 min-h-[280px] custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 bg-surface-2/50 space-y-3 min-h-[280px] custom-scrollbar">
               {/* Welcome message */}
               <div className="flex items-start gap-2">
-                <div className="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center shrink-0 border border-primary/20">
+                <div className="w-7 h-7 rounded-full bg-primary-tint flex items-center justify-center shrink-0 border border-primary/20">
                   <span className="material-symbols-outlined text-primary text-xs">smart_toy</span>
                 </div>
-                <div className="bg-surface border border-outline-variant p-3 rounded-2xl rounded-tl-none text-xs text-on-surface max-w-[85%] shadow-elevation-1 leading-5 font-medium">
+                <div className="bg-surface border border-border p-3 rounded-2xl rounded-tl-none text-xs text-text max-w-[85%] shadow leading-5 font-medium">
                   {welcomeMessage}
                 </div>
               </div>
@@ -176,14 +176,14 @@ export function AIAssistant() {
               {messages.map((msg, i) => (
                 <div key={i} className={`flex items-start gap-2 ${msg.from === 'user' ? 'flex-row-reverse' : ''}`}>
                   {msg.from === 'ai' && (
-                    <div className="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center shrink-0 border border-primary/20">
+                    <div className="w-7 h-7 rounded-full bg-primary-tint flex items-center justify-center shrink-0 border border-primary/20">
                       <span className="material-symbols-outlined text-primary text-xs">smart_toy</span>
                     </div>
                   )}
-                  <div className={`p-3 rounded-2xl text-xs max-w-[85%] shadow-elevation-1 leading-5 ${
+                  <div className={`p-3 rounded-2xl text-xs max-w-[85%] shadow leading-5 ${
                     msg.from === 'user'
                       ? 'bg-primary text-on-primary rounded-tr-none font-bold'
-                      : 'bg-surface border border-outline-variant text-on-surface rounded-tl-none font-medium'
+                      : 'bg-surface border border-border text-text rounded-tl-none font-medium'
                   }`}>
                     {msg.from === 'user' ? msg.text : <FormattedContent text={msg.text} />}
                   </div>
@@ -192,10 +192,10 @@ export function AIAssistant() {
 
               {loading && (
                 <div className="flex items-start gap-2 animate-pulse">
-                  <div className="w-7 h-7 rounded-full bg-primary-container flex items-center justify-center shrink-0">
+                  <div className="w-7 h-7 rounded-full bg-primary-tint flex items-center justify-center shrink-0">
                     <span className="material-symbols-outlined text-primary text-xs animate-spin">smart_toy</span>
                   </div>
-                  <div className="bg-surface border border-outline-variant p-3 rounded-2xl rounded-tl-none text-xs text-on-surface-variant italic font-medium flex items-center gap-1.5">
+                  <div className="bg-surface border border-border p-3 rounded-2xl rounded-tl-none text-xs text-muted italic font-medium flex items-center gap-1.5">
                     <span>Thinking</span>
                     <span className="flex gap-0.5">
                       <span className="h-1 w-1 rounded-full bg-primary/60 animate-bounce" style={{ animationDelay: '0ms' }} />
@@ -209,13 +209,13 @@ export function AIAssistant() {
             </div>
 
             {/* Quick Action Suggestion Chips */}
-            <div className="px-3 py-2 bg-surface-container border-t border-outline-variant flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
+            <div className="px-3 py-2 bg-surface-2 border-t border-border flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
               {QUICK_CHIPS.map((chip, cIdx) => (
                 <button
                   key={cIdx}
                   onClick={() => sendQuery(chip)}
                   disabled={loading}
-                  className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-surface border border-outline-variant text-[11px] font-semibold text-on-surface hover:bg-primary-container hover:text-primary hover:border-primary/30 transition-all shrink-0 shadow-elevation-1"
+                  className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-surface border border-border text-[11px] font-semibold text-text hover:bg-primary-tint hover:text-primary-text hover:border-primary/30 transition-all shrink-0 shadow"
                 >
                   {chip}
                 </button>
@@ -223,7 +223,7 @@ export function AIAssistant() {
             </div>
 
             {/* Input */}
-            <div className="p-3 border-t border-outline-variant bg-surface">
+            <div className="p-3 border-t border-border bg-surface">
               <div className="relative">
                 <input
                   type="text"
@@ -231,13 +231,13 @@ export function AIAssistant() {
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => e.key === 'Enter' && handleSend()}
                   placeholder="Ask Mindroot AI..."
-                  className="w-full pl-4 pr-10 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-medium text-on-surface placeholder:text-neutral-subtle focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all duration-200"
+                  className="w-full pl-4 pr-10 py-2.5 bg-surface-2 border border-border rounded-xl text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all duration-200"
                   disabled={loading}
                 />
                 <button
                   onClick={handleSend}
                   aria-label="Send message"
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:bg-primary-container p-1.5 rounded-lg transition-colors disabled:opacity-40"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:bg-primary-tint p-1.5 rounded-lg transition-colors disabled:opacity-40"
                   disabled={loading || !input.trim()}
                 >
                   <span className="material-symbols-outlined text-sm font-bold">send</span>
@@ -254,13 +254,13 @@ export function AIAssistant() {
         whileTap={{ scale: 0.92 }}
         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
         onClick={() => setOpen(o => !o)}
-        className="w-14 h-14 bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-elevation-3 flex items-center justify-center relative"
+        className="w-14 h-14 bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-lg flex items-center justify-center relative cursor-pointer"
         aria-label="Open AI Assistant"
       >
         {!open && (
           <span className="absolute -top-1 -right-1 flex h-4 w-4">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-teaching-emerald opacity-75"></span>
-            <span className="relative inline-flex rounded-full h-4 w-4 bg-teaching-emerald border-2 border-surface"></span>
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+            <span className="relative inline-flex rounded-full h-4 w-4 bg-primary border-2 border-surface"></span>
           </span>
         )}
         <span className="material-symbols-outlined text-on-primary">{open ? 'close' : 'smart_toy'}</span>
