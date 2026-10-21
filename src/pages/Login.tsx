@@ -4,6 +4,7 @@ import { GoogleLogin, useGoogleOneTapLogin } from '@react-oauth/google';
 import { Button } from '../components/ui/Button';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
+import { isValidPrice, calculateBatchPricing } from '../lib/pricing';
 
 export function Login() {
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
@@ -67,15 +68,18 @@ export function Login() {
   const [onboardTeaches, setOnboardTeaches] = useState('Web Development');
   const [onboardLearns, setOnboardLearns] = useState('Python');
 
-  const handleBaseRateChange = (rate: number, isOnboard = false) => {
-    const safeRate = Math.max(0, isNaN(rate) ? 0 : Math.round(rate));
-    const updated = {
-      1: safeRate,
-      2: Math.round(safeRate * 0.8),
-      3: Math.round(safeRate * 0.7),
-      4: Math.round(safeRate * 0.6),
-      5: Math.round(safeRate * 0.5)
-    };
+  const handleBaseRateChange = (rate: number | string, isOnboard = false) => {
+    if (rate === '' || isNaN(Number(rate))) {
+      if (isOnboard) {
+        setOnboardHourlyRate('' as any);
+      } else {
+        setSignUpHourlyRate('' as any);
+      }
+      return;
+    }
+    const numRate = Number(rate);
+    const safeRate = Math.max(1, Math.round(numRate));
+    const updated = calculateBatchPricing(safeRate);
     if (isOnboard) {
       setOnboardHourlyRate(safeRate);
       setOnboardBatchPricing(updated);
@@ -264,9 +268,16 @@ export function Login() {
     }
 
     if (signUpRole === 'teacher' || signUpRole === 'both') {
-      if (isNaN(signUpHourlyRate) || signUpHourlyRate < 0) {
-        setSignUpError('Please enter a valid non-negative hourly rate.');
+      if (!isValidPrice(signUpHourlyRate)) {
+        setSignUpError('Enter a whole amount of ₹1 or more for Base Rate.');
         return;
+      }
+      for (let cap = 1; cap <= 5; cap++) {
+        const p = signUpBatchPricing[cap];
+        if (p !== undefined && !isValidPrice(p)) {
+          setSignUpError(`Enter a whole amount of ₹1 or more for batch pricing (Capacity ${cap}).`);
+          return;
+        }
       }
       if (signUpUpiId.trim()) {
         const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
@@ -332,9 +343,16 @@ export function Login() {
     if (!pendingUser) return;
 
     if (onboardRole === 'teacher' || onboardRole === 'both') {
-      if (isNaN(onboardHourlyRate) || onboardHourlyRate < 0) {
-        alert('Please enter a valid non-negative mentoring rate.');
+      if (!isValidPrice(onboardHourlyRate)) {
+        alert('Enter a whole amount of ₹1 or more for Base Rate.');
         return;
+      }
+      for (let cap = 1; cap <= 5; cap++) {
+        const p = onboardBatchPricing[cap];
+        if (p !== undefined && !isValidPrice(p)) {
+          alert(`Enter a whole amount of ₹1 or more for batch pricing (Capacity ${cap}).`);
+          return;
+        }
       }
       if (onboardUpiId.trim()) {
         const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
@@ -570,7 +588,7 @@ export function Login() {
             </form>
           ) : (
             /* Sign Up / Registration Form */
-            <form onSubmit={handleSignUpSubmit} className="space-y-4">
+            <form onSubmit={handleSignUpSubmit} noValidate className="space-y-4">
               {renderGoogleOAuthButton('or register with email', true)}
 
               {signUpSuccess ? (
@@ -681,15 +699,22 @@ export function Login() {
                           <span className="absolute left-3.5 top-2.5 font-bold text-on-surface-variant text-sm">₹</span>
                           <input 
                             type="number" 
-                            min={0}
-                            max={10000}
-                            step={25}
+                            min={1}
+                            max={100000}
+                            step={1}
                             placeholder="e.g. 499"
-                            className="w-full pl-8 pr-4 py-2.5 rounded-xl border border-outline-variant bg-surface text-sm font-bold text-on-surface placeholder:text-neutral-subtle outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-elevation-1 transition-all"
+                            className={`w-full pl-8 pr-4 py-2.5 rounded-xl border ${!isValidPrice(signUpHourlyRate) ? 'border-danger' : 'border-outline-variant'} bg-surface text-sm font-bold text-on-surface placeholder:text-neutral-subtle outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-elevation-1 transition-all`}
                             value={signUpHourlyRate}
-                            onChange={(e) => handleBaseRateChange(Number(e.target.value))}
+                            onChange={(e) => handleBaseRateChange(e.target.value)}
+                            onInvalid={(e) => e.preventDefault()}
                           />
                         </div>
+                        {!isValidPrice(signUpHourlyRate) && (
+                          <p className="text-danger text-[11px] font-semibold mt-1 flex items-center gap-1">
+                            <span className="material-symbols-outlined text-xs">error</span>
+                            <span>Enter a whole amount of ₹1 or more</span>
+                          </p>
+                        )}
                         <div className="flex gap-2 pt-0.5">
                           {[299, 499, 799, 999].map(rate => (
                             <button
@@ -723,8 +748,10 @@ export function Login() {
                             { cap: 4, label: 'Small Cohort', icon: 'diversity_3', desc: '4 Students' },
                             { cap: 5, label: 'Masterclass Batch', icon: 'school', desc: '5 Students (Max)' },
                           ].map(tier => {
-                            const seatPrice = signUpBatchPricing[tier.cap] ?? (tier.cap === 1 ? signUpHourlyRate : Math.round(signUpHourlyRate * (1 - tier.cap * 0.1)));
-                            const totalEarnings = seatPrice * tier.cap;
+                            const defaultPrice = calculateBatchPricing(Number(signUpHourlyRate) || 499)[tier.cap];
+                            const seatPrice = signUpBatchPricing[tier.cap] !== undefined ? signUpBatchPricing[tier.cap] : defaultPrice;
+                            const totalEarnings = isValidPrice(seatPrice) ? Number(seatPrice) * tier.cap : 0;
+                            const isTierValid = isValidPrice(seatPrice);
                             return (
                               <div key={tier.cap} className={`p-2.5 rounded-xl border bg-surface-container-low border-outline-variant ${tier.cap === 5 ? 'sm:col-span-2' : ''}`}>
                                 <div className="flex items-center justify-between mb-1">
@@ -741,20 +768,27 @@ export function Login() {
                                     <span className="absolute left-2.5 top-1.5 font-bold text-on-surface-variant text-xs">₹</span>
                                     <input 
                                       type="number" 
-                                      min={0}
-                                      max={10000}
-                                      step={25}
+                                      min={1}
+                                      max={100000}
+                                      step={1}
                                       value={seatPrice}
                                       onChange={(e) => {
-                                        const val = Number(e.target.value);
+                                        const raw = e.target.value;
+                                        const val = raw === '' ? ('' as any) : Number(raw);
                                         setSignUpBatchPricing(prev => ({ ...prev, [tier.cap]: val }));
-                                        if (tier.cap === 1) setSignUpHourlyRate(val);
+                                        if (tier.cap === 1 && isValidPrice(val)) setSignUpHourlyRate(Number(val));
                                       }}
-                                      className="w-full pl-6 pr-2 py-1.5 rounded-lg border border-outline-variant bg-surface text-xs font-bold text-on-surface outline-none focus:border-primary"
+                                      onInvalid={(e) => e.preventDefault()}
+                                      className={`w-full pl-6 pr-2 py-1.5 rounded-lg border ${!isTierValid ? 'border-danger' : 'border-outline-variant'} bg-surface text-xs font-bold text-on-surface outline-none focus:border-primary`}
                                     />
                                   </div>
                                   <span className="text-[10px] font-semibold text-on-surface-variant whitespace-nowrap">/ student</span>
                                 </div>
+                                {!isTierValid && (
+                                  <p className="text-danger text-[10px] font-semibold mt-1 flex items-center gap-0.5">
+                                    <span>Enter a whole amount of ₹1 or more</span>
+                                  </p>
+                                )}
                               </div>
                             );
                           })}
@@ -846,7 +880,7 @@ export function Login() {
               </div>
             </div>
 
-            <form onSubmit={handleOnboardingSubmit} className="space-y-3.5">
+            <form onSubmit={handleOnboardingSubmit} noValidate className="space-y-3.5">
               <div className="space-y-1.5">
                 <label className="block text-xs font-semibold text-on-surface">Your Role</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -886,13 +920,20 @@ export function Login() {
                     <label className="block text-xs font-semibold text-on-surface">Base Mentoring Rate (1-on-1 ₹/Hour)</label>
                     <input
                       type="number"
-                      min={0}
-                      max={10000}
-                      step={25}
+                      min={1}
+                      max={100000}
+                      step={1}
                       value={onboardHourlyRate}
-                      onChange={(e) => handleBaseRateChange(Number(e.target.value), true)}
-                      className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2.5 outline-none focus:border-primary"
+                      onChange={(e) => handleBaseRateChange(e.target.value, true)}
+                      onInvalid={(e) => e.preventDefault()}
+                      className={`w-full rounded-xl border ${!isValidPrice(onboardHourlyRate) ? 'border-danger' : 'border-outline-variant'} bg-surface text-xs font-bold text-on-surface p-2.5 outline-none focus:border-primary`}
                     />
+                    {!isValidPrice(onboardHourlyRate) && (
+                      <p className="text-danger text-[11px] font-semibold mt-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">error</span>
+                        <span>Enter a whole amount of ₹1 or more</span>
+                      </p>
+                    )}
                   </div>
 
                   <div className="space-y-1.5 pt-1">
@@ -908,32 +949,42 @@ export function Login() {
                         { cap: 4, label: 'Cohort (4)', icon: 'diversity_3' },
                         { cap: 5, label: 'Masterclass (5)', icon: 'school' }
                       ].map(tier => {
-                        const seatPrice = onboardBatchPricing[tier.cap] ?? (tier.cap === 1 ? onboardHourlyRate : Math.round(onboardHourlyRate * (1 - tier.cap * 0.1)));
+                        const defaultPrice = calculateBatchPricing(Number(onboardHourlyRate) || 499)[tier.cap];
+                        const seatPrice = onboardBatchPricing[tier.cap] !== undefined ? onboardBatchPricing[tier.cap] : defaultPrice;
+                        const totalEarnings = isValidPrice(seatPrice) ? Number(seatPrice) * tier.cap : 0;
+                        const isTierValid = isValidPrice(seatPrice);
                         return (
-                          <div key={tier.cap} className={`p-1.5 rounded-lg border border-outline-variant bg-surface-container-low ${tier.cap === 5 ? 'col-span-2' : ''}`}>
+                          <div key={tier.cap} className={`p-1.5 rounded-lg border bg-surface-container-low ${tier.cap === 5 ? 'col-span-2' : ''} ${!isTierValid ? 'border-danger' : 'border-outline-variant'}`}>
                             <div className="flex justify-between items-center text-[10px] font-bold mb-0.5">
                               <span className="flex items-center gap-0.5 text-on-surface">
                                 <span className="material-symbols-outlined text-xs text-primary">{tier.icon}</span>
                                 {tier.label}
                               </span>
-                              <span className="text-teaching-emerald font-black">₹{seatPrice * tier.cap}/hr total</span>
+                              <span className="text-teaching-emerald font-black">₹{totalEarnings}/hr total</span>
                             </div>
                             <div className="relative">
                               <span className="absolute left-2 top-1 text-xs font-bold text-on-surface-variant">₹</span>
                               <input 
                                 type="number"
-                                min={0}
-                                max={10000}
-                                step={25}
+                                min={1}
+                                max={100000}
+                                step={1}
                                 value={seatPrice}
                                 onChange={(e) => {
-                                  const val = Number(e.target.value);
+                                  const raw = e.target.value;
+                                  const val = raw === '' ? ('' as any) : Number(raw);
                                   setOnboardBatchPricing(prev => ({ ...prev, [tier.cap]: val }));
-                                  if (tier.cap === 1) setOnboardHourlyRate(val);
+                                  if (tier.cap === 1 && isValidPrice(val)) setOnboardHourlyRate(Number(val));
                                 }}
+                                onInvalid={(e) => e.preventDefault()}
                                 className="w-full pl-5 pr-1 py-1 text-xs font-bold rounded border border-outline-variant bg-surface outline-none"
                               />
                             </div>
+                            {!isTierValid && (
+                              <p className="text-danger text-[10px] font-semibold mt-1 flex items-center gap-0.5">
+                                <span>Enter a whole amount of ₹1 or more</span>
+                              </p>
+                            )}
                           </div>
                         );
                       })}

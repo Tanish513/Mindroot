@@ -42,6 +42,8 @@ model User {
   resetTokens      PasswordResetToken[]
   payoutAccount    PayoutAccount?
   payoutAuditLogs  PayoutAuditLog[]
+  authoredNotes    Note[]                   @relation("AuthorNotes")
+  receivedSharedNotes Note[]                @relation("SharedNotes")
 }
 
 model EmailVerificationToken {
@@ -115,6 +117,7 @@ model Session {
 
   teacher User @relation("TeacherSessions", fields: [teacherId], references: [id])
   student User @relation("StudentSessions", fields: [studentId], references: [id])
+  notes   Note[]
 
   @@index([teacherId, studentId])
 }
@@ -204,4 +207,31 @@ model PayoutAuditLog {
 
   @@index([userId, createdAt])
 }
+
+model Note {
+  id               String   @id @default(uuid())
+  authorId         String
+  type             String   @default("regular") // "regular" | "daily"
+  date             String?  // YYYY-MM-DD, daily notes only
+  sessionId        String?
+  title            String   @default("")
+  content          String   @default("")
+  tags             String[]
+  attachments      Json?    // Array of { name, url, type, size }
+  visibility       String   @default("private") // "private" | "shared"
+  sharedWithUserId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  author           User     @relation("AuthorNotes", fields: [authorId], references: [id], onDelete: Cascade)
+  sharedWithUser   User?    @relation("SharedNotes", fields: [sharedWithUserId], references: [id], onDelete: SetNull)
+  session          Session? @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  @@unique([authorId, date])
+  @@index([authorId])
+  @@index([sessionId])
+  @@index([tags])
+  @@index([authorId, date])
+}
+
 

@@ -5,6 +5,7 @@ import { io, type Socket } from 'socket.io-client';
 import { useAppStore } from '../store/useAppStore';
 import { api, resolveSessionRole } from '../lib/api';
 import { UpiPaymentModal } from '../components/payment/UpiPaymentModal';
+import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
 
 const safeUUID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -124,6 +125,55 @@ export function LiveRoom() {
   const [copiedCode, setCopiedCode] = useState(false);
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [isUpiModalOpen, setIsUpiModalOpen] = useState(false);
+  const [isSessionNotesPanelOpen, setIsSessionNotesPanelOpen] = useState(false);
+
+  // Live Room Side Panel Notes Tab State
+  const [sidebarTab, setSidebarTab] = useState<'chat' | 'notes'>('chat');
+  const [inlineNoteTitle, setInlineNoteTitle] = useState('');
+  const [inlineNoteContent, setInlineNoteContent] = useState('');
+  const [isSavingInlineNote, setIsSavingInlineNote] = useState(false);
+  const [sessionNotesList, setSessionNotesList] = useState<any[]>([]);
+  const [loadingSessionNotes, setLoadingSessionNotes] = useState(false);
+
+  const loadSessionNotesList = useCallback(() => {
+    if (!currentSession?.id) return;
+    setLoadingSessionNotes(true);
+    api.getNotes({ sessionId: currentSession.id })
+      .then(res => {
+        if (Array.isArray(res)) setSessionNotesList(res);
+      })
+      .catch(() => {})
+      .finally(() => setLoadingSessionNotes(false));
+  }, [currentSession?.id]);
+
+  useEffect(() => {
+    if (sidebarTab === 'notes' && currentSession?.id) {
+      loadSessionNotesList();
+    }
+  }, [sidebarTab, currentSession?.id, loadSessionNotesList]);
+
+  const handleSaveInlineNote = async () => {
+    if (!inlineNoteTitle.trim() && !inlineNoteContent.trim()) return;
+    if (!currentSession?.id) return;
+    setIsSavingInlineNote(true);
+    try {
+      await api.saveNote({
+        type: 'regular',
+        sessionId: currentSession.id,
+        title: inlineNoteTitle.trim() || `Session Note (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})`,
+        content: `<p>${inlineNoteContent.trim()}</p>`,
+        visibility: 'private',
+        tags: ['session-notes']
+      });
+      setInlineNoteTitle('');
+      setInlineNoteContent('');
+      loadSessionNotesList();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save note');
+    } finally {
+      setIsSavingInlineNote(false);
+    }
+  };
 
   // Whiteboard drawing tools
   const [drawColor, setDrawColor] = useState('#2563eb');
@@ -2170,18 +2220,155 @@ export function LiveRoom() {
               )}
             </div>
             
-            {/* Right Chat Sidebar */}
+            {/* Right Sidebar: Chat & Session Notes Tabs */}
             <aside className={clsx(
-              'min-h-0 shrink-0 overflow-hidden rounded-2xl border border-outline-variant bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-on-surface',
+              'min-h-0 shrink-0 overflow-hidden rounded-2xl border border-outline-variant bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-on-surface w-full lg:w-80',
               chatOpen ? 'flex' : 'hidden lg:flex'
             )}>
-              <RoomChat
-                messages={messages}
-                chatText={chatText}
-                setChatText={setChatText}
-                sendChat={sendChat}
-                chatOpen={chatOpen}
-              />
+              {/* Tab Header */}
+              <div className="flex items-center border-b border-outline-variant bg-surface-2 p-1.5 shrink-0 gap-1">
+                <button
+                  onClick={() => setSidebarTab('chat')}
+                  className={clsx(
+                    "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                    sidebarTab === 'chat'
+                      ? "bg-surface text-primary shadow-xs border border-outline-variant/50"
+                      : "text-muted hover:text-text"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[15px]">forum</span>
+                  <span>Live Chat</span>
+                </button>
+                <button
+                  onClick={() => setSidebarTab('notes')}
+                  className={clsx(
+                    "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                    sidebarTab === 'notes'
+                      ? "bg-surface text-primary shadow-xs border border-outline-variant/50"
+                      : "text-muted hover:text-text"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[15px]">edit_note</span>
+                  <span>Session Notes</span>
+                  {sessionNotesList.length > 0 && (
+                    <span className="px-1.5 py-0.2 rounded-full bg-primary-tint text-primary-text text-[9px] font-black">
+                      {sessionNotesList.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+
+              {/* Tab Body */}
+              {sidebarTab === 'chat' ? (
+                <div className="flex-1 min-h-0 flex flex-col">
+                  <RoomChat
+                    messages={messages}
+                    chatText={chatText}
+                    setChatText={setChatText}
+                    sendChat={sendChat}
+                    chatOpen={true}
+                  />
+                </div>
+              ) : (
+                <div className="flex-1 min-h-0 flex flex-col bg-surface p-3 overflow-y-auto custom-scrollbar space-y-3">
+                  {/* Inline Add Note Section */}
+                  <div className="p-3 bg-surface-2 rounded-xl border border-border space-y-2 shrink-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-text flex items-center gap-1">
+                        <span className="material-symbols-outlined text-sm text-primary">add_circle</span>
+                        Quick Inline Note
+                      </span>
+                      <button
+                        onClick={() => setIsSessionNotesPanelOpen(true)}
+                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
+                        title="Open rich text editor & attachments"
+                      >
+                        <span>Full Editor</span>
+                        <span className="material-symbols-outlined text-xs">open_in_new</span>
+                      </button>
+                    </div>
+                    <input
+                      type="text"
+                      value={inlineNoteTitle}
+                      onChange={e => setInlineNoteTitle(e.target.value)}
+                      placeholder="Note title (e.g. Key formula)..."
+                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden"
+                    />
+                    <textarea
+                      value={inlineNoteContent}
+                      onChange={e => setInlineNoteContent(e.target.value)}
+                      placeholder="Key takeaway, question, action item..."
+                      rows={2}
+                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden resize-none"
+                    />
+                    <button
+                      disabled={isSavingInlineNote || (!inlineNoteTitle.trim() && !inlineNoteContent.trim())}
+                      onClick={handleSaveInlineNote}
+                      className="w-full py-1.5 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-sm">save</span>
+                      <span>{isSavingInlineNote ? 'Saving...' : 'Save to Session'}</span>
+                    </button>
+                  </div>
+
+                  {/* Notes List for this session */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[11px] font-bold text-muted px-1">
+                      <span>Notes in this Lecture ({sessionNotesList.length})</span>
+                      <button
+                        onClick={loadSessionNotesList}
+                        className="hover:text-primary transition-colors cursor-pointer"
+                        title="Refresh"
+                      >
+                        <span className="material-symbols-outlined text-xs">refresh</span>
+                      </button>
+                    </div>
+
+                    {loadingSessionNotes ? (
+                      <div className="py-6 text-center text-xs text-muted font-bold animate-pulse">
+                        Loading session notes...
+                      </div>
+                    ) : sessionNotesList.length === 0 ? (
+                      <div className="p-4 text-center bg-surface-2/60 border border-dashed border-border rounded-xl space-y-1">
+                        <span className="material-symbols-outlined text-xl text-muted">description</span>
+                        <p className="text-xs font-bold text-text">No notes yet</p>
+                        <p className="text-[10px] text-muted">Write quick takeaways above or launch the rich editor.</p>
+                      </div>
+                    ) : (
+                      sessionNotesList.map(n => {
+                        const isShared = n.visibility === 'shared';
+                        const isAuthor = n.authorId === currentUser?.id;
+                        const preview = (n.content || '').replace(/<[^>]*>/g, ' ').slice(0, 100);
+                        return (
+                          <div
+                            key={n.id}
+                            onClick={() => setIsSessionNotesPanelOpen(true)}
+                            className="p-2.5 rounded-xl border border-border bg-surface-2 hover:border-primary/50 transition-all cursor-pointer space-y-1 shadow-2xs group"
+                          >
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="text-xs font-bold text-text group-hover:text-primary truncate">
+                                {n.title || 'Untitled Note'}
+                              </span>
+                              {isShared ? (
+                                <span className="px-1.5 py-0.2 rounded-full bg-accent-tint text-accent-text text-[9px] font-bold shrink-0">
+                                  {isAuthor ? 'Shared' : 'Shared by Mentor'}
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.2 rounded-full bg-surface text-muted text-[9px] font-bold shrink-0">
+                                  Private
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted line-clamp-2 leading-relaxed">
+                              {preview || 'No content...'}
+                            </p>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
             </aside>
           </section>
         )}
@@ -2395,6 +2582,17 @@ export function LiveRoom() {
             >
               <span className="material-symbols-outlined text-[18px]">chat</span>
             </button>
+
+            {/* Session Notes Panel Toggle Button */}
+            {currentSession && (
+              <button
+                onClick={() => setIsSessionNotesPanelOpen(true)}
+                className="grid h-10 w-10 place-items-center rounded-full border border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-elevation-1"
+                title="View & Add Session Notes"
+              >
+                <span className="material-symbols-outlined text-[18px]">edit_note</span>
+              </button>
+            )}
           </div>
 
           {/* Leave Call Button */}
@@ -2756,9 +2954,42 @@ export function LiveRoom() {
             )}
 
             <div className="space-y-2 pt-1">
+              {/* Add notes from this session prompt */}
+              {currentSession && !localStorage.getItem(`mindroot_prompted_notes_${currentSession.id}`) && (
+                <div className="p-3 bg-primary-tint border border-primary/20 rounded-2xl flex items-center justify-between gap-2 text-left">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="material-symbols-outlined text-primary text-base shrink-0">edit_note</span>
+                    <span className="text-xs font-bold text-primary-text truncate">Add notes from this session</span>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => {
+                        localStorage.setItem(`mindroot_prompted_notes_${currentSession.id}`, 'true');
+                        setIsSessionNotesPanelOpen(true);
+                      }}
+                      className="px-2.5 py-1 bg-primary text-on-primary rounded-lg text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer"
+                    >
+                      Write Notes
+                    </button>
+                    <button
+                      onClick={() => {
+                        localStorage.setItem(`mindroot_prompted_notes_${currentSession.id}`, 'true');
+                        // Force re-render
+                        setCurrentSession({ ...currentSession });
+                      }}
+                      className="p-1 text-muted hover:text-text rounded-md cursor-pointer"
+                      title="Dismiss"
+                      aria-label="Dismiss note prompt"
+                    >
+                      <span className="material-symbols-outlined text-sm">close</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={() => navigate('/schedule')}
-                className="w-full py-2.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold transition-all shadow-elevation-1 active:scale-95 flex items-center justify-center gap-2"
+                className="w-full py-2.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold transition-all shadow-elevation-1 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <span className="material-symbols-outlined text-[17px]">calendar_month</span>
                 Return to Schedule
@@ -2820,6 +3051,16 @@ export function LiveRoom() {
           navigate('/schedule');
         }}
       />
+
+      {/* Session Notes Panel */}
+      {currentSession && (
+        <SessionNotesPanel
+          isOpen={isSessionNotesPanelOpen}
+          onClose={() => setIsSessionNotesPanelOpen(false)}
+          session={currentSession}
+          currentUserId={currentUser?.id}
+        />
+      )}
     </div>
   );
 }

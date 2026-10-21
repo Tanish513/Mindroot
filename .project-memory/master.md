@@ -8,6 +8,7 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
 - **Profiles & Settings**: User preferences, teacher hourly rates, batch pricing tiers, UPI setup, and account lifecycle in `src/pages/Profile.tsx` and `src/pages/TeacherPortal.tsx`.
 - **Marketplace & Booking**: Discover mentors and book sessions with dynamic tiered batch pricing in `src/pages/Marketplace.tsx`.
 - **Persistence & API**: Express routes in `server/src/index.ts`, Prisma schema in `server/prisma/schema.prisma`, and client in `src/lib/api/index.ts`.
+- **Notes & Journaling**: Daily and regular rich text learning notes with tags, attachments, session association, and mentor-to-student sharing in `server/src/routes/notes.ts` and `src/pages/Notes.tsx`.
 
 ## Current State
 - **Completed**:
@@ -28,5 +29,43 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
      - `confirm-upi`: strictly student-only (`403` for admin / third party). `confirm-payment`: requires recorded UTR and `pending-mentor-confirmation` state.
      - Live room: real TURN with auth, payload limits, rate limits, state recovery (`room-state-sync`), 4-video peer cap with audio overflow explainer, Pyodide WASM + SQLite-WASM runner, modularized into `src/components/liveroom/`, purged unused packages (`@livekit/*`, `yjs`, `y-webrtc`), reduced bundle to 157.68 kB.
      - Leftover Part 1: `POST /api/admin/users/:id/verify-vpa` (`403` for non-admin), `PayoutAccount` and `PayoutAuditLog` models and migration, `getMentorVpa` helper, VPA cleanup, hardened UPI intent.
-- **Latest verification**: 42/42 tests passing across 8 suites (100% in-memory and 100% PostgreSQL). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean. (Commit `0ffc63d`).
-- **Known Issues**: None. All gaps and adversarial findings resolved and verified.
+  9. Plan 6 (Price Validation & Slot Conflict Precision):
+     - Whole-rupee validation across all price inputs with custom inline errors ("Enter a whole amount of ₹1 or more"), min 1, and noValidate preventing browser tooltip popups.
+     - Shared canonical rounding via `roundPrice` and `calculateSeatPrice`.
+     - End-exclusive interval overlap checking (`startA < endB && endA > startB`) with strict teacher isolation and active session filtering.
+     - Single source of truth endpoints: `GET /api/teachers/:teacherId/slot-check` and `GET /api/teachers/:teacherId/booked-slots`.
+     - Real-time debounced pre-flight check in booking modals with `AbortController` and live state indicators.
+     - Client authentication self-healing: automatic `dev-token-${userId}` generation and 401 retry recovery.
+     - Verified by `slot_availability_precision.test.ts` (12/12) and `pricing_and_booking_bugs.test.ts` (10/10).
+  10. Plan 7 (End-to-End Booking-Request Flow & Realtime Sync):
+     - Traced write path and read path with structured audit logging on server (`POST /api/sessions` and `GET /api/sessions`).
+     - Resolved account identity mismatch between teachers "hehehe" and "teachertest".
+     - Eliminated premature auto-completion of pending sessions on client and server.
+     - Unblocked Schedule pending tab filter, keeping requests visible until explicitly accepted or declined.
+     - Enabled guest socket handshakes in `io.use` and dynamic socket auth on login/logout for instant real-time push.
+     - Subscribed Teacher Portal to `onSessionsUpdated` and `onSessionRequestCreated` with a 10s polling fallback.
+     - Upgraded Student Requests cards (student avatar/name, skill, format badge, date/time, amount, Pay After Class tag, Accept/Decline action buttons with feedback).
+     - Added Admin Portal Session Ledger debugger view showing Session ID, Teacher/Student names, emails, and IDs.
+     - Verified by `booking_request_flow.test.ts` (7/7).
+  11. Notes Model, Schema Drift Diagnosis & Secret Hygiene:
+     - Notes Migration: generated isolated migration `20261020000000_add_notes_model/migration.sql` adding only `Note`, foreign keys, and indexes, verified against disposable local PostgreSQL.
+     - Schema Drift Analysis: proved that drift on `Session`, `Transaction`, `User`, and `PayoutAccount` is OLD (pre-existing at HEAD `c8f78c7`); confirmed repo relies on `prisma db push` in `Dockerfile` and `sync_supabase.bat`.
+     - Secret Hygiene: scrubbed `PASSWORD_ENCRYPTION_KEY=CHANGE_ME` in `.env.example`; confirmed key history in commit `5489f7d`.
+     - Notes Authorization Audit: audited `server/src/routes/notes.ts` confirming strict user isolation, read-only shared access, and sanitization.
+     - Plan copies synchronized: aligned `mindroot_implementation_plan_antigravity.md` with `docs/mindroot_implementation_plan_antigravity.md`.
+     - Verified by `notes_api.test.ts` (6/6), `booking_request_flow.test.ts` (7/7), `slot_availability_precision.test.ts` (12/12), `pricing_and_booking_bugs.test.ts` (10/10).
+  12. Security & Privacy Hardening, Teardown Resolution, Legacy Gateway Removal:
+      - Notes Privacy: replaced global emissions in `notes.ts` with `emitNoteEvent` and `emitNoteDeleted`, scoped strictly to `user:${authorId}` and `user:${sharedWithUserId}`. Verified by `notes_api.test.ts` (Test 7).
+      - Payment Broadcast Scoping: replaced global broadcasts of `session-payment-received`, `session-payment-confirmed`, and `network-sessions-updated` in `server/src/index.ts` with targeted delivery strictly to `user:${studentId}` and `user:${teacherId}` with participant-filtered ledgers. Verified by `payment_security_fixes.test.ts` (Test 1).
+      - Paid Swap Price Tampering: made server session price authoritative for paid swaps. Client-tampered lower prices rejected with HTTP 400 `PRICE_TAMPERING_DETECTED`. Preserves free swaps (`isFree: true` or `0`). Verified by `payment_security_fixes.test.ts` (Test 2).
+      - payment-handshake-submitted: removed admin bypass, strictly required enrolled student, validated 12-digit numeric UTR outside demo mode, and verified session/payment states. Verified by `payment_security_fixes.test.ts` (Test 3).
+      - Theme E2E Alignment: updated `e2e/theme_toggle.spec.ts` assertions to match active `--bg: #0A1612` (dark) and `#F7FAF9` (light) tokens from `src/index.css`. Verified via Playwright (1 passed in 8.9s, exit code 0).
+      - Test Teardown: unref'd `sessionReminderInterval` in `server/src/index.ts` and seeded confirmed room session in `audit_gaps.test.ts` Test 7. All 14 backend test suites exit 0 cleanly with zero process hangs.
+      - Legacy Gateway Complete Removal: fully purged legacy payment gateway from backend (`server/src/index.ts`), removed package from `server/package.json` and lockfiles, scrubbed references from `.env.example`, `DEPLOYMENT.md`, `docs/`, `src/lib/api/index.ts`, and comments. Direct UPI payment remains fully operational.
+      - Documentation & Unverified Claims: scrubbed all unverified claims and literal counter references from both plan copies and aligned root and docs plan copies (diff = 0). Rewrote `docs/API.md` with complete, accurate documentation of real REST and WebSocket endpoints, auth contracts, logged-in session creation, and caller-scoped transactions.
+   13. Swap Pricing Server Enforcement Hardening & API Documentation Alignment:
+       - Enforced server-authoritative swap pricing in `server/src/index.ts`: when mentor has no hourly rate configured, client-supplied prices are never trusted. Uses original session's server price if found; otherwise rejects with HTTP 400 `SWAP_PRICE_UNAVAILABLE`. Closed zero-price bypass loophole (`|| clientSuppliedPrice === 0` removed).
+       - Updated `docs/API.md` line ~40 to describe exact authoritative swap pricing behavior and error contracts (`PRICE_TAMPERING_DETECTED`, `SWAP_PRICE_UNAVAILABLE`).
+       - Verified by `server/test/payment_security_fixes.test.ts` (subtests 2d, 2e, 2f-i, 2f-ii).
+- **Latest verification**: All 14 automated backend suites (103/103) and Playwright E2E passing (100%). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 3.48s.
+- **Known Issues**: None. All items fully verified and resolved.

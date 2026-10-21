@@ -1,16 +1,47 @@
 import { io } from 'socket.io-client';
 import { getBackendUrl } from '../env';
+import { isSlotConflicting, getTeacherActiveBookings } from '../bookingRules';
+import { calculateSeatPrice } from '../pricing';
 
 const getBASE = () => getBackendUrl();
+
+export const getSocketAuthToken = () => {
+  if (typeof localStorage === 'undefined') return '';
+  let token = localStorage.getItem('mindroot_auth_token');
+  if (!token) {
+    try {
+      const stored = localStorage.getItem('mindroot_current_user');
+      if (stored) {
+        const u = JSON.parse(stored);
+        if (u?.id) token = `dev-token-${u.id}`;
+      }
+    } catch {}
+  }
+  return token || '';
+};
 
 export const globalSocket = io(getBackendUrl(), { 
   path: '/socket.io', 
   transports: ['polling', 'websocket'],
+  auth: (cb) => {
+    const token = getSocketAuthToken();
+    cb({ token });
+  },
   reconnectionAttempts: 10,
   reconnectionDelay: 1000,
   reconnectionDelayMax: 10000,
   randomizationFactor: 0.5
 });
+
+export const updateSocketAuth = (token?: string) => {
+  const t = token || getSocketAuthToken();
+  (globalSocket as any).auth = { token: t };
+  if (globalSocket.connected) {
+    globalSocket.disconnect().connect();
+  } else {
+    globalSocket.connect();
+  }
+};
 const globalBc = new BroadcastChannel('mindroot_network_sync');
 
 // Safe LocalStorage helpers with size limits to prevent QuotaExceededError
@@ -351,31 +382,9 @@ export function calcSessionRewardPoints(durationMin: number = 60): number {
   return Math.max(10, Math.round(15 + (duration / 30) * 5));
 }
 
-// Dynamic Tiered Pricing for Multi-Student Lectures (Capacity 1 to 5)
-export function calculateSeatPrice(peerOrBaseRate: any, capacity: number = 1): number {
-  const cap = Math.min(Math.max(capacity || 1, 1), 5);
-
-  if (peerOrBaseRate && typeof peerOrBaseRate === 'object') {
-    const bp = peerOrBaseRate.batchPricing;
-    if (bp && typeof bp === 'object') {
-      const customPrice = bp[cap] ?? bp[String(cap)];
-      if (typeof customPrice === 'number' && !isNaN(customPrice) && customPrice >= 0) {
-        return customPrice;
-      }
-    }
-    const base = (peerOrBaseRate.hourlyRate !== undefined && !isNaN(Number(peerOrBaseRate.hourlyRate)) && Number(peerOrBaseRate.hourlyRate) >= 0)
-      ? Number(peerOrBaseRate.hourlyRate)
-      : 499;
-    return calculateSeatPrice(base, cap);
-  }
-
-  const base = typeof peerOrBaseRate === 'number' && !isNaN(peerOrBaseRate) && peerOrBaseRate >= 0 ? peerOrBaseRate : 499;
-  if (cap <= 1) return base;
-  if (cap === 2) return Math.round(base * 0.8); // 20% discount (e.g. ₹399)
-  if (cap === 3) return Math.round(base * 0.7); // 30% discount (e.g. ₹349)
-  if (cap === 4) return Math.round(base * 0.6); // 40% discount (e.g. ₹299)
-  return Math.round(base * 0.5); // 50% discount (e.g. ₹249 for max capacity 5)
-}
+// Re-export shared pricing functions
+export { isValidPrice, roundPrice, calculateBatchPricing, calculateSeatPrice } from '../pricing';
+export type { BatchPricing } from '../pricing';
 
 export function getCapacityDetails(capacity: number = 1) {
   switch (capacity) {
@@ -444,7 +453,19 @@ const getHeaders = () => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
-  const token = localStorage.getItem('mindroot_auth_token');
+  let token = typeof localStorage !== 'undefined' ? localStorage.getItem('mindroot_auth_token') : null;
+  if (!token && typeof localStorage !== 'undefined') {
+    try {
+      const storedUser = localStorage.getItem('mindroot_current_user');
+      if (storedUser) {
+        const u = JSON.parse(storedUser);
+        if (u?.id) {
+          token = `dev-token-${u.id}`;
+          safeSetStorage('mindroot_auth_token', token);
+        }
+      }
+    } catch {}
+  }
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -453,11 +474,20 @@ const getHeaders = () => {
 
 const safeParse = async (r: Response, fallback: any) => {
   try {
-    if (r.status === 401) {
+    if (r.status === 401 && typeof localStorage !== 'undefined') {
       const existingToken = localStorage.getItem('mindroot_auth_token');
       if (existingToken && !existingToken.startsWith('dev-token-')) {
-        console.warn('[API Auth] 401 Unauthorized encountered with invalid/expired token. Clearing stale auth token.');
+        console.warn('[API Auth] 401 Unauthorized encountered with invalid/expired token. Clearing stale auth token and restoring dev session.');
         localStorage.removeItem('mindroot_auth_token');
+        try {
+          const storedUser = localStorage.getItem('mindroot_current_user');
+          if (storedUser) {
+            const u = JSON.parse(storedUser);
+            if (u?.id) {
+              safeSetStorage('mindroot_auth_token', `dev-token-${u.id}`);
+            }
+          }
+        } catch {}
       }
     }
     const text = await r.text();
@@ -841,7 +871,7 @@ export const api = {
         if (s.scheduledAt) {
           const startTime = new Date(s.scheduledAt).getTime();
           const durationMs = (s.durationMin || 60) * 60 * 1000;
-          if ((s.status === 'confirmed' || s.status === 'pending') && (startTime + durationMs <= now)) {
+          if ((s.status === 'confirmed' || s.status === 'live') && (startTime + durationMs <= now)) {
             s.status = 'completed';
             hasChanged = true;
           }
@@ -865,6 +895,75 @@ export const api = {
     }
 
     return resultList;
+  },
+
+  getTeacherBookedSlots: async (teacherId: string, from?: string, to?: string) => {
+    try {
+      let url = `${getBASE()}/api/teachers/${encodeURIComponent(teacherId)}/booked-slots`;
+      const params = new URLSearchParams();
+      if (from) params.set('from', from);
+      if (to) params.set('to', to);
+      const queryStr = params.toString();
+      if (queryStr) url += `?${queryStr}`;
+
+      const r = await fetch(url, { headers: getHeaders() });
+      if (r.ok) {
+        const data = await safeParse(r, null);
+        if (data && Array.isArray(data.bookedSlots)) {
+          return data.bookedSlots;
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to fetch teacher booked slots from backend:', err);
+    }
+
+    const stored = localStorage.getItem('mindroot_known_sessions');
+    const sessions: any[] = stored ? JSON.parse(stored) : [];
+    const fromMs = from ? new Date(from).getTime() : undefined;
+    const toMs = to ? new Date(to).getTime() : undefined;
+    return getTeacherActiveBookings(sessions, teacherId, fromMs, toMs);
+  },
+
+  checkSlotAvailability: async (teacherId: string, scheduledAt: string, durationMin: number = 60, signal?: AbortSignal) => {
+    try {
+      const url = `${getBASE()}/api/teachers/${encodeURIComponent(teacherId)}/slot-check?scheduledAt=${encodeURIComponent(scheduledAt)}&durationMin=${durationMin}`;
+      const r = await fetch(url, { headers: getHeaders(), signal });
+      if (r.ok) {
+        const data = await safeParse(r, null);
+        if (data && typeof data.available === 'boolean') {
+          return data;
+        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') throw err;
+      console.warn('Backend slot-check failed, evaluating locally:', err);
+    }
+
+    const stored = localStorage.getItem('mindroot_known_sessions');
+    const sessions: any[] = stored ? JSON.parse(stored) : [];
+    const reqStart = new Date(scheduledAt).getTime();
+    const conflict = isSlotConflicting(sessions, teacherId, reqStart, durationMin);
+
+    if (conflict) {
+      return {
+        available: false,
+        conflict: true,
+        teacherId,
+        requestedStart: scheduledAt,
+        conflictingSession: conflict,
+        nearestSlot: null,
+        nearestSlotFormatted: null,
+        hasAvailability: false
+      };
+    }
+
+    return {
+      available: true,
+      conflict: false,
+      teacherId,
+      requestedStart: scheduledAt,
+      message: 'Slot is available'
+    };
   },
 
   getTransactions: async (userId?: string) => {
@@ -919,13 +1018,25 @@ export const api = {
   },
 
   patchSession: async (id: string, data: { status?: string; paymentStatus?: string; paymentId?: string; studentId?: string; [key: string]: any }) => {
+    let serverUpdated: any = null;
     try {
-      await fetch(`${getBASE()}/api/sessions/${id}`, {
+      const r = await fetch(`${getBASE()}/api/sessions/${id}`, {
         method: 'PATCH',
         headers: getHeaders(),
         body: JSON.stringify(data)
       });
-    } catch {}
+      const parsed = await safeParse(r, null);
+      if (!r.ok && parsed && parsed.error) {
+        throw new Error(parsed.error);
+      }
+      if (r.ok && parsed) {
+        serverUpdated = parsed;
+      }
+    } catch (err: any) {
+      if (err.message && !err.message.includes('fetch')) {
+        throw err;
+      }
+    }
 
     try {
       const stored = localStorage.getItem('mindroot_known_sessions');
@@ -949,7 +1060,7 @@ export const api = {
       globalBc.postMessage({ type: 'sync-sessions', sessions: list });
     } catch {}
 
-    return { id, ...data };
+    return serverUpdated || { id, ...data };
   },
 
   postSession: async (data: NewSessionInput) => {
@@ -957,11 +1068,20 @@ export const api = {
     let conflictRes: any = null;
 
     try {
-      const r = await fetch(`${getBASE()}/api/sessions`, {
+      let r = await fetch(`${getBASE()}/api/sessions`, {
         method: 'POST',
         headers: getHeaders(),
         body: JSON.stringify(data)
       });
+      // Self-heal retry: if 401 occurred (e.g. stale JWT token was just cleared and regenerated to dev-token)
+      if (r.status === 401) {
+        await safeParse(r, null);
+        r = await fetch(`${getBASE()}/api/sessions`, {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify(data)
+        });
+      }
       const parsed = await safeParse(r, null);
       if (r.status === 409 || (parsed && parsed.conflict)) {
         conflictRes = parsed;
@@ -970,12 +1090,14 @@ export const api = {
         if (parsed.insufficientBalance) (err as any).insufficientBalance = true;
         if (parsed.available !== undefined) (err as any).available = parsed.available;
         if (parsed.required !== undefined) (err as any).required = parsed.required;
+        if (parsed.code) (err as any).code = parsed.code;
         throw err;
       } else if (r.ok && parsed) {
         createdSession = parsed;
       }
     } catch (e: any) {
-      if (e.insufficientBalance || (e.message && e.message.includes('Insufficient token balance'))) {
+      // Re-throw server errors directly; only allow offline fallback on genuine network disconnection (e.g. TypeError)
+      if (e.message && e.name !== 'TypeError' && !e.message.includes('fetch')) {
         throw e;
       }
     }
@@ -983,8 +1105,11 @@ export const api = {
     if (conflictRes) {
       const err = new Error(conflictRes.error || 'This slot is already booked.');
       (err as any).conflict = true;
+      (err as any).code = conflictRes.code || 'SLOT_CONFLICT';
       (err as any).nearestSlot = conflictRes.nearestSlot;
       (err as any).nearestSlotFormatted = conflictRes.nearestSlotFormatted;
+      (err as any).noAvailability = conflictRes.noAvailability;
+      (err as any).hasAvailability = conflictRes.hasAvailability;
       throw err;
     }
 
@@ -1001,15 +1126,11 @@ export const api = {
       const maxCap = Math.min(Math.max(data.maxCapacity || 1, 1), 5);
       const isSwapSession = Boolean(data.isSwap || (data.title && data.title.includes('↔')));
       const seatPrice = isSwapSession ? 0 : (data.pricePerStudent || data.amount || calculateSeatPrice(499, maxCap));
+      const durationMin = Math.max(15, typeof data.durationMin === 'number' ? data.durationMin : (parseInt(String(data.durationMin || 60), 10) || 60));
       const reqTime = new Date(data.scheduledAt).getTime();
 
-      // Fallback offline conflict check
-      const localConflict = storedSessions.find(s => {
-        if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
-        if (s.teacherId !== data.teacherId && s.teacher?.id !== data.teacherId) return false;
-        const sTime = new Date(s.scheduledAt).getTime();
-        return Math.abs(sTime - reqTime) < 45 * 60 * 1000;
-      });
+      // Fallback offline conflict check using end-exclusive interval overlap
+      const localConflict = isSlotConflicting(storedSessions, data.teacherId, reqTime, durationMin);
 
       if (localConflict) {
         const nextTime = new Date(reqTime + 3600000);
@@ -1074,6 +1195,16 @@ export const api = {
 
   declineSession: async (id: string, reason?: string) => {
     return api.patchSession(id, { status: 'declined', reason });
+  },
+
+  rejectSession: async (id: string, reason?: string) => {
+    return api.patchSession(id, { status: 'rejected', reason });
+  },
+
+  getBookingsForUser: async (userId: string, role?: 'student' | 'teacher' | 'both' | 'admin', statusFilter?: string) => {
+    const allSessions = await api.getSessions();
+    const { getBookingsForUser } = await import('../bookingService');
+    return getBookingsForUser(allSessions, userId, role, statusFilter);
   },
 
   acceptSwap: async (id: string) => {
@@ -1548,121 +1679,6 @@ export const api = {
     return { text: 'Mindroot AI Assistant active in offline mode. Ask me about booking sessions, group cohorts, or finding top mentors!' };
   },
 
-  // ==========================================
-  // RAZORPAY PAYMENT GATEWAY CLIENT METHODS
-  // ==========================================
-  createSessionPaymentOrder: async (data: {
-    teacherId?: string;
-    mentorId?: string;
-    studentId?: string;
-    skillId?: string;
-    title?: string;
-    scheduledAt?: string;
-    durationMin?: number;
-    amount?: number;
-    sessionId?: string;
-    [key: string]: any;
-  }) => {
-    try {
-      const r = await fetch(`${getBASE()}/api/payment/create-session-order`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (r.ok) {
-        return await safeParse(r, null);
-      }
-    } catch (err) {
-      console.warn('Backend payment order offline, generating client test payload:', err);
-    }
-
-    const fallbackKey = import.meta.env.VITE_RAZORPAY_KEY_ID || 'rzp_test_TUrtuundUxD7Jh';
-    const amount = data.amount || 499;
-    return {
-      success: true,
-      orderId: `order_dev_${Date.now()}`,
-      amount,
-      amountInPaise: amount * 100,
-      currency: 'INR',
-      keyId: fallbackKey,
-      sessionData: {
-        title: data.title || 'Skill Mentoring Session',
-        teacherId: data.teacherId || data.mentorId,
-        studentId: data.studentId || 'user-alex',
-        skillId: data.skillId,
-        scheduledAt: data.scheduledAt || new Date().toISOString(),
-        durationMin: data.durationMin || 60,
-        amount
-      }
-    };
-  },
-
-  verifySessionPayment: async (data: {
-    razorpay_order_id: string;
-    razorpay_payment_id: string;
-    razorpay_signature: string;
-    sessionData?: any;
-    amount?: number;
-    [key: string]: any;
-  }) => {
-    try {
-      const r = await fetch(`${getBASE()}/api/payment/verify-session-payment`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (r.ok) {
-        const res = await safeParse(r, null);
-        if (res && res.session) {
-          try {
-            const stored = localStorage.getItem('mindroot_known_sessions');
-            const list = stored ? JSON.parse(stored) : [];
-            if (!list.some((s: any) => s.id === res.session.id)) {
-              list.push(res.session);
-              safeSetStorage('mindroot_known_sessions', list);
-            }
-          } catch {}
-        }
-        return res;
-      }
-    } catch (err) {
-      console.warn('Backend payment verification offline, applying local fallback:', err);
-    }
-
-    // Local client fallback
-    const newSession = {
-      id: 'session-' + Date.now(),
-      title: data.sessionData?.title || 'Skill Mentoring Session',
-      teacherId: data.sessionData?.teacherId,
-      studentId: data.sessionData?.studentId || 'user-alex',
-      skillId: data.sessionData?.skillId || null,
-      teacher: { name: 'Mentor', hourlyRate: 499 },
-      student: { name: 'Student' },
-      status: 'confirmed',
-      paymentStatus: 'paid',
-      paymentId: data.razorpay_payment_id || `pay_dev_${Date.now()}`,
-      orderId: data.razorpay_order_id,
-      amount: data.sessionData?.amount || 499,
-      scheduledAt: data.sessionData?.scheduledAt || new Date().toISOString(),
-      durationMin: data.durationMin || 60
-    };
-
-    try {
-      const stored = localStorage.getItem('mindroot_known_sessions');
-      const list = stored ? JSON.parse(stored) : [];
-      list.push(newSession);
-      safeSetStorage('mindroot_known_sessions', list);
-
-      globalSocket.emit('book-session-sync', newSession);
-      globalBc.postMessage({ type: 'sync-sessions', sessions: list });
-    } catch {}
-
-    return {
-      success: true,
-      message: 'Payment confirmed and session scheduled successfully!',
-      session: newSession
-    };
-  },
 
   getMentorUpi: async (teacherId: string) => {
     try {
@@ -2132,5 +2148,166 @@ export const api = {
       console.warn('API updateSessionNotes error:', err);
     }
     return { success: true, sessionId, studyNotes };
+  },
+
+  // Notes Feature Client API
+  getNotes: async (params?: { type?: string; sessionId?: string; filter?: string; tag?: string; search?: string; dateFrom?: string; dateTo?: string }) => {
+    try {
+      const qs = new URLSearchParams();
+      if (params?.type) qs.append('type', params.type);
+      if (params?.sessionId) qs.append('sessionId', params.sessionId);
+      if (params?.filter) qs.append('filter', params.filter);
+      if (params?.tag) qs.append('tag', params.tag);
+      if (params?.search) qs.append('search', params.search);
+      if (params?.dateFrom) qs.append('dateFrom', params.dateFrom);
+      if (params?.dateTo) qs.append('dateTo', params.dateTo);
+
+      const r = await fetch(`${getBASE()}/api/notes?${qs.toString()}`, {
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, []);
+    } catch (err) {
+      console.warn('API getNotes error:', err);
+    }
+    return [];
+  },
+
+  getNoteById: async (id: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/notes/${id}`, {
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, null);
+    } catch (err) {
+      console.warn('API getNoteById error:', err);
+    }
+    return null;
+  },
+
+  getTodayNote: async (tz: string = 'Asia/Kolkata') => {
+    try {
+      const r = await fetch(`${getBASE()}/api/notes/daily/today?tz=${encodeURIComponent(tz)}`, {
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, { todayDate: '', note: null });
+    } catch (err) {
+      console.warn('API getTodayNote error:', err);
+    }
+    return { todayDate: '', note: null };
+  },
+
+  getDailyStreak: async (tz: string = 'Asia/Kolkata') => {
+    try {
+      const r = await fetch(`${getBASE()}/api/notes/daily/streak?tz=${encodeURIComponent(tz)}`, {
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, { noteStreak: 0, todayDate: '', hasTodayNote: false });
+    } catch (err) {
+      console.warn('API getDailyStreak error:', err);
+    }
+    return { noteStreak: 0, todayDate: '', hasTodayNote: false };
+  },
+
+  getNoteTags: async () => {
+    try {
+      const r = await fetch(`${getBASE()}/api/notes/tags`, {
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, []);
+    } catch (err) {
+      console.warn('API getNoteTags error:', err);
+    }
+    return [];
+  },
+
+  saveNote: async (data: {
+    id?: string;
+    type?: 'regular' | 'daily';
+    date?: string;
+    sessionId?: string | null;
+    title: string;
+    content: string;
+    tags?: string[];
+    attachments?: Array<{ name: string; url: string; type: string; size: number }>;
+    visibility?: 'private' | 'shared';
+    tz?: string;
+  }) => {
+    try {
+      const isUpdate = Boolean(data.id);
+      const url = isUpdate ? `${getBASE()}/api/notes/${data.id}` : `${getBASE()}/api/notes`;
+      const method = isUpdate ? 'PUT' : 'POST';
+
+      const r = await fetch(url, {
+        method,
+        headers: getHeaders(),
+        body: JSON.stringify(data)
+      });
+      if (r.ok) return await safeParse(r, null);
+      const errRes = await safeParse(r, {});
+      throw new Error(errRes.error || 'Failed to save note');
+    } catch (err: any) {
+      console.warn('API saveNote error:', err);
+      throw err;
+    }
+  },
+
+  deleteNote: async (id: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/notes/${id}`, {
+        method: 'DELETE',
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, { success: true });
+      const errRes = await safeParse(r, {});
+      throw new Error(errRes.error || 'Failed to delete note');
+    } catch (err: any) {
+      console.warn('API deleteNote error:', err);
+      throw err;
+    }
+  },
+
+  saveCopyOfNote: async (id: string) => {
+    try {
+      const r = await fetch(`${getBASE()}/api/notes/${id}/save-copy`, {
+        method: 'POST',
+        headers: getHeaders()
+      });
+      if (r.ok) return await safeParse(r, null);
+      const errRes = await safeParse(r, {});
+      throw new Error(errRes.error || 'Failed to save copy of note');
+    } catch (err: any) {
+      console.warn('API saveCopyOfNote error:', err);
+      throw err;
+    }
+  },
+
+  uploadNoteAttachment: async (file: File) => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const headers: Record<string, string> = {};
+      const token = localStorage.getItem('mindroot_auth_token');
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
+      const r = await fetch(`${getBASE()}/api/notes/upload`, {
+        method: 'POST',
+        headers,
+        body: formData
+      });
+      if (r.ok) return await safeParse(r, null);
+      const errRes = await safeParse(r, {});
+      throw new Error(errRes.error || 'Upload failed');
+    } catch (err: any) {
+      console.warn('API uploadNoteAttachment error:', err);
+      throw err;
+    }
+  },
+
+  exportDailyNotesUrl: (format: 'zip' | 'md' = 'zip') => {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('mindroot_auth_token') : null;
+    return `${getBASE()}/api/notes/export/all?format=${format}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   }
 };

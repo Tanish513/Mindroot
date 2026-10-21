@@ -1,4 +1,5 @@
 import pino from 'pino';
+import { isSlotConflicting, doIntervalsOverlap } from '../bookingRules';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -115,14 +116,8 @@ export async function bookSessionWithTokens(
     const teacher = params.teacherObj || deps.inMemoryUsers.find(u => u.id === teacherId) || { id: teacherId, name: 'Mentor', hourlyRate: 499 };
     const student = params.studentObj || deps.inMemoryUsers.find(u => u.id === studentId) || { id: studentId, name: 'Student' };
 
-    // Check slot conflict in memory first
-    const memConflict = deps.inMemorySessions.find(s => {
-      if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
-      const tId = s.teacherId || s.teacher?.id;
-      if (tId !== teacherId) return false;
-      const sTime = new Date(s.scheduledAt).getTime();
-      return Math.abs(sTime - reqTime) < 45 * 60 * 1000;
-    });
+    // Check slot conflict in memory first using end-exclusive interval overlap
+    const memConflict = isSlotConflicting(deps.inMemorySessions, teacherId, reqTime, durationMin);
 
     if (memConflict) {
       throw new ConcurrencyConflictError(`This time slot is already booked for ${teacher.name || 'this mentor'}.`);
@@ -137,21 +132,24 @@ export async function bookSessionWithTokens(
     if (deps.prisma && process.env.DATABASE_URL) {
       try {
         const result = await deps.prisma.$transaction(async (tx: any) => {
-          // Check slot conflict in DB
-          const startWindow = new Date(reqTime - 45 * 60 * 1000);
-          const endWindow = new Date(reqTime + 45 * 60 * 1000);
+          // Check slot conflict in DB using interval overlap
+          const reqDurationMs = Math.max(15, durationMin || 60) * 60 * 1000;
+          const reqEnd = new Date(reqTime + reqDurationMs);
           const existingSlot = await tx.session.findFirst({
             where: {
               teacherId,
               scheduledAt: {
-                gte: startWindow,
-                lte: endWindow
+                lt: reqEnd
               },
-              status: { notIn: ['declined', 'completed', 'cancelled'] }
+              status: { in: ['pending', 'confirmed', 'live'] }
             }
           });
           if (existingSlot) {
-            throw new ConcurrencyConflictError(`This time slot is already booked for ${teacher.name || 'this mentor'}.`);
+            const sStart = new Date(existingSlot.scheduledAt).getTime();
+            const sDurationMs = Math.max(15, existingSlot.durationMin || 60) * 60 * 1000;
+            if (doIntervalsOverlap(reqTime, reqDurationMs, sStart, sDurationMs)) {
+              throw new ConcurrencyConflictError(`This time slot is already booked for ${teacher.name || 'this mentor'}.`);
+            }
           }
 
           // Row-level lock on User

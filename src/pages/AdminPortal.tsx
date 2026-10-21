@@ -521,40 +521,66 @@ export function AdminPortal() {
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-surface-container-low border-b border-outline-variant text-[11px] font-black uppercase text-on-surface-variant tracking-wider">
-                    <th className="py-3.5 px-5">Session Title</th>
-                    <th className="py-3.5 px-4">Teacher</th>
-                    <th className="py-3.5 px-4">Student</th>
-                    <th className="py-3.5 px-4">Duration</th>
+                    <th className="py-3.5 px-5">Session & ID</th>
+                    <th className="py-3.5 px-4">Teacher (Name / Email / ID)</th>
+                    <th className="py-3.5 px-4">Student (Name / ID)</th>
+                    <th className="py-3.5 px-4">Format & Price</th>
+                    <th className="py-3.5 px-4">Scheduled</th>
                     <th className="py-3.5 px-4">Status</th>
                     <th className="py-3.5 px-5 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant text-xs font-medium">
-                  {sessions.map((s, i) => (
-                    <tr key={s.id || i} className="hover:bg-surface-container">
-                      <td className="py-3.5 px-5 font-black text-on-surface">{s.title || 'Peer Learning Exchange'}</td>
-                      <td className="py-3.5 px-4 font-bold text-teaching-emerald">{s.teacher?.name || s.teacherId || 'Teacher'}</td>
-                      <td className="py-3.5 px-4 font-bold text-primary">{s.student?.name || s.studentId || 'Student'}</td>
-                      <td className="py-3.5 px-4 font-bold text-on-surface-variant">{s.durationMin || 60} mins</td>
-                      <td className="py-3.5 px-4">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                          s.status === 'completed' ? 'bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20' :
-                          s.status === 'confirmed' ? 'bg-primary-container text-on-primary-container border border-primary/20' : 'bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20'
-                        }`}>
-                          {s.status || 'confirmed'}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-5 text-right">
-                        <button
-                          onClick={() => handleDeleteSession(s)}
-                          className="p-1.5 rounded-lg border border-alert-rose/20 bg-alert-rose-container hover:opacity-80 text-on-alert-rose-container font-bold transition-all shadow-elevation-1"
-                          title="Delete / Cancel session"
-                        >
-                          <span className="material-symbols-outlined text-base">delete</span>
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                  {sessions.map((s, i) => {
+                    const tId = s.teacherId || s.teacher?.id;
+                    const sId = s.studentId || s.student?.id;
+                    const format = (s.maxCapacity || 1) > 1 ? `${s.maxCapacity}-Seat Cohort` : '1-on-1';
+                    const price = s.amount || s.pricePerStudent || s.teacher?.hourlyRate || 0;
+
+                    return (
+                      <tr key={s.id || i} className="hover:bg-surface-container">
+                        <td className="py-3.5 px-5 font-black text-on-surface">
+                          <div>{s.title || 'Peer Learning Exchange'}</div>
+                          <div className="text-[10px] text-on-surface-variant font-mono">{s.id}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-teaching-emerald">{s.teacher?.name || 'Teacher'}</div>
+                          {s.teacher?.email && <div className="text-[10px] text-on-surface-variant">{s.teacher.email}</div>}
+                          <div className="text-[10px] text-on-surface-variant/80 font-mono truncate max-w-[140px]">{tId}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-primary">{s.student?.name || 'Student'}</div>
+                          {s.student?.email && <div className="text-[10px] text-on-surface-variant">{s.student.email}</div>}
+                          <div className="text-[10px] text-on-surface-variant/80 font-mono truncate max-w-[140px]">{sId}</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-bold text-on-surface-variant">
+                          <div>{format}</div>
+                          <div className="text-[11px] text-primary">₹{price}</div>
+                        </td>
+                        <td className="py-3.5 px-4 text-[11px] text-on-surface-variant">
+                          <div>{new Date(s.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
+                          <div>{new Date(s.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                            s.status === 'completed' ? 'bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20' :
+                            s.status === 'confirmed' ? 'bg-primary-container text-on-primary-container border border-primary/20' : 'bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20'
+                          }`}>
+                            {s.status || 'confirmed'}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-5 text-right">
+                          <button
+                            onClick={() => handleDeleteSession(s)}
+                            className="p-1.5 rounded-lg border border-alert-rose/20 bg-alert-rose-container hover:opacity-80 text-on-alert-rose-container font-bold transition-all shadow-elevation-1 cursor-pointer"
+                            title="Delete / Cancel session"
+                          >
+                            <span className="material-symbols-outlined text-base">delete</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

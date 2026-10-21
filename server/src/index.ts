@@ -9,7 +9,6 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import os from 'os';
-import Razorpay from 'razorpay';
 import { OAuth2Client } from 'google-auth-library';
 import pino from 'pino';
 import { z } from 'zod';
@@ -34,6 +33,20 @@ import {
   userMutex,
   withOrderedLocks
 } from './lib/tokenService';
+import {
+  isValidPrice,
+  roundPrice,
+  calculateBatchPricing,
+  calculateSeatPrice
+} from './pricing';
+import {
+  isSlotConflicting,
+  doIntervalsOverlap,
+  findNearestAvailableSlot as calculateNearestAvailableSlot,
+  ACTIVE_SESSION_STATUSES,
+  EXCLUDED_STATUSES,
+  getTeacherActiveBookings
+} from './bookingRules';
 
 const logger = pino({ level: process.env.LOG_LEVEL || 'info' });
 
@@ -192,39 +205,6 @@ const resetPasswordSchema = z.object({
   newPassword: z.string().min(6, 'Password must be at least 6 characters.')
 });
 
-const createOrderSchema = z.object({
-  amount: z.any().optional(),
-  sessionId: z.string().optional(),
-  teacherId: z.string().optional(),
-  mentorId: z.string().optional(),
-  studentId: z.string().optional(),
-  title: z.string().optional(),
-  skillId: z.string().optional(),
-  scheduledAt: z.string().optional(),
-  durationMin: z.any().optional(),
-  tokens: z.any().optional(),
-  packId: z.string().optional(),
-  maxCapacity: z.any().optional()
-});
-
-const verifyPaymentSchema = z.object({
-  razorpay_order_id: z.string().optional(),
-  razorpay_payment_id: z.string().min(1, 'Missing or invalid payment ID.'),
-  razorpay_signature: z.string().optional(),
-  amount: z.any().optional(),
-  sessionData: z.any().optional()
-});
-
-const RAZORPAY_KEY_ID = process.env.RAZORPAY_KEY_ID || '';
-const RAZORPAY_KEY_SECRET = process.env.RAZORPAY_KEY_SECRET || '';
-
-if (!RAZORPAY_KEY_ID || !RAZORPAY_KEY_SECRET) {
-  logger.warn('⚠️ WARNING: process.env.RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET is unset. Razorpay payment integration will run in unconfigured fallback mode.');
-}
-
-const razorpay = (RAZORPAY_KEY_ID && RAZORPAY_KEY_SECRET)
-  ? new Razorpay({ key_id: RAZORPAY_KEY_ID, key_secret: RAZORPAY_KEY_SECRET })
-  : null;
 
 const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 
@@ -270,16 +250,17 @@ const corsOriginDelegate = (origin: string | undefined, callback: (err: Error | 
 const app = express();
 app.use(cors({ origin: corsOriginDelegate, credentials: true }));
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // GET /api/health — Instant server liveness & readiness check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', uptime: process.uptime(), time: Date.now() });
 });
 
-// Express Auth Middleware: Verify JWT from Authorization: Bearer <token>
+// Express Auth Middleware: Verify JWT from Authorization: Bearer <token> or ?token=...
 app.use((req: any, _res: any, next: any) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null;
+  const token = (authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null) || (req.query?.token as string);
 
   if (token) {
     try {
@@ -293,6 +274,8 @@ app.use((req: any, _res: any, next: any) => {
         const matched = inMemoryUsers.find(u => u.id === req.userId);
         if (matched) {
           req.userRole = matched.role;
+        } else {
+          req.userRole = 'student';
         }
       } else {
         req.userId = undefined;
@@ -381,6 +364,25 @@ try {
       CREATE UNIQUE INDEX IF NOT EXISTS "Transaction_utr_key" ON "Transaction"("utr");
       CREATE UNIQUE INDEX IF NOT EXISTS "Session_utrNumber_key" ON "Session"("utrNumber");
       CREATE UNIQUE INDEX IF NOT EXISTS "Session_utr_key" ON "Session"("utr");
+      CREATE TABLE IF NOT EXISTS "Note" (
+        "id" TEXT PRIMARY KEY,
+        "authorId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "type" TEXT NOT NULL DEFAULT 'regular',
+        "date" TEXT,
+        "sessionId" TEXT REFERENCES "Session"("id") ON DELETE SET NULL,
+        "title" TEXT NOT NULL DEFAULT '',
+        "content" TEXT NOT NULL DEFAULT '',
+        "tags" TEXT[] DEFAULT ARRAY[]::TEXT[],
+        "attachments" JSONB,
+        "visibility" TEXT NOT NULL DEFAULT 'private',
+        "sharedWithUserId" TEXT REFERENCES "User"("id") ON DELETE SET NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS "Note_authorId_date_key" ON "Note"("authorId", "date");
+      CREATE INDEX IF NOT EXISTS "Note_authorId_idx" ON "Note"("authorId");
+      CREATE INDEX IF NOT EXISTS "Note_sessionId_idx" ON "Note"("sessionId");
+      CREATE INDEX IF NOT EXISTS "Note_authorId_date_idx" ON "Note"("authorId", "date");
       DO $$
       BEGIN
         IF NOT EXISTS (
@@ -429,6 +431,7 @@ const inMemoryPayoutAccounts: Record<string, any> = {};
 const inMemoryPayoutAuditLogs: any[] = [];
 const inMemoryRedemptions: any[] = [];
 const inMemoryDisputes: any[] = [];
+const inMemoryNotes: any[] = [];
 const inMemoryDiscussions: any[] = [
   {
     id: 'disc-1',
@@ -807,6 +810,7 @@ function saveDb() {
       redemptions: inMemoryRedemptions,
       discussions: inMemoryDiscussions,
       disputes: inMemoryDisputes,
+      notes: inMemoryNotes,
       usedUtrs: Array.from(inMemoryUsedUtrs)
     };
     fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf-8');
@@ -827,13 +831,7 @@ function loadDb() {
             if (u && u.id) {
               if (!u.batchPricing && u.hourlyRate) {
                 const base = Number(u.hourlyRate) || 499;
-                u.batchPricing = {
-                  1: base,
-                  2: Math.round(base * 0.8),
-                  3: Math.round(base * 0.7),
-                  4: Math.round(base * 0.6),
-                  5: Math.round(base * 0.5)
-                };
+                u.batchPricing = calculateBatchPricing(base);
               }
               if (u.isPublic === undefined) {
                 u.isPublic = true;
@@ -938,6 +936,14 @@ function loadDb() {
           data.disputes.forEach((disp: any) => {
             if (disp && disp.id) {
               inMemoryDisputes.push(disp);
+            }
+          });
+        }
+        if (Array.isArray(data.notes)) {
+          inMemoryNotes.length = 0;
+          data.notes.forEach((n: any) => {
+            if (n && n.id) {
+              inMemoryNotes.push(n);
             }
           });
         }
@@ -1049,6 +1055,15 @@ async function syncWithDatabase() {
     if (dbReviews && dbReviews.length > 0) {
       inMemoryReviews.length = 0;
       dbReviews.forEach((r: any) => inMemoryReviews.push(r));
+    }
+    try {
+      const dbNotes = await prisma.note.findMany();
+      if (dbNotes && dbNotes.length > 0) {
+        inMemoryNotes.length = 0;
+        dbNotes.forEach((n: any) => inMemoryNotes.push(n));
+      }
+    } catch (e: any) {
+      logger.debug({ err: e?.message }, 'Prisma note findMany skipped or table not yet migrated');
     }
     saveDb();
     logger.info('✅ PostgreSQL (via Prisma) connected as single source of truth for user data.');
@@ -1419,9 +1434,10 @@ function checkAndExpirePendingSessions() {
     if (s && s.status === 'pending' && s.scheduledAt) {
       const scheduledTime = new Date(s.scheduledAt).getTime();
       const createdAt = s.createdAt ? new Date(s.createdAt).getTime() : scheduledTime;
+      // Pending request expires only after 24 hours from creation OR 2 hours past scheduled start, whichever is later
       const twentyFourHoursAfterCreated = createdAt + 24 * 60 * 60 * 1000;
-      
-      const expiryTime = Math.min(scheduledTime, twentyFourHoursAfterCreated);
+      const twoHoursPastScheduled = scheduledTime + 2 * 60 * 60 * 1000;
+      const expiryTime = Math.max(twentyFourHoursAfterCreated, twoHoursPastScheduled);
 
       if (now > expiryTime) {
         const studentId = s.studentId || (Array.isArray(s.students) && s.students[0]?.id);
@@ -1478,7 +1494,13 @@ expireSessionsInterval.unref();
 io.use((socket, next) => {
   const token = socket.handshake.auth?.token || (socket.handshake.headers?.authorization && socket.handshake.headers.authorization.startsWith('Bearer ') ? socket.handshake.headers.authorization.split(' ')[1] : null);
   if (!token) {
-    return next(new Error('Authentication error: Valid authentication token required.'));
+    // Unauthenticated guest socket connection (e.g. before login)
+    const guestId = 'guest-' + socket.id;
+    (socket as any).userId = guestId;
+    (socket as any).userRole = 'guest';
+    socket.data.userId = guestId;
+    socket.data.userRole = 'guest';
+    return next();
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
@@ -1502,10 +1524,19 @@ io.use((socket, next) => {
       if (matched) {
         (socket as any).userRole = matched.role;
         socket.data.userRole = matched.role;
+      } else {
+        (socket as any).userRole = 'student';
+        socket.data.userRole = 'student';
       }
       next();
     } else {
-      return next(new Error('Authentication error: Invalid authentication token.'));
+      // Graceful fallback for invalid/expired tokens instead of throwing fatal handshake error
+      const guestId = 'guest-' + socket.id;
+      (socket as any).userId = guestId;
+      (socket as any).userRole = 'guest';
+      socket.data.userId = guestId;
+      socket.data.userRole = 'guest';
+      return next();
     }
   }
 });
@@ -2079,11 +2110,38 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
       socket.emit('socket-error', { message: 'Session not found for payment handshake' });
       return;
     }
+    // 1. Strictly require the enrolled student (no admin bypass)
     const isStudent = session.studentId === callerId || (Array.isArray(session.students) && session.students.some((s: any) => (s.id || s) === callerId));
-    if (!isStudent && socket.data?.userRole !== 'admin') {
+    if (!isStudent) {
       socket.emit('socket-error', { message: 'Forbidden: Only the enrolled student can submit payment handshake' });
       return;
     }
+
+    // 2. Validate current payment and session state before allowing handshake submission
+    if (session.status === 'cancelled' || session.status === 'declined') {
+      socket.emit('socket-error', { message: `Payment handshake rejected: session is ${session.status}` });
+      return;
+    }
+
+    const currentPaymentStatus = session.paymentStatus || 'pending';
+    if (currentPaymentStatus === 'paid' || currentPaymentStatus === 'completed') {
+      socket.emit('socket-error', { message: `Payment handshake rejected: session is already ${currentPaymentStatus}` });
+      return;
+    }
+    if (currentPaymentStatus === 'submitted_provisional') {
+      socket.emit('socket-error', { message: 'Payment handshake already submitted' });
+      return;
+    }
+
+    // 3. Validate 12-digit numeric UTR outside demo mode
+    const cleanUtr = utrNumber ? String(utrNumber).trim() : '';
+    if (!DEMO_MODE) {
+      if (!cleanUtr || !UTR_REGEX.test(cleanUtr)) {
+        socket.emit('socket-error', { message: 'Invalid UTR: Must be exactly 12 numeric digits' });
+        return;
+      }
+    }
+
     const targetTeacherId = session.teacherId || session.teacher?.id;
     if (targetTeacherId) {
       io.to('user:' + targetTeacherId).emit('teacher-payment-alert', {
@@ -2091,13 +2149,13 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
         studentId: callerId,
         studentName: session.student?.name || 'Student',
         amount: session.amount || session.pricePerStudent || 0,
-        utrNumber: utrNumber || session.utrNumber || 'DEMO-INSTANT',
+        utrNumber: cleanUtr || session.utrNumber || 'DEMO-INSTANT',
         note,
         timestamp: new Date().toISOString()
       });
     }
     session.paymentStatus = 'submitted_provisional';
-    if (utrNumber) session.utrNumber = utrNumber;
+    if (cleanUtr) session.utrNumber = cleanUtr;
     saveDb();
     sendSessionsToParticipants(session);
   });
@@ -2441,39 +2499,41 @@ app.post('/api/auth/register', authRateLimiter, async (req, res) => {
     const cleanRole = ['student', 'teacher', 'both'].includes(role) ? role : 'both';
     const cleanEmail = String(email).toLowerCase().trim();
     if (hourlyRate !== undefined && hourlyRate !== null && hourlyRate !== '') {
-      if (isNaN(Number(hourlyRate)) || Number(hourlyRate) < 0) {
-        return res.status(400).json({ error: 'Session price must be a valid non-negative number.' });
+      if (!isValidPrice(hourlyRate)) {
+        return res.status(400).json({ error: 'Enter a whole amount of ₹1 or more' });
       }
     }
-    const cleanHourlyRate = (hourlyRate !== undefined && hourlyRate !== null && hourlyRate !== '' && !isNaN(Number(hourlyRate)) && Number(hourlyRate) >= 0)
-      ? Math.round(Number(hourlyRate))
+    const cleanHourlyRate = (hourlyRate !== undefined && hourlyRate !== null && hourlyRate !== '' && isValidPrice(hourlyRate))
+      ? roundPrice(Number(hourlyRate))
       : 499;
 
     let cleanBatchPricing: any = null;
     if (cleanRole === 'teacher' || cleanRole === 'both') {
       if (batchPricing && typeof batchPricing === 'object') {
-        const getTierRate = (cap: number, ratio: number) => {
+        const defaultTiers = calculateBatchPricing(cleanHourlyRate);
+        const getTierRate = (cap: number) => {
           const val = batchPricing[cap] !== undefined ? batchPricing[cap] : batchPricing[String(cap)];
-          if (val !== undefined && val !== null && val !== '' && !isNaN(Number(val)) && Number(val) >= 0) {
-            return Math.round(Number(val));
+          if (val !== undefined && val !== null && val !== '') {
+            if (!isValidPrice(val)) {
+              throw new Error(`Enter a whole amount of ₹1 or more for batch pricing (Capacity ${cap})`);
+            }
+            return roundPrice(Number(val));
           }
-          return Math.round(cleanHourlyRate * ratio);
+          return defaultTiers[cap];
         };
-        cleanBatchPricing = {
-          1: getTierRate(1, 1),
-          2: getTierRate(2, 0.8),
-          3: getTierRate(3, 0.7),
-          4: getTierRate(4, 0.6),
-          5: getTierRate(5, 0.5)
-        };
+        try {
+          cleanBatchPricing = {
+            1: getTierRate(1),
+            2: getTierRate(2),
+            3: getTierRate(3),
+            4: getTierRate(4),
+            5: getTierRate(5)
+          };
+        } catch (tierErr: any) {
+          return res.status(400).json({ error: tierErr.message });
+        }
       } else {
-        cleanBatchPricing = {
-          1: cleanHourlyRate,
-          2: Math.round(cleanHourlyRate * 0.8),
-          3: Math.round(cleanHourlyRate * 0.7),
-          4: Math.round(cleanHourlyRate * 0.6),
-          5: Math.round(cleanHourlyRate * 0.5)
-        };
+        cleanBatchPricing = calculateBatchPricing(cleanHourlyRate);
       }
     }
 
@@ -3107,353 +3167,6 @@ app.post('/api/users', async (req, res) => {
   res.status(201).json(toPublicUser(newUser));
 });
 
-// ==========================================
-// RAZORPAY PAYMENT GATEWAY ENDPOINTS
-// ==========================================
-
-// POST /api/payment/create-session-order — Create Razorpay order for direct session booking
-app.post(['/api/payment/create-session-order', '/api/payment/create-order'], requireAuth, async (req: any, res: any) => {
-  const valResult = createOrderSchema.safeParse(req.body);
-  if (!valResult.success) {
-    return res.status(400).json({ error: valResult.error.issues[0]?.message || 'Invalid request body' });
-  }
-
-  const { key, record } = getIdempotencyRecord(req);
-  if (record) {
-    return res.status(record.statusCode).json(record.body);
-  }
-
-  try {
-    const { teacherId, skillId, title, scheduledAt, durationMin, amount, tokens, packId } = req.body;
-    const finalStudentId = req.userId; // Authenticated user ID ONLY
-    const teacherObj = inMemoryUsers.find(u => u.id === teacherId) || { id: teacherId, name: 'Mentor', hourlyRate: 499 };
-    
-    const teacherRole = (teacherObj.role || '').toLowerCase().trim();
-    if (teacherRole === 'student') {
-      return res.status(400).json({ error: 'Cannot book a session with a profile registered as student. Mentoring sessions can only be booked with mentors registered as teacher or both.' });
-    }
-
-    // Determine amount in INR (default to hourlyRate or requested amount)
-    const durationHours = (parseInt(durationMin, 10) || 60) / 60;
-    const rate = teacherObj.hourlyRate || 499;
-    const calculatedAmount = Math.max(1, amount ? parseInt(amount, 10) : Math.round(rate * durationHours));
-    const amountInPaise = calculatedAmount * 100;
-
-    const receipt = `rcpt_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
-    const options = {
-      amount: amountInPaise,
-      currency: 'INR',
-      receipt,
-      notes: {
-        teacherId: teacherId || '',
-        studentId: finalStudentId,
-        skillId: skillId || '',
-        title: title || 'Mentoring Session',
-        durationMin: String(durationMin || 60),
-        scheduledAt: scheduledAt || new Date().toISOString(),
-        packId: packId || '',
-        tokens: String(tokens || 0)
-      }
-    };
-
-    let order = null;
-    if (!razorpay) {
-      logger.warn('Razorpay client unconfigured; returning 503 for order creation.');
-      return res.status(503).json({ error: 'Razorpay payment gateway is not configured on the server. Please set RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET in environment variables.' });
-    }
-    try {
-      order = await razorpay.orders.create(options);
-    } catch (rzpErr: any) {
-      logger.error({ rzpErr }, 'Razorpay order creation failure');
-      return res.status(502).json({ error: 'Unable to create payment order. Please try again.' });
-    }
-
-    const responseBody = {
-      success: true,
-      orderId: order.id,
-      amount: calculatedAmount,
-      amountInPaise,
-      currency: 'INR',
-      keyId: RAZORPAY_KEY_ID,
-      sessionData: {
-        title: title || 'Skill Mentoring Session',
-        teacherId,
-        studentId: finalStudentId,
-        skillId,
-        scheduledAt,
-        durationMin: durationMin || 60,
-        amount: calculatedAmount,
-        maxCapacity: req.body.maxCapacity || 1,
-        sessionId: req.body.sessionId || null
-      }
-    };
-
-    saveIdempotencyRecord(key, 200, responseBody);
-    res.json(responseBody);
-  } catch (err: any) {
-    logger.error({ err }, 'Error creating Razorpay session order');
-    res.status(500).json({ error: err.message || 'Failed to create payment order' });
-  }
-});
-
-// POST /api/payment/verify-session-payment — Cryptographically verify Razorpay signature and confirm session booking
-app.post(['/api/payment/verify-session-payment', '/api/payment/verify', '/api/payments/verify'], requireAuth, async (req: any, res: any) => {
-  const valResult = verifyPaymentSchema.safeParse(req.body);
-  if (!valResult.success) {
-    return res.status(400).json({ error: valResult.error.issues[0]?.message || 'Invalid request body' });
-  }
-  try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, sessionData, amount } = req.body;
-
-    if (!razorpay_payment_id) {
-      return res.status(400).json({ error: 'Missing or invalid payment ID.' });
-    }
-
-    const isTestMode = process.env.NODE_ENV !== 'production' && (
-      razorpay_signature === 'test_sig' ||
-      razorpay_payment_id.startsWith('pay_test_') ||
-      razorpay_payment_id.startsWith('pay_sim_')
-    );
-
-    // 1. Cryptographic HMAC-SHA256 signature verification
-    if (!isTestMode) {
-      if (RAZORPAY_KEY_SECRET && razorpay_order_id && razorpay_signature) {
-        const generatedSignature = crypto
-          .createHmac('sha256', RAZORPAY_KEY_SECRET)
-          .update(`${razorpay_order_id}|${razorpay_payment_id}`)
-          .digest('hex');
-
-        if (generatedSignature !== razorpay_signature) {
-          logger.warn({ razorpay_order_id, razorpay_payment_id }, 'Invalid Razorpay payment signature rejected');
-          return res.status(400).json({ error: 'Payment signature verification failed. Untrusted payment record.' });
-        }
-      } else if (RAZORPAY_KEY_SECRET && (!razorpay_order_id || !razorpay_signature)) {
-        return res.status(400).json({ error: 'Missing Razorpay order ID or cryptographic signature for payment verification.' });
-      }
-    }
-
-    // 2. Fetch payment details from Razorpay
-    let fetchedPayment: any = null;
-    if (razorpay) {
-      try {
-        fetchedPayment = await razorpay.payments.fetch(razorpay_payment_id);
-      } catch (fetchErr: any) {
-        console.warn('Razorpay fetch notice:', fetchErr.message);
-      }
-
-      if (fetchedPayment && fetchedPayment.status === 'authorized') {
-        try {
-          fetchedPayment = await razorpay.payments.capture(razorpay_payment_id, fetchedPayment.amount, 'INR');
-        } catch (capErr: any) {
-          console.warn('Auto-capture note:', capErr.message);
-        }
-      }
-    }
-
-    const calculatedFallback = Number(sessionData?.amount || sessionData?.pricePerStudent || amount || 499);
-    const finalAmount = (fetchedPayment && typeof fetchedPayment.amount === 'number' && fetchedPayment.amount > 0)
-      ? Math.round(fetchedPayment.amount / 100)
-      : calculatedFallback;
-
-    const existingSessionId = sessionData?.sessionId;
-    let targetSession = existingSessionId ? inMemorySessions.find(s => s.id === existingSessionId) : null;
-
-    const studentId = req.userId || sessionData?.studentId || (targetSession && (!targetSession.students || targetSession.students.length <= 1) ? targetSession.studentId : null) || 'student-fallback';
-
-    // Auto-match pending session for student if explicit sessionId was omitted
-    if (!targetSession) {
-      targetSession = inMemorySessions.find(s => {
-        if (!s || s.paymentStatus === 'paid') return false;
-        const isStudentInSession = s.studentId === studentId || (Array.isArray(s.students) && s.students.some((st: any) => st.id === studentId && st.paymentStatus !== 'paid'));
-        const isTeacherMatch = sessionData?.teacherId ? (s.teacherId === sessionData.teacherId || s.teacher?.id === sessionData.teacherId) : true;
-        return isStudentInSession && isTeacherMatch;
-      }) || null;
-    }
-
-    const teacherId = targetSession?.teacherId || targetSession?.teacher?.id || sessionData?.teacherId || sessionData?.mentorId;
-    const teacherObj = (teacherId ? toPublicUser(inMemoryUsers.find(u => u.id === teacherId)) : null) || targetSession?.teacher || { id: teacherId || 'teacher-default', name: sessionData?.teacherName || 'Mentor', hourlyRate: 499 };
-    const studentObj = (studentId ? toPublicUser(inMemoryUsers.find(u => u.id === studentId)) : null) || (targetSession?.students ? targetSession.students.find((s: any) => s.id === studentId) : null) || targetSession?.student || { id: studentId, name: sessionData?.studentName || 'Student' };
-    const maxCapacity = Math.min(Math.max(sessionData?.maxCapacity || targetSession?.maxCapacity || 1, 1), 5);
-    let newTransaction: any = null;
-
-    if (targetSession) {
-      // Paying for an existing (booked/completed) session or joining an open group session
-      if (!Array.isArray(targetSession.students)) {
-        targetSession.students = targetSession.studentId ? [{ id: targetSession.studentId, name: targetSession.student?.name || 'Student', enrolledAt: new Date().toISOString(), paymentStatus: targetSession.paymentStatus || 'pending' }] : [];
-      }
-      
-      const existingStudentIdx = targetSession.students.findIndex((s: any) => s.id === studentId || (s.name && studentObj.name && s.name.toLowerCase() === studentObj.name.toLowerCase()));
-      const studentPaymentId = razorpay_payment_id;
-
-      if (existingStudentIdx >= 0) {
-        // Updating existing student's payment status post-lecture
-        targetSession.students[existingStudentIdx].paymentStatus = 'paid';
-        targetSession.students[existingStudentIdx].paymentId = studentPaymentId;
-        targetSession.students[existingStudentIdx].amountPaid = finalAmount;
-        targetSession.students[existingStudentIdx].amountDue = 0;
-      } else {
-        // Enrolling new student into cohort
-        const newEnrollee = {
-          id: studentId,
-          name: studentObj.name,
-          avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
-          enrolledAt: new Date().toISOString(),
-          paymentId: studentPaymentId,
-          paymentStatus: 'paid',
-          amountPaid: finalAmount,
-          amountDue: 0
-        };
-        targetSession.students.push(newEnrollee);
-      }
-
-      // Check if all enrolled students have paid
-      const allPaid = targetSession.students.every((st: any) => st.paymentStatus === 'paid');
-      if (allPaid) {
-        targetSession.paymentStatus = 'paid';
-        targetSession.paymentId = studentPaymentId;
-      } else {
-        targetSession.paymentStatus = 'partially_paid';
-      }
-
-      newTransaction = {
-        id: 'tx-' + Date.now(),
-        userId: studentId,
-        title: `Mentoring Fee: ${targetSession.title}`,
-        peerName: teacherObj.name,
-        type: 'SPENT',
-        amount: finalAmount,
-        currency: 'INR',
-        paymentId: studentPaymentId,
-        orderId: razorpay_order_id || `order_${Date.now()}`,
-        status: 'paid',
-        createdAt: new Date().toISOString()
-      };
-      inMemoryTransactions.unshift(newTransaction);
-
-      // Record Teacher EARNED transaction so teacher's wallet & earnings update immediately
-      const teacherEarnedTx = {
-        id: 'tx-earned-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
-        userId: teacherId,
-        title: `Mentoring Revenue: ${targetSession.title}`,
-        peerName: studentObj.name,
-        type: 'EARNED',
-        amount: finalAmount,
-        currency: 'INR',
-        paymentId: studentPaymentId,
-        orderId: razorpay_order_id || `order_${Date.now()}`,
-        status: 'paid',
-        createdAt: new Date().toISOString()
-      };
-      inMemoryTransactions.unshift(teacherEarnedTx);
-
-      // Update Teacher Token & Earnings Balance
-      const teacherUser = inMemoryUsers.find(u => u.id === teacherId);
-      if (teacherUser) {
-        teacherUser.tokenBalance = (teacherUser.tokenBalance || 0) + finalAmount;
-      }
-    } else {
-      // Creating a new session with payment
-      const newSession = {
-        id: 'session-' + Date.now(),
-        title: sessionData?.title || 'Skill Mentoring Session',
-        teacherId,
-        studentId,
-        skillId: sessionData?.skillId || null,
-        teacher: teacherObj,
-        student: studentObj,
-        maxCapacity,
-        pricePerStudent: finalAmount,
-        amount: finalAmount,
-        students: [
-          {
-            id: studentId,
-            name: studentObj.name,
-            avatar: studentObj.avatar || 'https://i.pravatar.cc/150?img=11',
-            enrolledAt: new Date().toISOString(),
-            paymentId: razorpay_payment_id,
-            paymentStatus: 'paid',
-            amountPaid: finalAmount
-          }
-        ],
-        status: 'confirmed',
-        paymentStatus: 'paid',
-        paymentId: razorpay_payment_id,
-        orderId: razorpay_order_id,
-        scheduledAt: sessionData?.scheduledAt || new Date().toISOString(),
-        durationMin: sessionData?.durationMin ? parseInt(sessionData.durationMin, 10) : 60
-      };
-
-      inMemorySessions.push(newSession);
-      targetSession = newSession;
-
-      newTransaction = {
-        id: 'tx-' + Date.now(),
-        userId: studentId,
-        title: `Paid for: ${newSession.title} (${maxCapacity > 1 ? `${maxCapacity}-Seat Cohort` : '1-on-1'})`,
-        peerName: teacherObj.name,
-        type: 'SPENT',
-        amount: finalAmount,
-        currency: 'INR',
-        paymentId: newSession.paymentId,
-        orderId: newSession.orderId,
-        status: 'paid',
-        createdAt: new Date().toISOString()
-      };
-      inMemoryTransactions.unshift(newTransaction);
-
-      // Record Teacher EARNED transaction
-      const teacherEarnedTx = {
-        id: 'tx-earned-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
-        userId: teacherId,
-        title: `Mentoring Revenue: ${newSession.title}`,
-        peerName: studentObj.name,
-        type: 'EARNED',
-        amount: finalAmount,
-        currency: 'INR',
-        paymentId: newSession.paymentId,
-        orderId: newSession.orderId,
-        status: 'paid',
-        createdAt: new Date().toISOString()
-      };
-      inMemoryTransactions.unshift(teacherEarnedTx);
-
-      // Update Teacher Token & Earnings Balance
-      const teacherUser = inMemoryUsers.find(u => u.id === teacherId);
-      if (teacherUser) {
-        teacherUser.tokenBalance = (teacherUser.tokenBalance || 0) + finalAmount;
-      }
-    }
-
-    saveDb();
-
-    if (studentObj?.email) {
-      sendPaymentReceiptEmail({
-        to: studentObj.email,
-        name: studentObj.name || 'Learner',
-        amount: finalAmount,
-        sessionId: targetSession?.id || 'session-receipt',
-        title: targetSession?.title || 'Skill Mentoring Lecture'
-      }).catch(err => console.error('Payment receipt email error:', err));
-    }
-
-    if (targetSession) {
-      sendSessionsToParticipants(targetSession);
-    }
-    io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
-
-    res.json({
-      success: true,
-      message: 'Payment verified and transaction recorded successfully!',
-      session: targetSession,
-      transaction: newTransaction,
-      signatureVerified: true
-    });
-  } catch (err: any) {
-    console.error('Error verifying payment:', err);
-    res.status(500).json({ error: err.message || 'Payment verification failed' });
-  }
-});
-
 const mentorUpiRateLimitMap = new Map<string, { count: number; resetAt: number }>();
 function checkMentorUpiRateLimit(callerId: string): boolean {
   const now = Date.now();
@@ -3776,9 +3489,17 @@ app.post('/api/payment/confirm-upi', requireAuth, async (req: any, res: any) => 
       timestamp: new Date().toISOString()
     };
 
-    io.emit('session-payment-received', paymentBroadcastPayload);
-    io.emit('session-payment-confirmed', paymentBroadcastPayload);
-    io.emit('network-sessions-updated', inMemorySessions);
+    // Emit strictly to session student and teacher rooms; never broadcast payment details or full session ledger globally
+    if (studentId) {
+      io.to('user:' + studentId).emit('session-payment-received', paymentBroadcastPayload);
+      io.to('user:' + studentId).emit('session-payment-confirmed', paymentBroadcastPayload);
+      io.to('user:' + studentId).emit('network-sessions-updated', inMemorySessions.filter((s: any) => s.studentId === studentId || s.teacherId === studentId));
+    }
+    if (finalTeacherId && finalTeacherId !== studentId) {
+      io.to('user:' + finalTeacherId).emit('session-payment-received', paymentBroadcastPayload);
+      io.to('user:' + finalTeacherId).emit('session-payment-confirmed', paymentBroadcastPayload);
+      io.to('user:' + finalTeacherId).emit('network-sessions-updated', inMemorySessions.filter((s: any) => s.studentId === finalTeacherId || s.teacherId === finalTeacherId));
+    }
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     res.json({
@@ -3963,7 +3684,7 @@ app.post('/api/wallet/payout-account', requireAuth, async (req: any, res: any) =
   res.json({ success: true, message: 'Bank account & payout details updated successfully!', account: inMemoryPayoutAccounts[targetUser] });
 });
 
-// POST /api/wallet/withdraw — Process instant earnings withdrawal to bank/UPI via RazorpayX
+// POST /api/wallet/withdraw — Process instant earnings withdrawal to bank/UPI via Direct Settlement
 app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
   const { key, record } = getIdempotencyRecord(req);
   if (record) {
@@ -3990,9 +3711,9 @@ app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
       userId: targetUser,
       amount: withdrawAmount,
       reason: `Bank Withdrawal to ${account?.payoutMethod === 'upi' ? (account?.upiId || 'UPI Account') : (account?.bankName || 'Bank Account')}`,
-      peerName: 'RazorpayX Direct Settlement',
+      peerName: 'Direct Bank Settlement',
       currency: 'INR',
-      paymentId: `pout_${Date.now()}_rzpx`
+      paymentId: `pout_${Date.now()}_settle`
     });
 
     const teacherObj = inMemoryUsers.find(u => u.id === targetUser);
@@ -4011,7 +3732,7 @@ app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
 
     const responseBody = {
       success: true,
-      message: `[SIMULATED PAYOUT DEMO] ₹${withdrawAmount} successfully transferred to your ${account?.payoutMethod === 'upi' ? `UPI ID (${account?.upiId})` : `Bank Account (${account?.accountNumber})`} via RazorpayX (Simulated Demo)!`,
+      message: `[SIMULATED PAYOUT DEMO] ₹${withdrawAmount} successfully transferred to your ${account?.payoutMethod === 'upi' ? `UPI ID (${account?.upiId})` : `Bank Account (${account?.accountNumber})`} via Direct UPI/Bank Settlement (Simulated Demo)!`,
       payout: deductRes.transaction,
       inrWalletBalance: deductRes.balanceAfter,
       tokenBalance: deductRes.balanceAfter,
@@ -4073,6 +3794,9 @@ app.get('/api/sessions', async (req: any, res: any) => {
   }
 
   const filteredMem = filterSessionsForUser(inMemorySessions, userId, userRole);
+  if (process.env.NODE_ENV !== 'production') {
+    logger.info({ userId, userRole, count: filteredMem.length, pendingCount: filteredMem.filter(s => s.status === 'pending').length }, '[Booking Read Path] GET /api/sessions');
+  }
   res.json(filteredMem);
 });
 
@@ -4134,36 +3858,8 @@ app.post('/api/sessions/:id/join', requireAuth, async (req: any, res) => {
 
 // Helper: Calculate nearest available time slot for a teacher when requested slot is booked
 function findNearestAvailableSlot(teacherId: string, requestedISO: string, durationMin: number = 60) {
-  const reqTime = new Date(requestedISO).getTime();
-  if (isNaN(reqTime)) return new Date(Date.now() + 3600000).toISOString();
-
-  const occupiedStartTimes = inMemorySessions
-    .filter(s => s && (s.teacherId === teacherId || s.teacher?.id === teacherId) && s.status !== 'declined' && s.status !== 'completed' && s.scheduledAt)
-    .map(s => new Date(s.scheduledAt).getTime());
-
-  // Search forward and backward in 1-hour steps up to 7 days
-  const stepMs = 60 * 60 * 1000;
-  for (let offsetMultiplier = 1; offsetMultiplier <= 168; offsetMultiplier++) {
-    // Try forward first, then backward
-    for (const sign of [1, -1]) {
-      const candidateTime = reqTime + (sign * offsetMultiplier * stepMs);
-      const candDate = new Date(candidateTime);
-
-      // Restrict to reasonable hours (e.g. 8 AM to 9 PM) and future time
-      if (candDate.getTime() > Date.now() + 600000) {
-        const hour = candDate.getHours();
-        if (hour >= 8 && hour <= 21) {
-          const isColliding = occupiedStartTimes.some(t => Math.abs(t - candidateTime) < 45 * 60 * 1000);
-          if (!isColliding) {
-            return candDate.toISOString();
-          }
-        }
-      }
-    }
-  }
-
-  // Default fallback: 2 hours from now
-  return new Date(Date.now() + 7200000).toISOString();
+  const teacherObj = inMemoryUsers.find(u => u.id === teacherId) || { id: teacherId };
+  return calculateNearestAvailableSlot(teacherObj, requestedISO, durationMin, inMemorySessions);
 }
 
 // Helper: Consolidate duplicate group cohort sessions for same teacher & slot/topic into 1 single session
@@ -4224,6 +3920,134 @@ function consolidateGroupSessions() {
   }
 }
 
+// GET /api/teachers/:teacherId/booked-slots — single source of truth for teacher's active booked intervals
+app.get('/api/teachers/:teacherId/booked-slots', async (req: any, res: any) => {
+  const { teacherId } = req.params;
+  const { from, to } = req.query;
+
+  const fromMs = from ? new Date(from as string).getTime() : undefined;
+  const toMs = to ? new Date(to as string).getTime() : undefined;
+
+  let allSessions = inMemorySessions;
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      const dbSessions = await prisma.session.findMany({
+        where: {
+          teacherId,
+          status: { in: ['pending', 'confirmed', 'live', 'accepted'] }
+        },
+        orderBy: { scheduledAt: 'asc' }
+      });
+      if (dbSessions && dbSessions.length > 0) {
+        const idMap = new Map<string, any>();
+        inMemorySessions.forEach(s => idMap.set(s.id, s));
+        dbSessions.forEach((s: any) => idMap.set(s.id, s));
+        allSessions = Array.from(idMap.values());
+      }
+    } catch (err) {
+      logger.warn({ err }, '[booked-slots] Prisma query fallback to in-memory');
+    }
+  }
+
+  const activeSlots = getTeacherActiveBookings(allSessions, teacherId, fromMs, toMs).map(s => ({
+    id: s.id,
+    teacherId: s.teacherId || s.teacher?.id,
+    scheduledAt: typeof s.scheduledAt === 'string' ? s.scheduledAt : new Date(s.scheduledAt).toISOString(),
+    durationMin: s.durationMin || 60,
+    status: s.status
+  }));
+
+  res.json({
+    teacherId,
+    bookedSlots: activeSlots
+  });
+});
+
+// GET /api/teachers/:teacherId/slot-check — pre-flight availability check for student booking modal
+app.get('/api/teachers/:teacherId/slot-check', async (req: any, res: any) => {
+  const { teacherId } = req.params;
+  const { scheduledAt, durationMin = 60, timeZone = 'Asia/Kolkata' } = req.query;
+
+  if (!scheduledAt) {
+    return res.status(400).json({ error: 'scheduledAt query parameter is required' });
+  }
+
+  const reqTime = new Date(scheduledAt as string).getTime();
+  if (isNaN(reqTime)) {
+    return res.status(400).json({ error: 'Invalid scheduledAt format' });
+  }
+
+  const duration = Math.max(15, parseInt(String(durationMin), 10) || 60);
+  const reqEnd = reqTime + duration * 60 * 1000;
+
+  let allSessions = inMemorySessions;
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      const dbSessions = await prisma.session.findMany({
+        where: {
+          teacherId,
+          status: { in: ['pending', 'confirmed', 'live', 'accepted'] }
+        }
+      });
+      if (dbSessions && dbSessions.length > 0) {
+        const idMap = new Map<string, any>();
+        inMemorySessions.forEach(s => idMap.set(s.id, s));
+        dbSessions.forEach((s: any) => idMap.set(s.id, s));
+        allSessions = Array.from(idMap.values());
+      }
+    } catch (err) {
+      logger.warn({ err }, '[slot-check] Prisma query fallback to in-memory');
+    }
+  }
+
+  const teacherSessions = allSessions.filter(s => {
+    const tId = s.teacherId || s.teacher?.id;
+    return tId === teacherId;
+  });
+
+  const activeTeacherSessions = getTeacherActiveBookings(allSessions, teacherId);
+
+  // Requirement: Log the exact query, the teacher_id, the requested start/end datetime, and the rows it returns
+  console.log(`[SlotCheck Query] teacherId="${teacherId}", reqStartUTC="${new Date(reqTime).toISOString()}", reqEndUTC="${new Date(reqEnd).toISOString()}", totalTeacherSessions=${teacherSessions.length}, activeBookingsFound=${activeTeacherSessions.length}`);
+
+  const teacherObj = inMemoryUsers.find(u => u.id === teacherId) || { id: teacherId, name: 'Mentor' };
+
+  // Check if conflict exists using interval overlap
+  const conflict = isSlotConflicting(allSessions, teacherId, reqTime, duration);
+
+  if (conflict) {
+    const nearestRes = calculateNearestAvailableSlot(teacherObj, scheduledAt as string, duration, allSessions, timeZone as string);
+    console.log(`[SlotCheck Conflict] Conflicting session: id="${conflict.id}", scheduledAt="${conflict.scheduledAt}", status="${conflict.status}"`);
+
+    return res.json({
+      available: false,
+      conflict: true,
+      teacherId,
+      requestedStart: new Date(reqTime).toISOString(),
+      conflictingSession: {
+        id: conflict.id,
+        scheduledAt: conflict.scheduledAt,
+        durationMin: conflict.durationMin || 60,
+        status: conflict.status
+      },
+      nearestSlot: nearestRes.nearestSlot,
+      nearestSlotFormatted: nearestRes.nearestSlotFormatted,
+      hasAvailability: nearestRes.hasAvailability,
+      noAvailability: nearestRes.noAvailability
+    });
+  }
+
+  // Zero rows matching -> slot is completely available!
+  console.log(`[SlotCheck Available] Slot is available for teacherId="${teacherId}" at ${new Date(reqTime).toISOString()}`);
+  return res.json({
+    available: true,
+    conflict: false,
+    teacherId,
+    requestedStart: new Date(reqTime).toISOString(),
+    message: 'Slot is available'
+  });
+});
+
 // POST /api/sessions — book a new session request (Supports Token Escrow/Payment or Peer Swap/UPI)
 app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
   consolidateGroupSessions();
@@ -4265,15 +4089,95 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
   }
   const maxCap = Math.min(Math.max(parseInt(maxCapacity, 10) || 1, 1), 5);
   const duration = Math.max(15, parseInt(durationMin, 10) || 60);
-  const hourlyRate = (typeof teacherObj.hourlyRate === 'number' && teacherObj.hourlyRate >= 0) ? teacherObj.hourlyRate : 499;
+  const hasTeacherRate = typeof teacherObj.hourlyRate === 'number' && teacherObj.hourlyRate >= 0;
+  const hourlyRate = hasTeacherRate ? teacherObj.hourlyRate : 499;
 
-  // D2 = A: A swap is one session. The listed student pays the listed teacher the session price. A swap with price 0 stays free.
+  // Server-computed session price from mentor hourly rate / batch pricing and duration
+  const tierRate = calculateSeatPrice(teacherObj, maxCap);
+  const serverComputedPrice = roundPrice((tierRate * duration) / 60);
+
   let seatPrice = 0;
   if (isSwapSession) {
-    seatPrice = pricePerStudent !== undefined ? parseInt(pricePerStudent, 10) : (req.body.amount !== undefined ? parseInt(req.body.amount, 10) : 0);
+    // D2 = A: A swap is one session. The listed student pays the listed teacher the session price. A swap with price 0 stays free.
+    const isExplicitlyFree = req.body.isFree === true || req.body.free === true || (title && title.toLowerCase().includes('free'));
+    const clientSuppliedPrice = pricePerStudent !== undefined ? parseInt(pricePerStudent, 10) : (req.body.amount !== undefined ? parseInt(req.body.amount, 10) : undefined);
+
+    if (isExplicitlyFree) {
+      seatPrice = 0;
+    } else if (hasTeacherRate) {
+      // Paid swap with configured mentor rate: enforce server rate and reject lower client price
+      if (clientSuppliedPrice !== undefined && clientSuppliedPrice < serverComputedPrice) {
+        return res.status(400).json({
+          error: `Invalid swap price: client price (₹${clientSuppliedPrice}) cannot be lower than server rate (₹${serverComputedPrice}).`,
+          code: 'PRICE_TAMPERING_DETECTED'
+        });
+      }
+      seatPrice = serverComputedPrice;
+    } else {
+      // When mentor has no hourly rate configured, never trust a client price.
+      // Use the original session's server-side price if one exists, otherwise reject with a clear 400 error.
+      const refSessionId = req.body.originalSessionId || req.body.sessionId || req.body.swapSessionId;
+      let originalSession: any = null;
+
+      const isParticipantMatch = (s: any) => {
+        const sTeacher = s.finalTeacherId || s.teacherId || s.teacher?.id;
+        const sStudent = s.finalStudentId || s.studentId || s.student?.id;
+        const studentMatches = (target: string) =>
+          sStudent === target ||
+          (Array.isArray(s.students) && s.students.some((st: any) => (typeof st === 'string' ? st : st?.id) === target));
+        return (
+          (sTeacher === finalTeacherId && studentMatches(finalStudentId)) ||
+          (sTeacher === finalStudentId && studentMatches(finalTeacherId))
+        );
+      };
+
+      const getSessionPrice = (s: any) => {
+        if (!s || s.isFree === true || s.free === true) return 0;
+        const price = typeof s.pricePerStudent === 'number'
+          ? s.pricePerStudent
+          : (typeof s.amount === 'number'
+              ? s.amount
+              : (typeof s.price === 'number' ? s.price : 0));
+        return typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : 0;
+      };
+
+      if (refSessionId) {
+        const matched = inMemorySessions.find(s => s && s.id === refSessionId);
+        if (!matched || !isParticipantMatch(matched) || getSessionPrice(matched) <= 0) {
+          return res.status(400).json({
+            error: 'Cannot book a paid swap: referenced original session is invalid, unrelated, or not a paid session.',
+            code: 'SWAP_PRICE_UNAVAILABLE'
+          });
+        }
+        originalSession = matched;
+      } else {
+        originalSession = inMemorySessions.find(s =>
+          s && s.id !== req.body.id &&
+          isParticipantMatch(s) &&
+          getSessionPrice(s) > 0
+        );
+      }
+
+      const originalServerPrice = originalSession ? getSessionPrice(originalSession) : 0;
+
+      if (originalServerPrice > 0) {
+        if (clientSuppliedPrice !== undefined && clientSuppliedPrice < originalServerPrice) {
+          return res.status(400).json({
+            error: `Invalid swap price: client price (₹${clientSuppliedPrice}) cannot be lower than original session rate (₹${originalServerPrice}).`,
+            code: 'PRICE_TAMPERING_DETECTED'
+          });
+        }
+        seatPrice = originalServerPrice;
+      } else {
+        return res.status(400).json({
+          error: 'Cannot book a paid swap: mentor has no hourly rate configured and no original session price was found.',
+          code: 'SWAP_PRICE_UNAVAILABLE'
+        });
+      }
+    }
   } else {
-    // Non-swaps: server computes price from mentor hourly rate and duration; ignore client-supplied price
-    seatPrice = Math.round((hourlyRate * duration) / 60);
+    // Non-swaps: server computes price from mentor hourly rate / batch pricing and duration; ignore client-supplied price
+    seatPrice = serverComputedPrice;
   }
   const reqTime = new Date(scheduledAt || Date.now()).getTime();
 
@@ -4297,23 +4201,23 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
       ? Math.max(1, Math.round(((hourlyRate / 100) * duration) / 60))
       : Math.max(1, Math.round((hourlyRate * duration) / 60));
 
-    // Concurrency conflict check for slot
-    const conflictingSession = inMemorySessions.find(s => {
-      if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
-      const tId = s.teacherId || s.teacher?.id;
-      if (tId !== finalTeacherId) return false;
-      const sTime = new Date(s.scheduledAt).getTime();
-      return Math.abs(sTime - reqTime) < 45 * 60 * 1000;
-    });
+    // Concurrency conflict check for slot using end-exclusive interval overlap
+    const conflictingSession = isSlotConflicting(inMemorySessions, finalTeacherId, reqTime, duration);
 
     if (conflictingSession) {
-      const nearestISO = findNearestAvailableSlot(finalTeacherId, scheduledAt || new Date().toISOString(), durationMin);
-      const nearestDate = new Date(nearestISO);
-      const nearestFormatted = `${nearestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at ${nearestDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      const nearestRes = calculateNearestAvailableSlot(teacherObj, scheduledAt || new Date().toISOString(), durationMin, inMemorySessions);
+      const nearestISO = nearestRes.nearestSlot;
+      const nearestFormatted = nearestRes.nearestSlotFormatted;
 
       return res.status(409).json({
-        error: `This time slot is already booked for ${teacherObj.name}.`,
+        error: nearestRes.noAvailability
+          ? `This time slot is already booked for ${teacherObj.name}. This teacher hasn't set availability yet.`
+          : `This time slot is already booked for ${teacherObj.name}.`,
+        code: 'SLOT_CONFLICT',
         conflict: true,
+        noAvailability: nearestRes.noAvailability,
+        hasAvailability: nearestRes.hasAvailability,
+        message: nearestRes.message,
         nearestSlot: nearestISO,
         nearestSlotFormatted: nearestFormatted
       });
@@ -4376,14 +4280,19 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
         });
       }
       if (err instanceof ConcurrencyConflictError || err.statusCode === 409) {
-        const nearestISO = findNearestAvailableSlot(finalTeacherId, scheduledAt || new Date().toISOString(), durationMin);
-        const nearestDate = new Date(nearestISO);
-        const nearestFormatted = `${nearestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at ${nearestDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+        const nearestRes = calculateNearestAvailableSlot(teacherObj, scheduledAt || new Date().toISOString(), durationMin, inMemorySessions);
+        const nearestISO = nearestRes.nearestSlot;
+        const nearestFormatted = nearestRes.nearestSlotFormatted;
 
         return res.status(409).json({
-          error: err.message || `This time slot is already booked for ${teacherObj.name}.`,
+          error: nearestRes.noAvailability
+            ? (err.message || `This time slot is already booked for ${teacherObj.name}.`) + " This teacher hasn't set availability yet."
+            : (err.message || `This time slot is already booked for ${teacherObj.name}.`),
           code: 'SLOT_CONFLICT',
           conflict: true,
+          noAvailability: nearestRes.noAvailability,
+          hasAvailability: nearestRes.hasAvailability,
+          message: nearestRes.message,
           nearestSlot: nearestISO,
           nearestSlotFormatted: nearestFormatted
         });
@@ -4395,7 +4304,7 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
   // 1. Check if student chose Shared / Group Lecture Format (maxCap > 1) and an open group session already exists for this teacher at this slot or same day/topic
   if (maxCap > 1) {
     const existingGroupSession = inMemorySessions.find(s => {
-      if (!s || s.status === 'declined' || s.status === 'completed') return false;
+      if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
       const tId = s.teacherId || s.teacher?.id;
       if (tId !== finalTeacherId) return false;
       const sCap = s.maxCapacity || 1;
@@ -4431,22 +4340,22 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
   }
 
   // 2. Check for slot collision with existing sessions for this teacher
-  const conflictingSession = inMemorySessions.find(s => {
-    if (!s || s.status === 'declined' || s.status === 'completed' || s.status === 'cancelled') return false;
-    const tId = s.teacherId || s.teacher?.id;
-    if (tId !== finalTeacherId) return false;
-    const sTime = new Date(s.scheduledAt).getTime();
-    return Math.abs(sTime - reqTime) < 45 * 60 * 1000;
-  });
+  const conflictingSession = isSlotConflicting(inMemorySessions, finalTeacherId, reqTime, duration);
 
   if (conflictingSession) {
-    const nearestISO = findNearestAvailableSlot(finalTeacherId, scheduledAt || new Date().toISOString(), durationMin);
-    const nearestDate = new Date(nearestISO);
-    const nearestFormatted = `${nearestDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at ${nearestDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+    const nearestRes = calculateNearestAvailableSlot(teacherObj, scheduledAt || new Date().toISOString(), durationMin, inMemorySessions);
+    const nearestISO = nearestRes.nearestSlot;
+    const nearestFormatted = nearestRes.nearestSlotFormatted;
 
     return res.status(409).json({
-      error: `This time slot is already booked for ${teacherObj.name}.`,
+      error: nearestRes.noAvailability
+        ? `This time slot is already booked for ${teacherObj.name}. This teacher hasn't set availability yet.`
+        : `This time slot is already booked for ${teacherObj.name}.`,
+      code: 'SLOT_CONFLICT',
       conflict: true,
+      noAvailability: nearestRes.noAvailability,
+      hasAvailability: nearestRes.hasAvailability,
+      message: nearestRes.message,
       nearestSlot: nearestISO,
       nearestSlotFormatted: nearestFormatted
     });
@@ -4495,6 +4404,19 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
 
   inMemorySessions.push(newSession);
   saveDb();
+
+  logger.info({
+    sessionId: newSession.id,
+    teacherId: newSession.teacherId,
+    teacherName: teacherObj?.name,
+    teacherEmail: teacherObj?.email,
+    studentId: newSession.studentId,
+    studentName: studentObj?.name,
+    status: newSession.status,
+    scheduledAt: newSession.scheduledAt,
+    format: newSession.maxCapacity > 1 ? `${newSession.maxCapacity}-cohort` : '1-on-1',
+    price: newSession.amount
+  }, '[Booking Write Path] Session Inserted');
 
   try {
     if (process.env.DATABASE_URL && prisma) {
@@ -4807,10 +4729,11 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
   // Session status state machine validation
   if (status && status !== memSess.status) {
     const allowedTransitions: Record<string, string[]> = {
-      pending: ['confirmed', 'declined', 'cancelled'],
+      pending: ['confirmed', 'declined', 'rejected', 'cancelled'],
       confirmed: ['live', 'completed', 'cancelled'],
       live: ['completed', 'cancelled'],
       declined: [],
+      rejected: [],
       cancelled: [],
       completed: []
     };
@@ -4822,7 +4745,7 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
       });
     }
 
-    if (status === 'confirmed' || status === 'declined') {
+    if (status === 'confirmed' || status === 'declined' || status === 'rejected') {
       const approverId = getSessionApproverId(memSess);
       const isApprover = approverId === req.userId;
       if (!isApprover && !isAdmin) {
@@ -4935,7 +4858,7 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
       }
     }
 
-    if ((status === 'cancelled' || status === 'declined') && prevStatus !== status) {
+    if ((status === 'cancelled' || status === 'declined' || status === 'rejected') && prevStatus !== status) {
       const studentId = memSess.studentId || (Array.isArray(memSess.students) && memSess.students[0]?.id);
       const isTokenPaid = memSess.paymentId?.startsWith('tx-token') || memSess.currency === 'TOKENS' || memSess.paymentStatus === 'held' || (Number(memSess.amount || memSess.pricePerStudent || 0) <= 20 && !memSess.utrNumber);
 
@@ -4952,7 +4875,7 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
             sessionId: id,
             studentId,
             amount: refundTokens,
-            reason: `Refund: ${status === 'declined' ? 'Declined' : 'Cancelled'} session "${memSess.title || id}"`,
+            reason: `Refund: ${status === 'declined' || status === 'rejected' ? 'Declined' : 'Cancelled'} session "${memSess.title || id}"`,
             newSessionStatus: status
           });
         } else if (memSess.utrNumber || memSess.paymentStatus === 'paid') {
@@ -5116,13 +5039,22 @@ app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
   }
 
   if (hourlyRate !== undefined && hourlyRate !== null) {
-    if (hourlyRate === '' || isNaN(Number(hourlyRate)) || Number(hourlyRate) < 0) {
-      return res.status(400).json({ error: 'Session price must be a valid non-negative number.' });
+    if (!isValidPrice(hourlyRate)) {
+      return res.status(400).json({ error: 'Enter a whole amount of ₹1 or more' });
     }
   }
-  const parsedHourlyRate = (hourlyRate !== undefined && hourlyRate !== null && hourlyRate !== '')
-    ? Math.round(Number(hourlyRate))
+  const parsedHourlyRate = (hourlyRate !== undefined && hourlyRate !== null && isValidPrice(hourlyRate))
+    ? roundPrice(Number(hourlyRate))
     : undefined;
+
+  if (batchPricing !== undefined && batchPricing !== null && typeof batchPricing === 'object') {
+    for (let cap = 1; cap <= 5; cap++) {
+      const val = batchPricing[cap] !== undefined ? batchPricing[cap] : batchPricing[String(cap)];
+      if (val !== undefined && val !== null && !isValidPrice(val)) {
+        return res.status(400).json({ error: `Enter a whole amount of ₹1 or more for batch pricing (Capacity ${cap})` });
+      }
+    }
+  }
 
   if (upiId !== undefined && upiId !== null && upiId !== '') {
     const trimmedUpi = String(upiId).toLowerCase().trim();
@@ -6937,6 +6869,23 @@ const sessionReminderInterval = setInterval(async () => {
 }, REMINDER_CHECK_INTERVAL_MS);
 sessionReminderInterval.unref();
 
+import { createNotesRouter } from './routes/notes';
+
+// Mount Notes API Router
+const COUNT_DAILY_NOTE_FOR_STREAK = false;
+const notesRouter = createNotesRouter({
+  prisma,
+  inMemoryNotes,
+  inMemorySessions,
+  inMemoryUsers,
+  saveDb,
+  io,
+  requireAuth,
+  COUNT_DAILY_NOTE_FOR_STREAK,
+  recordUserActivity
+});
+app.use('/api/notes', notesRouter);
+
 const PORT = Number(process.env.PORT) || 3000;
 server.on('error', (err: any) => {
   if (err.code === 'EADDRINUSE') {
@@ -7000,6 +6949,7 @@ export {
   inMemoryTransactions,
   inMemoryMessages,
   inMemoryDiscussions,
+  inMemoryNotes,
   inMemoryReviews,
   inMemoryPayoutAccounts,
   inMemoryPayoutAuditLogs,

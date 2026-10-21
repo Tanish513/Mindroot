@@ -3,6 +3,7 @@ import { Button } from '../components/ui/Button';
 import { useAppStore } from '../store/useAppStore';
 import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated, getSessionApproverId } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
+import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
 
 export function Dashboard() {
   const { currentUser, setCurrentUser, searchQuery, setSearchQuery, role, loginRole, addNotification } = useAppStore();
@@ -13,6 +14,16 @@ export function Dashboard() {
   const [loadingChampions, setLoadingChampions] = useState<boolean>(true);
   const [actingSessionId, setActingSessionId] = useState<string | null>(null);
   const navigate = useNavigate();
+
+  // Today's Note Dashboard Card State
+  const [todayNote, setTodayNote] = useState<any | null>(null);
+  const [todayNoteInput, setTodayNoteInput] = useState('');
+  const [isSavingTodayNote, setIsSavingTodayNote] = useState(false);
+  const [noteStreak, setNoteStreak] = useState(0);
+
+  // Session Notes Panel State & Counts
+  const [sessionNoteCounts, setSessionNoteCounts] = useState<Record<string, number>>({});
+  const [selectedSessionForNotes, setSelectedSessionForNotes] = useState<any | null>(null);
 
   const loadData = () => {
     if (!currentUser) {
@@ -25,6 +36,33 @@ export function Dashboard() {
       setChampions(data || []);
       setLoadingChampions(false);
     }).catch(() => setLoadingChampions(false));
+
+    // Load today's daily note and note streak
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    api.getTodayNote(userTz).then(res => {
+      if (res?.note) {
+        setTodayNote(res.note);
+      }
+    }).catch(() => {});
+
+    api.getDailyStreak(userTz).then(res => {
+      if (typeof res?.noteStreak === 'number') {
+        setNoteStreak(res.noteStreak);
+      }
+    }).catch(() => {});
+
+    // Fetch notes to compute session notes counts
+    api.getNotes().then((notesData: any[]) => {
+      if (Array.isArray(notesData)) {
+        const counts: Record<string, number> = {};
+        for (const n of notesData) {
+          if (n.sessionId) {
+            counts[n.sessionId] = (counts[n.sessionId] || 0) + 1;
+          }
+        }
+        setSessionNoteCounts(counts);
+      }
+    }).catch(() => {});
   };
 
   useEffect(() => {
@@ -471,7 +509,7 @@ export function Dashboard() {
 
   const roleSubtitle = isTeacherRole 
     ? `You have ${confirmedSessions.length} active lecture${confirmedSessions.length !== 1 ? 's' : ''} scheduled with student payments enabled.`
-    : `You have ${confirmedSessions.length} active learning session${confirmedSessions.length !== 1 ? 's' : ''} scheduled with Razorpay payments enabled.`;
+    : `You have ${confirmedSessions.length} active learning session${confirmedSessions.length !== 1 ? 's' : ''} scheduled.`;
 
   // Build Stat Cards dynamically per role
   const statCards = isTeacherRole ? [
@@ -480,9 +518,9 @@ export function Dashboard() {
       value: `₹${totalEarned.toLocaleString('en-IN')}`, 
       unit: 'earned',
       icon: 'payments', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       sub: `${teacherEarnedTransactions.length} student payout${teacherEarnedTransactions.length !== 1 ? 's' : ''} received`, 
       path: '/wallet' 
     },
@@ -491,9 +529,9 @@ export function Dashboard() {
       value: hoursTaught > 0 ? hoursTaught.toString() : '24', 
       unit: 'hrs',
       icon: 'school', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       sub: 'Across active lectures', 
       progress: Math.min(100, Math.round(((hoursTaught || 24) / 40) * 100)),
       path: '/teacher' 
@@ -503,9 +541,9 @@ export function Dashboard() {
       value: teachSkills.length.toString(), 
       unit: 'skills',
       icon: 'workspace_premium', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       tags: teachSkills.slice(0, 2), 
       path: '/profile' 
     },
@@ -514,9 +552,9 @@ export function Dashboard() {
       value: trustScoreNum.toFixed(2), 
       unit: '/ 5.0',
       icon: 'verified', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       sub: 'Top 5% mentor rating',
       progress: (trustScoreNum / 5.0) * 100, 
       path: '/feedback' 
@@ -527,10 +565,10 @@ export function Dashboard() {
       value: `₹${totalSpent.toLocaleString('en-IN')}`, 
       unit: 'spent',
       icon: 'shopping_cart', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
-      sub: pendingPaymentDue > 0 ? `₹${pendingPaymentDue.toLocaleString('en-IN')} pending due` : (isBothRole && totalEarned > 0 ? `₹${totalEarned.toLocaleString('en-IN')} earned as mentor` : 'View Razorpay receipts'), 
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
+      sub: pendingPaymentDue > 0 ? `₹${pendingPaymentDue.toLocaleString('en-IN')} pending due` : (isBothRole && totalEarned > 0 ? `₹${totalEarned.toLocaleString('en-IN')} earned as mentor` : 'Payment history'), 
       path: '/wallet' 
     },
     { 
@@ -538,9 +576,9 @@ export function Dashboard() {
       value: hoursLearned.toString(), 
       unit: 'hrs',
       icon: 'schedule', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       sub: '+2 hours this week', 
       progress: Math.min(100, Math.round((hoursLearned / 20) * 100)),
       path: '/schedule' 
@@ -550,9 +588,9 @@ export function Dashboard() {
       value: activeTopicsCount, 
       unit: 'skills',
       icon: 'school', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       tags: activeTopicTags, 
       path: '/marketplace' 
     },
@@ -561,9 +599,9 @@ export function Dashboard() {
       value: `${Math.min(100, Math.round(trustScoreNum * 20))}%`, 
       unit: 'punctual',
       icon: 'verified_user', 
-      bgColor: 'bg-surface-container',
-      iconColor: 'text-primary',
-      borderColor: 'border-outline-variant',
+      bgColor: 'bg-primary-tint',
+      iconColor: 'text-primary-text',
+      borderColor: 'border-primary/20',
       sub: '100% Session Attendance & Etiquette',
       progress: Math.min(100, Math.round(trustScoreNum * 20)), 
       path: '/feedback' 
@@ -574,14 +612,14 @@ export function Dashboard() {
     <div className="max-w-container_max mx-auto space-y-6 select-none">
       {/* Existing Teacher UPI & ID Setup Reminder Banner */}
       {(role === 'teacher' || currentUser?.role === 'teacher' || currentUser?.role === 'both') && !currentUser?.upiId && (
-        <div className="bg-learning-amber-container/70 border border-learning-amber/30 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow-elevation-1 animate-in fade-in duration-200">
+        <div className="bg-accent-tint border border-accent/30 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow animate-in fade-in duration-200">
           <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-learning-amber/20 text-learning-amber flex items-center justify-center shrink-0">
+            <div className="h-10 w-10 rounded-xl bg-surface border border-accent/20 text-accent flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-2xl">qr_code_2</span>
             </div>
             <div>
-              <h4 className="text-xs font-black text-on-surface">Enable Direct UPI Student Payments</h4>
-              <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
+              <h4 className="text-xs font-black text-text">Enable Direct UPI Student Payments</h4>
+              <p className="text-[11px] text-muted font-medium mt-0.5">
                 Add your UPI ID & official College ID in your profile to start accepting direct student payments.
               </p>
             </div>
@@ -598,17 +636,17 @@ export function Dashboard() {
 
       {/* Search Results Banner when search query is active */}
       {query && (
-        <div className="bg-primary-container/40 border border-primary/20 rounded-2xl p-5 shadow-elevation-1 space-y-4 animate-in fade-in duration-200">
+        <div className="bg-primary-tint border border-primary/20 rounded-2xl p-5 shadow space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-xl">search</span>
-              <h2 className="text-sm font-bold text-on-surface">
+              <h2 className="text-sm font-bold text-text">
                 Search Results for "<span className="text-primary font-extrabold">{searchQuery}</span>"
               </h2>
             </div>
             <button
               onClick={() => setSearchQuery('')}
-              className="text-xs font-bold text-on-surface-variant hover:text-on-surface flex items-center gap-1"
+              className="text-xs font-bold text-muted hover:text-text flex items-center gap-1"
             >
               <span className="material-symbols-outlined text-sm">close</span>
               <span>Clear Search</span>
@@ -616,21 +654,21 @@ export function Dashboard() {
           </div>
 
           {matchingPeers.length === 0 && filteredSessions.length === 0 ? (
-            <p className="text-xs text-on-surface-variant">No peers or scheduled sessions matched "{searchQuery}". Try searching "React", "Python", or "Maya".</p>
+            <p className="text-xs text-muted">No peers or scheduled sessions matched "{searchQuery}". Try searching "React", "Python", or "Maya".</p>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {matchingPeers.map(peer => (
-                <div key={peer.id} className="bg-surface border border-outline-variant rounded-xl p-3 flex items-center justify-between gap-3 shadow-elevation-1">
+                <div key={peer.id} className="bg-surface border border-border rounded-xl p-3 flex items-center justify-between gap-3 shadow">
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <img src={peer.avatar || 'https://i.pravatar.cc/150?img=11'} alt={peer.name} className="w-8 h-8 rounded-full object-cover border border-outline-variant" />
+                    <img src={peer.avatar || 'https://i.pravatar.cc/150?img=11'} alt={peer.name} className="w-8 h-8 rounded-full object-cover border border-border" />
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-on-surface truncate">{peer.name}</p>
-                      <p className="text-[10px] text-on-surface-variant truncate">Teaches: {Array.isArray(peer.skillsTaught) ? peer.skillsTaught.join(', ') : 'Tech & Design'}</p>
+                      <p className="text-xs font-bold text-text truncate">{peer.name}</p>
+                      <p className="text-[10px] text-muted truncate">Teaches: {Array.isArray(peer.skillsTaught) ? peer.skillsTaught.join(', ') : 'Tech & Design'}</p>
                     </div>
                   </div>
                   <Button
                     variant="secondary"
-                    className="py-1 px-2 text-[11px] font-bold bg-primary-container text-on-primary-container border-primary/20 shrink-0"
+                    className="py-1 px-2 text-[11px] font-bold bg-primary-tint text-primary-text border-primary/20 shrink-0"
                     onClick={() => navigate('/marketplace')}
                   >
                     View Mentor
@@ -643,27 +681,29 @@ export function Dashboard() {
       )}
 
       {/* Clean Dashboard Header Banner */}
-      <div className="bg-surface border border-outline-variant rounded-2xl p-6 sm:p-7 shadow-elevation-1 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div className="space-y-1">
+      <div 
+        className="relative overflow-hidden bg-hero border border-border rounded-2xl p-6 sm:p-7 shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+      >
+        <div className="space-y-1 relative z-10">
           <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isTeacherRole ? 'bg-teaching-emerald' : 'bg-primary'}`} />
-            <span className="text-xs font-semibold text-on-surface-variant">{roleBadgeLabel}</span>
+            <span className={`w-2 h-2 rounded-full ${isTeacherRole ? 'bg-primary' : 'bg-primary'}`} />
+            <span className="text-xs font-semibold text-muted">{roleBadgeLabel}</span>
           </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-on-surface tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-text tracking-tight">
             {getGreeting()}, {currentUser?.name?.split(' ')[0] || 'Peer'}
           </h1>
-          <p className="text-xs sm:text-sm text-on-surface-variant font-medium">
+          <p className="text-xs sm:text-sm text-muted font-medium">
             {roleSubtitle}
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5 shrink-0">
+        <div className="flex items-center gap-2.5 shrink-0 relative z-10">
           <Button
             variant="secondary"
             className="text-xs font-semibold px-3.5 py-2"
             onClick={() => navigate('/match-finder')}
           >
-            <span className="material-symbols-outlined text-sm text-on-surface-variant">search</span>
+            <span className="material-symbols-outlined text-sm text-muted">search</span>
             Find Peer Match
           </Button>
           <Button
@@ -679,35 +719,35 @@ export function Dashboard() {
 
       {/* Pending Student Booking Requests Alert for Mentors */}
       {pendingRequestsForMe.length > 0 && (
-        <div className="bg-surface border-2 border-primary/40 rounded-2xl p-5 shadow-elevation-2 space-y-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-surface border-2 border-primary/40 rounded-2xl p-5 shadow space-y-3 animate-in fade-in slide-in-from-top-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-xl animate-pulse">mark_email_unread</span>
-              <h3 className="text-sm font-black text-on-surface">
+              <h3 className="text-sm font-black text-text">
                 Pending Student Booking Requests ({pendingRequestsForMe.length})
               </h3>
             </div>
-            <span className="text-[11px] font-bold text-on-surface-variant">Review & approve to unlock live classroom</span>
+            <span className="text-[11px] font-bold text-muted">Review & approve to unlock live classroom</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {pendingRequestsForMe.map(req => (
-              <div key={req.id} className="bg-surface-container-low rounded-xl p-4 border border-outline-variant flex flex-col justify-between gap-3">
+              <div key={req.id} className="bg-surface-2 rounded-xl p-4 border border-border flex flex-col justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <img
                     src={req.student?.avatar || `https://i.pravatar.cc/150?img=11`}
                     alt={req.student?.name || 'Student'}
-                    className="w-10 h-10 rounded-full object-cover border border-outline-variant shrink-0 ring-1 ring-primary/20"
+                    className="w-10 h-10 rounded-full object-cover border border-border shrink-0 ring-1 ring-primary/20"
                   />
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-bold text-on-surface truncate">{req.title}</h4>
-                    <p className="text-[11px] text-on-surface-variant font-medium mt-0.5">
-                      Student: <strong className="text-on-surface">{req.student?.name || 'Learner'}</strong>
+                    <h4 className="text-xs font-bold text-text truncate">{req.title}</h4>
+                    <p className="text-[11px] text-muted font-medium mt-0.5">
+                      Student: <strong className="text-text">{req.student?.name || 'Learner'}</strong>
                     </p>
-                    <div className="flex items-center gap-2 text-[10px] text-on-surface-variant mt-1">
+                    <div className="flex items-center gap-2 text-[10px] text-muted mt-1">
                       <span>📅 {req.scheduledAt ? new Date(req.scheduledAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Flexible'}</span>
                       {req.paymentStatus === 'held' && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-bold border border-amber-500/20">
+                        <span className="px-1.5 py-0.5 rounded bg-accent-tint text-accent-text font-bold border border-accent/20">
                           Tokens Held
                         </span>
                       )}
@@ -715,12 +755,12 @@ export function Dashboard() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1 border-t border-outline-variant/40">
+                <div className="flex items-center gap-2 pt-1 border-t border-border/40">
                   <Button
                     variant="primary"
                     disabled={actingSessionId === req.id}
                     onClick={() => handleAcceptBooking(req.id)}
-                    className="flex-1 py-1.5 text-xs font-bold bg-teaching-emerald hover:bg-teaching-emerald/90 text-white flex items-center justify-center gap-1 shadow-xs"
+                    className="flex-1 py-1.5 text-xs font-bold flex items-center justify-center gap-1 shadow-xs"
                   >
                     <span className="material-symbols-outlined text-sm">check_circle</span>
                     <span>{actingSessionId === req.id ? 'Confirming...' : 'Accept Request'}</span>
@@ -729,7 +769,7 @@ export function Dashboard() {
                     variant="secondary"
                     disabled={actingSessionId === req.id}
                     onClick={() => handleDeclineBooking(req.id)}
-                    className="flex-1 py-1.5 text-xs font-bold text-alert-rose hover:bg-alert-rose/10 flex items-center justify-center gap-1 border border-outline-variant"
+                    className="flex-1 py-1.5 text-xs font-bold text-danger hover:bg-danger/10 flex items-center justify-center gap-1 border border-border"
                   >
                     <span className="material-symbols-outlined text-sm">cancel</span>
                     <span>Decline</span>
@@ -742,42 +782,40 @@ export function Dashboard() {
       )}
 
       {/* Daily Streak & Community Momentum Banner */}
-      <div className="bg-surface-container border border-outline-variant rounded-2xl p-4 sm:p-5 shadow-elevation-1 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div 
+        className="border border-border rounded-2xl p-4 sm:p-5 shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-accent-tint"
+      >
         <div className="flex items-center gap-3.5">
-          <div className={`w-12 h-12 rounded-2xl border flex items-center justify-center shrink-0 ${
-            currentStreak > 0
-              ? 'bg-primary/10 border-primary/30 text-primary'
-              : 'bg-surface border-outline-variant text-on-surface-variant'
-          }`}>
-            <span className="material-symbols-outlined text-2xl" style={{ fontVariationSettings: "'FILL' 1" }}>
+          <div className="w-12 h-12 rounded-2xl border border-accent/20 bg-surface text-accent flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-2xl text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>
               local_fire_department
             </span>
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-on-surface">
+              <h2 className="text-base font-semibold text-text">
                 {currentStreak > 0 ? `${currentStreak}-Day Learning Streak` : 'Start Your Learning Streak'}
               </h2>
               {isTodayCompleted ? (
-                <span className="px-2 py-0.5 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 font-semibold text-[10px] uppercase flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span className="px-2 py-0.5 rounded-full bg-primary-tint border border-primary/20 text-primary-text font-semibold text-[10px] uppercase flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
                   Active Today
                 </span>
               ) : currentStreak > 0 ? (
-                <span className="px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 font-semibold text-[10px] uppercase flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+                <span className="px-2 py-0.5 rounded-full bg-surface border border-accent/30 text-accent-text font-semibold text-[10px] uppercase flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-accent"></span>
                   Action Needed Today
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded-full bg-surface border border-outline-variant text-on-surface-variant font-semibold text-[10px] uppercase">
+                <span className="px-2 py-0.5 rounded-full bg-surface-2 border border-border text-muted font-semibold text-[10px] uppercase">
                   Inactive
                 </span>
               )}
             </div>
-            <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+            <p className="text-xs text-muted font-medium mt-0.5">
               {isTodayCompleted
-                ? `🔥 Great job! You completed today's learning goal. ${daysUntilBonus > 0 && daysUntilBonus < 7 ? `${daysUntilBonus} day(s) until your next +20 Bonus Points!` : 'Reach your 7-day milestone to claim +20 Bonus Points!'}`
-                : `Keep learning every day. Complete 1 session or answer a discussion question to reach 7 days and claim +20 Bonus Points!`}
+                ? <>🔥 Great job! You completed today's learning goal. {daysUntilBonus > 0 && daysUntilBonus < 7 ? <span className="text-accent-text font-bold">{daysUntilBonus} day(s) until your next +20 Bonus Points!</span> : <span className="text-accent-text font-bold">Reach your 7-day milestone to claim +20 Bonus Points!</span>}</>
+                : <>Keep learning every day. Complete 1 session or answer a discussion question to reach 7 days and claim <span className="text-accent-text font-bold">+20 Bonus Points!</span></>}
             </p>
           </div>
         </div>
@@ -799,16 +837,16 @@ export function Dashboard() {
                   <div
                     className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${
                       isFinished
-                        ? 'bg-primary text-on-primary border-primary shadow-sm'
+                        ? 'bg-primary text-on-primary border-primary shadow-xs'
                         : isToday
                           ? isTodayCompleted
-                            ? 'bg-primary text-on-primary border-primary ring-2 ring-primary/30 ring-offset-1 ring-offset-surface'
-                            : 'bg-surface text-amber-600 dark:text-amber-400 border-amber-500/50 ring-2 ring-amber-500/30 ring-offset-1 ring-offset-surface animate-pulse'
+                            ? 'bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface'
+                            : 'bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface animate-pulse'
                           : isGift
                             ? canClaimBonus
-                              ? 'bg-learning-amber text-on-primary border-learning-amber shadow-md animate-bounce cursor-pointer'
-                              : 'bg-learning-amber/15 text-learning-amber border-learning-amber/30'
-                            : 'bg-surface text-on-surface-variant/60 border-outline-variant'
+                              ? 'bg-accent text-on-primary border-accent shadow-md animate-bounce cursor-pointer'
+                              : 'bg-surface text-accent-text border-border'
+                            : 'bg-surface text-muted border-border'
                     }`}
                   >
                     {isFinished ? (
@@ -824,10 +862,10 @@ export function Dashboard() {
                     )}
                   </div>
                   <div className="flex flex-col items-center leading-none">
-                    <span className={`text-[9px] ${isToday ? 'text-primary font-bold' : 'text-on-surface-variant font-medium'}`}>
+                    <span className={`text-[9px] ${isToday ? 'text-accent-text font-bold' : 'text-muted font-medium'}`}>
                       Day {item.num}
                     </span>
-                    <span className={`text-[8px] mt-0.5 ${isToday ? 'text-primary font-extrabold' : 'text-neutral-subtle'}`}>
+                    <span className={`text-[8px] mt-0.5 ${isToday ? 'text-accent-text font-extrabold' : 'text-muted'}`}>
                       {item.day}
                     </span>
                   </div>
@@ -842,16 +880,128 @@ export function Dashboard() {
               variant="primary"
               disabled={isClaimingStreak}
               onClick={handleClaimStreakReward}
-              className="text-xs font-bold py-1.5 px-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white shadow-md animate-pulse shrink-0"
+              className="text-xs font-bold py-1.5 px-3 bg-accent hover:opacity-90 text-on-primary shadow animate-pulse shrink-0"
             >
               {isClaimingStreak ? 'Claiming...' : '🎁 Claim +20 Pts'}
             </Button>
           )}
           {streakClaimSuccess && (
-            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 animate-fade-in shrink-0">
+            <span className="text-xs font-bold text-accent-text animate-fade-in shrink-0">
               ✓ +20 Pts Claimed!
             </span>
           )}
+        </div>
+      </div>
+
+      {/* Today's Note Compact Card */}
+      <div className="bg-surface border border-border rounded-2xl p-4 sm:p-5 shadow flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5 min-w-0 flex-1">
+          <div className="w-11 h-11 rounded-2xl bg-primary-tint text-primary flex items-center justify-center shrink-0 border border-primary/20">
+            <span className="material-symbols-outlined text-2xl">edit_note</span>
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h3 className="text-sm font-bold text-text">Today's Note</h3>
+              {noteStreak > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-accent-tint text-accent-text font-bold text-[10px] flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">local_fire_department</span>
+                  <span>{noteStreak}-day note streak</span>
+                </span>
+              )}
+            </div>
+            {todayNote ? (
+              <p className="text-xs text-muted truncate mt-0.5">
+                <strong className="text-text">{todayNote.title || 'Today’s Note'}:</strong> {(todayNote.content || '').replace(/<[^>]*>/g, ' ').slice(0, 80)}...
+              </p>
+            ) : (
+              <p className="text-xs text-muted mt-0.5">
+                Start your daily learning log or jot down a quick takeaway.
+              </p>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 self-stretch md:self-auto shrink-0">
+          {!todayNote ? (
+            <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
+              <input
+                type="text"
+                value={todayNoteInput}
+                onChange={e => setTodayNoteInput(e.target.value)}
+                onKeyDown={async e => {
+                  if (e.key === 'Enter' && todayNoteInput.trim()) {
+                    setIsSavingTodayNote(true);
+                    try {
+                      const saved = await api.saveNote({
+                        type: 'daily',
+                        title: `Quick Note • ${todayStr}`,
+                        content: `<p>${todayNoteInput.trim()}</p>`,
+                        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+                      });
+                      setTodayNote(saved);
+                      setTodayNoteInput('');
+                      addNotification({
+                        type: 'session',
+                        title: 'Note Saved',
+                        body: 'Today’s daily note has been initialized.'
+                      });
+                    } catch (err: any) {
+                      alert(err.message || 'Failed to save note');
+                    } finally {
+                      setIsSavingTodayNote(false);
+                    }
+                  }
+                }}
+                placeholder="Jot down a quick thought..."
+                className="bg-surface-2 text-text border border-border rounded-xl px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden min-w-[200px]"
+              />
+              <Button
+                variant="primary"
+                disabled={!todayNoteInput.trim() || isSavingTodayNote}
+                onClick={async () => {
+                  if (!todayNoteInput.trim()) return;
+                  setIsSavingTodayNote(true);
+                  try {
+                    const saved = await api.saveNote({
+                      type: 'daily',
+                      title: `Quick Note • ${todayStr}`,
+                      content: `<p>${todayNoteInput.trim()}</p>`,
+                      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
+                    });
+                    setTodayNote(saved);
+                    setTodayNoteInput('');
+                    addNotification({
+                      type: 'session',
+                      title: 'Note Saved',
+                      body: 'Today’s daily note has been initialized.'
+                    });
+                  } catch (err: any) {
+                    alert(err.message || 'Failed to save note');
+                  } finally {
+                    setIsSavingTodayNote(false);
+                  }
+                }}
+                className="text-xs font-bold py-1.5 px-3"
+              >
+                {isSavingTodayNote ? 'Saving...' : 'Save'}
+              </Button>
+            </div>
+          ) : (
+            <button
+              onClick={() => navigate('/notes/daily')}
+              className="px-3.5 py-1.5 bg-primary-tint text-primary-text hover:bg-primary hover:text-on-primary rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1"
+            >
+              <span>Continue writing</span>
+              <span className="material-symbols-outlined text-sm">arrow_forward</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => navigate('/notes/daily')}
+            className="text-xs font-semibold text-muted hover:text-text px-2 py-1.5 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
+          >
+            Open full note →
+          </button>
         </div>
       </div>
 
@@ -861,14 +1011,14 @@ export function Dashboard() {
           <div 
             key={i} 
             onClick={() => navigate(stat.path)}
-            className="bg-surface border border-outline-variant rounded-2xl p-5 shadow-elevation-1 hover:border-outline hover:shadow-elevation-2 cursor-pointer transition-all flex flex-col justify-between"
+            className="bg-surface border border-border rounded-2xl p-5 shadow hover:border-primary/40 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
           >
             <div className="flex justify-between items-start mb-2">
               <div>
-                <p className="text-[11px] uppercase tracking-wider font-semibold text-on-surface-variant mb-0.5">{stat.label}</p>
+                <p className="text-[11px] uppercase tracking-wider font-semibold text-muted mb-0.5">{stat.label}</p>
                 <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl font-bold text-on-surface">{stat.value}</span>
-                  <span className="text-xs font-semibold text-on-surface-variant">{stat.unit}</span>
+                  <span className="text-2xl font-bold text-text">{stat.value}</span>
+                  <span className="text-xs font-semibold text-muted">{stat.unit}</span>
                 </div>
               </div>
               <div className={`w-10 h-10 rounded-xl ${stat.bgColor} ${stat.iconColor} ${stat.borderColor} border flex items-center justify-center`}>
@@ -878,9 +1028,9 @@ export function Dashboard() {
 
             {stat.progress !== undefined && (
               <div className="mt-2 space-y-1">
-                <div className="w-full h-1.5 bg-surface-container-high rounded-full overflow-hidden">
+                <div className="w-full h-1.5 bg-surface-2 rounded-full overflow-hidden">
                   <div 
-                    className="h-full bg-primary rounded-full transition-all duration-300" 
+                    className="h-full rounded-full transition-all duration-300 bg-primary" 
                     style={{ width: `${stat.progress}%` }} 
                   />
                 </div>
@@ -888,15 +1038,19 @@ export function Dashboard() {
             )}
 
             {stat.sub && (
-              <p className="text-[11px] mt-2 text-on-surface-variant hover:text-primary transition-colors flex items-center gap-1 font-medium">
-                {stat.sub} <span className="material-symbols-outlined text-xs">arrow_forward</span>
+              <p className="text-[11px] mt-2 text-muted hover:text-primary transition-colors flex items-center gap-1 font-medium">
+                {stat.sub.includes('pending due') ? (
+                  <span className="text-accent-text font-semibold">{stat.sub}</span>
+                ) : (
+                  stat.sub
+                )} <span className="material-symbols-outlined text-xs">arrow_forward</span>
               </p>
             )}
 
             {stat.tags && (
               <div className="flex gap-1 mt-2">
                 {stat.tags.map((t: string) => (
-                  <span key={t} className="px-2 py-0.5 bg-surface-container text-on-surface border border-outline-variant rounded-md text-[10px] font-medium truncate max-w-[80px]">{t}</span>
+                  <span key={t} className="px-2 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-md text-[10px] font-semibold truncate max-w-[80px]">{t}</span>
                 ))}
               </div>
             )}
@@ -907,50 +1061,53 @@ export function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Recommended Match Preview */}
         <div className="lg:col-span-2 space-y-6">
-          <section className="bg-surface rounded-2xl p-6 shadow-elevation-1 border border-outline-variant">
+          <section className="bg-surface rounded-2xl p-6 shadow border border-border">
             <div className="flex justify-between items-center mb-5">
               <div>
-                <h3 className="text-base font-bold text-on-surface flex items-center gap-2">
+                <h3 className="text-base font-bold text-text flex items-center gap-2">
                   <span className="material-symbols-outlined text-primary text-xl">recommend</span> Recommended Peer Match
                 </h3>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">Top peer recommendation based on your skill interests</p>
+                <p className="text-xs text-muted font-medium mt-0.5">Top peer recommendation based on your skill interests</p>
               </div>
-              <Button variant="ghost" onClick={() => navigate('/match-finder')} className="text-xs px-3 py-1.5 text-primary hover:bg-primary-container/50 font-semibold">
+              <button 
+                onClick={() => navigate('/match-finder')} 
+                className="text-xs px-3 py-1.5 text-primary-text hover:underline font-semibold cursor-pointer"
+              >
                 Browse All Matches →
-              </Button>
+              </button>
             </div>
             
             {recommendedPeerMatch ? (
               <div 
                 onClick={() => navigate('/match-finder')}
-                className="bg-surface-container-low rounded-xl p-5 flex flex-col md:flex-row gap-5 items-start md:items-center hover:bg-surface-container transition-colors cursor-pointer border border-outline-variant"
+                className="bg-surface-2 rounded-xl p-5 flex flex-col md:flex-row gap-5 items-start md:items-center hover:bg-surface-2/80 transition-colors cursor-pointer border border-border"
               >
                 <div className="relative shrink-0">
                   <img 
-                    className="w-12 h-12 rounded-full object-cover border border-outline-variant" 
+                    className="w-12 h-12 rounded-full object-cover border border-border" 
                     src={recommendedPeerMatch.peer.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'} 
                     alt={`${recommendedPeerMatch.peer.name || 'Peer'} profile avatar`} 
                   />
-                  <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 ${recommendedPeerMatch.peer.isAvailableNow ? 'bg-teaching-emerald' : 'bg-primary'} rounded-full ring-2 ring-surface`} />
+                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-primary rounded-full ring-2 ring-surface" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h4 className="text-sm font-bold text-on-surface">{recommendedPeerMatch.peer.name || 'Peer Scholar'}</h4>
-                    <span className="px-2 py-0.5 bg-primary-container text-on-primary-container rounded-md text-[10px] font-bold">
+                    <h4 className="text-sm font-bold text-text">{recommendedPeerMatch.peer.name || 'Peer Scholar'}</h4>
+                    <span className="px-2 py-0.5 bg-primary-tint text-primary-text rounded-md text-[10px] font-bold">
                       {recommendedPeerMatch.matchScore}% Match
                     </span>
-                    <span className="text-[11px] text-on-surface-variant font-medium">
+                    <span className="text-[11px] text-muted font-medium">
                       • {recommendedPeerMatch.peer.isAvailableNow ? 'Available Today' : 'Available for Booking'}
                     </span>
                   </div>
                   
-                  <p className="text-xs text-on-surface-variant mb-2">
-                    Can teach <strong className="text-on-surface font-semibold">{recommendedPeerMatch.teachStr}</strong> • Wants to learn <strong className="text-on-surface font-semibold">{recommendedPeerMatch.learnStr}</strong>
+                  <p className="text-xs text-muted mb-2">
+                    Can teach <strong className="text-text font-semibold">{recommendedPeerMatch.teachStr}</strong> • Wants to learn <strong className="text-text font-semibold">{recommendedPeerMatch.learnStr}</strong>
                   </p>
 
-                  <div className="flex items-center gap-3 text-[11px] text-on-surface-variant font-medium">
+                  <div className="flex items-center gap-3 text-[11px] text-muted font-medium">
                     <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[13px] text-learning-amber">star</span> 
+                      <span className="material-symbols-outlined text-[13px] text-accent">star</span> 
                       {(recommendedPeerMatch.peer.trustScore || 5.0).toFixed(2)} ({recommendedPeerMatch.sessionCount} session{recommendedPeerMatch.sessionCount !== 1 ? 's' : ''})
                     </span>
                     <span>•</span>
@@ -981,10 +1138,10 @@ export function Dashboard() {
                 </div>
               </div>
             ) : (
-              <div className="p-6 text-center bg-surface-container-low rounded-xl border border-outline-variant space-y-2">
-                <span className="material-symbols-outlined text-3xl text-on-surface-variant">person_search</span>
-                <p className="text-xs font-bold text-on-surface">No Peer Recommendations Available Yet</p>
-                <p className="text-[11px] text-on-surface-variant max-w-sm mx-auto">
+              <div className="p-6 text-center bg-surface-2 rounded-xl border border-border space-y-2">
+                <span className="material-symbols-outlined text-3xl text-muted">person_search</span>
+                <p className="text-xs font-bold text-text">No Peer Recommendations Available Yet</p>
+                <p className="text-[11px] text-muted max-w-sm mx-auto">
                   As peers join the platform and register their skill interests, your top matching study partners will automatically appear here.
                 </p>
                 <div className="pt-2">
@@ -997,46 +1154,45 @@ export function Dashboard() {
           </section>
 
           {/* Community Champions Leaderboard */}
-          <section className="bg-surface rounded-2xl p-6 shadow-elevation-1 border border-outline-variant space-y-4">
+          <section className="bg-surface rounded-2xl p-6 shadow border border-border space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-base font-bold text-on-surface flex items-center gap-2">
-                  <span className="material-symbols-outlined text-learning-amber text-xl">military_tech</span>
+                <h3 className="text-base font-bold text-text flex items-center gap-2">
+                  <span className="material-symbols-outlined text-accent text-xl">military_tech</span>
                   Community Champions
                 </h3>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                <p className="text-xs text-muted font-medium mt-0.5">
                   Top mentors & active peer scholars this week
                 </p>
               </div>
-              <Button
-                variant="ghost"
+              <button
                 onClick={() => navigate('/discussions')}
-                className="text-xs px-3 py-1.5 text-primary hover:bg-primary-container/50 font-semibold"
+                className="text-xs px-3 py-1.5 text-primary-text hover:underline font-semibold cursor-pointer"
               >
                 Join Discussions →
-              </Button>
+              </button>
             </div>
 
             {loadingChampions ? (
-              <div className="p-4 text-center text-xs text-on-surface-variant font-medium animate-pulse">
+              <div className="p-4 text-center text-xs text-muted font-medium animate-pulse">
                 Loading community rankings...
               </div>
             ) : champions.length > 0 ? (
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 {champions.map((champion, idx) => (
-                  <div key={champion.id || idx} className="p-3.5 rounded-xl border border-outline-variant bg-surface-container-low flex items-center gap-3">
+                  <div key={champion.id || idx} className="p-3.5 rounded-xl border border-border bg-surface-2 flex items-center gap-3">
                     <img 
                       src={champion.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'} 
                       alt={champion.name} 
-                      className="w-10 h-10 rounded-full object-cover border border-outline-variant shrink-0" 
+                      className="w-10 h-10 rounded-full object-cover border border-border shrink-0" 
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-on-surface truncate">{champion.name}</span>
-                        <span className="text-[10px] font-extrabold text-learning-amber shrink-0">{champion.badge}</span>
+                        <span className="text-xs font-bold text-text truncate">{champion.name}</span>
+                        <span className="text-[10px] font-extrabold text-accent-text shrink-0">{champion.badge}</span>
                       </div>
-                      <p className="text-[10px] text-on-surface-variant truncate">{champion.role}</p>
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-teaching-emerald mt-0.5">
+                      <p className="text-[10px] text-muted truncate">{champion.role}</p>
+                      <div className="flex items-center gap-2 text-[10px] font-bold text-primary mt-0.5">
                         <span>★ {champion.rating}</span>
                         <span>•</span>
                         <span>{champion.score}</span>
@@ -1046,10 +1202,10 @@ export function Dashboard() {
                 ))}
               </div>
             ) : (
-              <div className="p-5 text-center bg-surface-container-low rounded-xl border border-outline-variant space-y-1">
-                <span className="material-symbols-outlined text-2xl text-learning-amber">emoji_events</span>
-                <p className="text-xs font-bold text-on-surface">Leaderboard Opening Soon</p>
-                <p className="text-[11px] text-on-surface-variant">
+              <div className="p-5 text-center bg-surface-2 rounded-xl border border-border space-y-1">
+                <span className="material-symbols-outlined text-2xl text-accent">emoji_events</span>
+                <p className="text-xs font-bold text-text">Leaderboard Opening Soon</p>
+                <p className="text-[11px] text-muted">
                   Participate in sessions and community discussions to claim your place on the podium!
                 </p>
               </div>
@@ -1059,19 +1215,19 @@ export function Dashboard() {
 
         {/* Upcoming Sessions Card */}
         <div className="space-y-6">
-          <section className="bg-surface rounded-2xl shadow-elevation-1 border border-outline-variant overflow-hidden flex flex-col h-full">
-            <div className="p-4 sm:p-5 bg-surface-container-low border-b border-outline-variant flex items-center justify-between">
-              <h3 className="text-sm font-bold text-on-surface flex items-center gap-2">
+          <section className="bg-surface rounded-2xl shadow border border-border overflow-hidden flex flex-col h-full">
+            <div className="p-4 sm:p-5 bg-surface-2 border-b border-border flex items-center justify-between">
+              <h3 className="text-sm font-bold text-text flex items-center gap-2">
                 <span className="material-symbols-outlined text-primary text-lg">calendar_today</span> Upcoming Sessions
               </h3>
-              <span className="text-[11px] font-semibold text-primary hover:underline cursor-pointer" onClick={() => navigate('/schedule')}>Calendar</span>
+              <span className="text-[11px] font-semibold text-primary-text hover:underline cursor-pointer" onClick={() => navigate('/schedule')}>Calendar</span>
             </div>
             <div className="p-4 sm:p-5 flex-1 flex flex-col gap-3">
               {filteredSessions.length === 0 ? (
-                <div className="text-center py-8 text-on-surface-variant flex flex-col items-center justify-center space-y-2">
-                  <span className="material-symbols-outlined text-3xl text-outline">event_available</span>
-                  <p className="font-semibold text-on-surface text-xs sm:text-sm">No scheduled sessions</p>
-                  <p className="text-[11px] text-on-surface-variant">Match with a peer to schedule your next session.</p>
+                <div className="text-center py-8 text-muted flex flex-col items-center justify-center space-y-2">
+                  <span className="material-symbols-outlined text-3xl text-muted">event_available</span>
+                  <p className="font-semibold text-text text-xs sm:text-sm">No scheduled sessions</p>
+                  <p className="text-[11px] text-muted">Match with a peer to schedule your next session.</p>
                   <Button variant="primary" className="text-xs font-semibold py-1.5 px-3.5 mt-2" onClick={() => navigate('/match-finder')}>
                     Find a Match
                   </Button>
@@ -1081,40 +1237,53 @@ export function Dashboard() {
                   const isLive = isSessionLiveNow(session.scheduledAt);
                   const countdown = getCountdownLabel(session.scheduledAt);
                   return (
-                    <div key={session.id} className="bg-surface rounded-xl p-4 border border-outline-variant shadow-elevation-1 hover:border-outline transition-colors space-y-3">
+                    <div key={session.id} className="bg-surface rounded-xl p-4 border border-border shadow hover:border-primary/40 transition-colors space-y-3">
                       <div className="flex justify-between items-start">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 ${
                           isLive 
-                            ? 'bg-teaching-emerald text-white animate-pulse shadow-xs' 
-                            : 'bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container'
+                            ? 'bg-primary text-on-primary animate-pulse shadow-xs' 
+                            : 'bg-primary-tint border border-primary/20 text-primary-text'
                         }`}>
-                          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
+                          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-on-primary animate-ping" />}
                           {countdown}
                         </span>
-                        <span className="text-xs text-on-surface-variant font-bold">
+                        <span className="text-xs text-muted font-bold">
                           {new Date(session.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
                         </span>
                       </div>
                       <div>
-                        <h4 className="text-xs font-bold text-on-surface mb-0.5">{session.title}</h4>
-                        <p className="text-[11px] text-on-surface-variant flex items-center gap-1">
-                          <span className="material-symbols-outlined text-xs text-outline">person</span> 
+                        <h4 className="text-xs font-bold text-text mb-0.5">{session.title}</h4>
+                        <p className="text-[11px] text-muted flex items-center gap-1">
+                          <span className="material-symbols-outlined text-xs text-muted">person</span> 
                           {session.teacherId === currentUser?.id ? `Teaching ${session.student?.name || 'Student'}` : `Learning from ${session.teacher?.name || 'Teacher'}`}
                         </p>
                       </div>
                       <div className="flex items-center gap-1.5 pt-1">
                         <button
+                          onClick={() => setSelectedSessionForNotes(session)}
+                          title="Session Notes"
+                          className="flex-1 py-1.5 px-2 bg-surface-2 hover:bg-surface text-text rounded-lg text-[10px] font-bold border border-border transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-xs text-primary">edit_note</span>
+                          <span>Notes</span>
+                          {(sessionNoteCounts[session.id] || 0) > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-primary-tint text-primary-text text-[9px] font-extrabold border border-primary/20">
+                              {sessionNoteCounts[session.id]}
+                            </span>
+                          )}
+                        </button>
+                        <button
                           onClick={() => window.open(getGoogleCalendarUrl(session), '_blank')}
                           title="Add to Google Calendar"
-                          className="flex-1 py-1.5 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded-lg text-[10px] font-bold border border-outline-variant transition-colors flex items-center justify-center gap-1"
+                          className="py-1.5 px-2 bg-surface-2 hover:bg-surface text-text rounded-lg text-[10px] font-bold border border-border transition-colors flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-xs text-primary">calendar_month</span>
-                          <span>Google Cal</span>
+                          <span>Cal</span>
                         </button>
                         <button
                           onClick={() => handleDownloadIcs(session)}
                           title="Download .ics event file"
-                          className="py-1.5 px-2 bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface rounded-lg text-[10px] font-bold border border-outline-variant transition-colors flex items-center justify-center"
+                          className="py-1.5 px-2 bg-surface-2 hover:bg-surface text-text rounded-lg text-[10px] font-bold border border-border transition-colors flex items-center justify-center cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-xs">download</span>
                           <span className="text-[9px] font-extrabold uppercase">.ics</span>
@@ -1122,9 +1291,7 @@ export function Dashboard() {
                       </div>
                       <Button 
                         variant={isLive ? "primary" : "secondary"} 
-                        className={`w-full flex items-center justify-center gap-1.5 font-bold text-xs py-2 ${
-                          isLive ? 'bg-teaching-emerald hover:bg-teaching-emerald/90 text-white shadow-elevation-1 ring-2 ring-teaching-emerald/30' : ''
-                        }`} 
+                        className="w-full flex items-center justify-center gap-1.5 font-bold text-xs py-2" 
                         onClick={() => navigate(`/live/${session.id}`)}
                       >
                         <span className="material-symbols-outlined text-sm">videocam</span> 
@@ -1138,6 +1305,29 @@ export function Dashboard() {
           </section>
         </div>
       </div>
+
+      {/* Session Notes Modal Panel */}
+      {selectedSessionForNotes && (
+        <SessionNotesPanel
+          isOpen={Boolean(selectedSessionForNotes)}
+          onClose={() => {
+            setSelectedSessionForNotes(null);
+            api.getNotes().then((notesData: any[]) => {
+              if (Array.isArray(notesData)) {
+                const counts: Record<string, number> = {};
+                for (const n of notesData) {
+                  if (n.sessionId) {
+                    counts[n.sessionId] = (counts[n.sessionId] || 0) + 1;
+                  }
+                }
+                setSessionNoteCounts(counts);
+              }
+            }).catch(() => {});
+          }}
+          session={selectedSessionForNotes}
+          currentUserId={currentUser?.id}
+        />
+      )}
     </div>
   );
 }

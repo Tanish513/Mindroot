@@ -5,6 +5,7 @@ import { api, onSessionsUpdated, onPeersUpdated, calculateSeatPrice, getCapacity
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
+import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
 
 const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // 8 AM to 9 PM
@@ -42,6 +43,10 @@ export function Schedule() {
   // Direct Peer UPI Modal State
   const [upiModalSession, setUpiModalSession] = useState<UpiPaymentSession | null>(null);
   const [isUpiModalOpen, setIsUpiModalOpen] = useState(false);
+
+  // Session Notes Panel State & Counts
+  const [sessionNoteCounts, setSessionNoteCounts] = useState<Record<string, number>>({});
+  const [selectedSessionForNotes, setSelectedSessionForNotes] = useState<any | null>(null);
 
   const handleCopySessionLink = (sessionId: string) => {
     const link = `${window.location.origin}/live/${sessionId}`;
@@ -103,15 +108,15 @@ export function Schedule() {
     const diffMin = Math.round((new Date(scheduledAt).getTime() - Date.now()) / 60000);
     if (diffMin <= 15 && diffMin >= -60) {
       return (
-        <span className="px-2 py-0.5 rounded-full bg-teaching-emerald/20 text-teaching-emerald font-black text-[10px] animate-pulse flex items-center gap-1">
-          <span className="h-1.5 w-1.5 rounded-full bg-teaching-emerald" />
+        <span className="px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 font-black text-[10px] animate-pulse flex items-center gap-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-primary" />
           ● LIVE CLASSROOM READY
         </span>
       );
     }
     if (diffMin > 0 && diffMin <= 60) {
       return (
-        <span className="px-2 py-0.5 rounded-full bg-learning-amber/20 text-learning-amber font-bold text-[10px]">
+        <span className="px-2 py-0.5 rounded-full bg-accent-tint text-accent-text border border-accent/20 font-bold text-[10px]">
           Starts in {diffMin}m
         </span>
       );
@@ -134,10 +139,19 @@ export function Schedule() {
   });
 
   const loadData = useCallback(() => {
-    Promise.all([api.getSessions(), api.getPeers()])
-      .then(([sessionsData, peersData]) => {
+    Promise.all([api.getSessions(), api.getPeers(), api.getNotes().catch(() => [])])
+      .then(([sessionsData, peersData, notesData]) => {
         setSessions(sessionsData);
         setPeers(peersData);
+        if (Array.isArray(notesData)) {
+          const counts: Record<string, number> = {};
+          for (const n of notesData) {
+            if (n.sessionId) {
+              counts[n.sessionId] = (counts[n.sessionId] || 0) + 1;
+            }
+          }
+          setSessionNoteCounts(counts);
+        }
         setLoading(false);
       })
       .catch(err => {
@@ -233,17 +247,17 @@ export function Schedule() {
     return startTime + durationMs <= Date.now();
   };
 
-  // Filter by active status tab: past sessions are removed from Confirmed/Pending and listed under Completed
+  // Filter by active status tab: past sessions are removed from Confirmed and listed under Completed. Pending stays in pending until resolved.
   const tabSessions = userSessions.filter(s => {
     const isPast = isPastSession(s);
     if (activeTab === 'confirmed') {
       return (s.status === 'confirmed' || s.status === 'live') && !isPast;
     }
     if (activeTab === 'pending') {
-      return s.status === 'pending' && !isPast;
+      return s.status === 'pending';
     }
     if (activeTab === 'completed') {
-      return s.status === 'completed' || isPast;
+      return s.status === 'completed' || (s.status === 'confirmed' && isPast);
     }
     return s.status === activeTab;
   });
@@ -325,7 +339,70 @@ export function Schedule() {
   const [bookingCapacity, setBookingCapacity] = useState<number>(1);
   const [bookingTitle, setBookingTitle] = useState('');
   const [bookingError, setBookingError] = useState('');
-  const [conflictData, setConflictData] = useState<{ nearestSlot: string; nearestSlotFormatted: string } | null>(null);
+  const [conflictData, setConflictData] = useState<{
+    conflict?: boolean;
+    nearestSlot?: string | null;
+    nearestSlotFormatted?: string | null;
+    noAvailability?: boolean;
+    message?: string;
+  } | null>(null);
+  const [isCheckingAvailability, setIsCheckingAvailability] = useState(false);
+  const [isSlotAvailable, setIsSlotAvailable] = useState<boolean | null>(null);
+
+  // Real-time pre-flight availability check on date/time/peer change
+  useEffect(() => {
+    if (!isBookingOpen || !selectedPeerId || !bookingDate || !bookingTime) {
+      setIsCheckingAvailability(false);
+      setIsSlotAvailable(null);
+      setConflictData(null);
+      setBookingError('');
+      return;
+    }
+
+    const scheduledDate = new Date(`${bookingDate}T${bookingTime}`);
+    if (isNaN(scheduledDate.getTime())) {
+      setIsCheckingAvailability(false);
+      setIsSlotAvailable(null);
+      return;
+    }
+
+    setIsCheckingAvailability(true);
+    setBookingError('');
+    setConflictData(null);
+
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.checkSlotAvailability(selectedPeerId, scheduledDate.toISOString(), 60, controller.signal);
+        if (res.available) {
+          setIsSlotAvailable(true);
+          setConflictData(null);
+          setBookingError('');
+        } else if (res.conflict) {
+          setIsSlotAvailable(false);
+          setConflictData({
+            nearestSlot: res.nearestSlot || null,
+            nearestSlotFormatted: res.nearestSlotFormatted || (res.nearestSlot ? new Date(res.nearestSlot).toLocaleString() : null),
+            noAvailability: Boolean(res.noAvailability || (!res.nearestSlot && res.hasAvailability === false)),
+            message: res.message
+          });
+          const peerName = peers.find(p => p.id === selectedPeerId)?.name || 'this teacher';
+          setBookingError(`This time slot is already booked for ${peerName}.`);
+        }
+      } catch (err: any) {
+        if (err.name !== 'AbortError') {
+          console.error('Availability check failed:', err);
+        }
+      } finally {
+        setIsCheckingAvailability(false);
+      }
+    }, 250);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isBookingOpen, selectedPeerId, bookingDate, bookingTime, bookingCapacity]);
 
   const handleOpenBookingModal = (peerId?: string, slotISO?: string) => {
     if (slotISO) {
@@ -356,6 +433,8 @@ export function Schedule() {
     setBookingCapacity(1);
     setBookingError('');
     setConflictData(null);
+    setIsSlotAvailable(null);
+    setIsCheckingAvailability(false);
     setIsBookingOpen(true);
   };
 
@@ -378,6 +457,18 @@ export function Schedule() {
   };
 
   const handleCreateBooking = async (overrideSlotISO?: string) => {
+    if (overrideSlotISO) {
+      const parsedOverride = new Date(overrideSlotISO);
+      if (!isNaN(parsedOverride.getTime())) {
+        const yyyy = parsedOverride.getFullYear();
+        const mm = String(parsedOverride.getMonth() + 1).padStart(2, '0');
+        const dd = String(parsedOverride.getDate()).padStart(2, '0');
+        const hh = String(parsedOverride.getHours()).padStart(2, '0');
+        const min = String(parsedOverride.getMinutes()).padStart(2, '0');
+        setBookingDate(`${yyyy}-${mm}-${dd}`);
+        setBookingTime(`${hh}:${min}`);
+      }
+    }
     if (!selectedPeerId || (!overrideSlotISO && (!bookingDate || !bookingTime)) || !bookingTitle) {
       setBookingError('Please fill in all booking fields.');
       return;
@@ -395,7 +486,7 @@ export function Schedule() {
       await api.postSession({
         title: bookingTitle,
         teacherId: selectedPeerId,
-        studentId: currentUser?.id || '',
+        studentId: currentUser?.id || 'user-alex',
         skillId: selectedSkillId || undefined,
         scheduledAt: scheduledAt.toISOString(),
         durationMin: 60,
@@ -413,13 +504,20 @@ export function Schedule() {
       setBookingCapacity(1);
       setBookingError('');
       setConflictData(null);
+      setIsSlotAvailable(null);
     } catch (err: any) {
-      if (err.conflict && err.nearestSlot) {
+      if (err.conflict) {
+        setIsSlotAvailable(false);
         setConflictData({
-          nearestSlot: err.nearestSlot,
-          nearestSlotFormatted: err.nearestSlotFormatted || new Date(err.nearestSlot).toLocaleString()
+          nearestSlot: err.nearestSlot || null,
+          nearestSlotFormatted: err.nearestSlotFormatted || (err.nearestSlot ? new Date(err.nearestSlot).toLocaleString() : null),
+          noAvailability: Boolean(err.noAvailability || (!err.nearestSlot && err.hasAvailability === false)),
+          message: err.message
         });
-        setBookingError(err.message || 'Requested time slot is already booked.');
+        const peerName = peers.find(p => p.id === selectedPeerId)?.name || 'this teacher';
+        setBookingError(err.message || `This time slot is already booked for ${peerName}.`);
+      } else if (err.message && (err.message.includes('Unauthorized') || err.message.includes('authentication token') || err.message.includes('token'))) {
+        setBookingError('Your session has expired or requires sign-in. Please sign in to reserve this lecture.');
       } else {
         setBookingError(err.message || 'Failed to create booking.');
       }
@@ -435,8 +533,8 @@ export function Schedule() {
     <div className="max-w-container_max mx-auto h-full flex flex-col space-y-6 pb-12 select-none">
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0">
         <div>
-          <h2 className="text-headline-lg font-headline-lg md:text-display text-on-surface">Schedule & Bookings</h2>
-          <p className="text-body-md font-body-md text-on-surface-variant">Manage your availability and upcoming peer sessions.</p>
+          <h2 className="text-2xl font-black text-text">Schedule & Bookings</h2>
+          <p className="text-sm font-medium text-muted">Manage your availability and upcoming peer sessions.</p>
         </div>
         <div className="flex gap-3">
           <Button variant="ghost" onClick={loadData} className="flex items-center gap-2">
@@ -450,16 +548,16 @@ export function Schedule() {
 
       {/* Active Live Cohort Classes Banner (Zoom-like 1-Click Join) */}
       {activeGroupCohorts.length > 0 && (
-        <div className="bg-surface-container border border-outline-variant rounded-3xl p-5 sm:p-6 text-on-surface shadow-elevation-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-outline-variant pb-3">
+        <div className="bg-surface-2 border border-border rounded-3xl p-5 sm:p-6 text-text shadow-md space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
             <div className="flex items-center gap-2.5">
-              <span className="w-3 h-3 rounded-full bg-teaching-emerald animate-ping" />
+              <span className="w-3 h-3 rounded-full bg-primary animate-ping" />
               <div>
-                <span className="text-[11px] font-black uppercase tracking-wider text-primary">Live Joint Classroom Active</span>
-                <h3 className="text-base sm:text-lg font-black text-on-surface">Join Your Cohort Batch Live Studio</h3>
+                <span className="text-[11px] font-black uppercase tracking-wider text-primary-text">Live Joint Classroom Active</span>
+                <h3 className="text-base sm:text-lg font-black text-text">Join Your Cohort Batch Live Studio</h3>
               </div>
             </div>
-            <p className="text-xs text-on-surface-variant font-medium">All students & the instructor enter the exact same video room.</p>
+            <p className="text-xs text-muted font-medium">All students & the instructor enter the exact same video room.</p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -468,36 +566,48 @@ export function Schedule() {
               const cap = cohort.maxCapacity || 3;
 
               return (
-                <div key={cohort.id} className="bg-surface border border-outline-variant rounded-2xl p-4 transition-all flex flex-col justify-between gap-3 shadow-elevation-1">
+                <div key={cohort.id} className="bg-surface border border-border rounded-2xl p-4 transition-all flex flex-col justify-between gap-3 shadow-sm">
                   <div>
                     <div className="flex items-center justify-between gap-2">
-                      <span className="px-2.5 py-0.5 bg-primary-container text-on-primary-container border border-primary/20 rounded-full text-[10px] font-bold uppercase">
+                      <span className="px-2.5 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-full text-[10px] font-bold uppercase">
                         {cap}-Student Batch
                       </span>
-                      <span className="text-xs font-bold text-teaching-emerald flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-teaching-emerald animate-pulse" />
+                      <span className="text-xs font-bold text-primary-text flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
                         Room Active
                       </span>
                     </div>
 
-                    <h4 className="text-sm font-bold text-on-surface mt-1.5">{cohort.title}</h4>
-                    <p className="text-xs text-on-surface-variant mt-0.5">
-                      Teacher: <strong className="text-on-surface">{cohort.teacher?.name || 'Instructor'}</strong> · {enrolled}/{cap} Students Enrolled
+                    <h4 className="text-sm font-bold text-text mt-1.5">{cohort.title}</h4>
+                    <p className="text-xs text-muted mt-0.5">
+                      Teacher: <strong className="text-text">{cohort.teacher?.name || 'Instructor'}</strong> · {enrolled}/{cap} Students Enrolled
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2 pt-2 border-t border-outline-variant">
+                    <div className="flex items-center gap-2 pt-2 border-t border-border">
                     <Button
                       variant="primary"
                       onClick={() => navigate(`/live/${cohort.id}`)}
-                      className="flex-1 py-2 text-xs font-black shadow-elevation-1 flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                      className="flex-1 py-2 text-xs font-black shadow-sm flex items-center justify-center gap-1.5 active:scale-95 transition-all"
                     >
                       <span className="material-symbols-outlined text-[16px]">videocam</span>
                       <span>Join Live Room (All {cap} Students + Teacher)</span>
                     </Button>
                     <button
+                      onClick={() => setSelectedSessionForNotes(cohort)}
+                      className="p-2 bg-surface-2 hover:bg-surface text-text rounded-xl border border-border text-xs active:scale-95 flex items-center gap-1 cursor-pointer"
+                      title="Cohort Notes"
+                    >
+                      <span className="material-symbols-outlined text-[16px] text-primary">edit_note</span>
+                      {(sessionNoteCounts[cohort.id] || 0) > 0 && (
+                        <span className="px-1 rounded-full bg-primary-tint text-primary-text text-[9px] font-black">
+                          {sessionNoteCounts[cohort.id]}
+                        </span>
+                      )}
+                    </button>
+                    <button
                       onClick={() => handleCopySessionLink(cohort.id)}
-                      className="p-2 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl border border-outline-variant text-xs active:scale-95"
+                      className="p-2 bg-surface-2 hover:bg-surface text-text rounded-xl border border-border text-xs active:scale-95 cursor-pointer"
                       title="Copy Direct Link"
                     >
                       <span className="material-symbols-outlined text-[16px]">{copiedSessionId === cohort.id ? 'check' : 'content_copy'}</span>
@@ -511,19 +621,19 @@ export function Schedule() {
       )}
 
       {loading ? (
-        <div className="text-center text-on-surface-variant py-16 animate-pulse text-sm font-bold">Loading schedule details...</div>
+        <div className="text-center text-muted py-16 animate-pulse text-sm font-bold">Loading schedule details...</div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
           {/* Weekly Grid */}
-          <div className="lg:col-span-8 flex flex-col p-0 overflow-hidden shadow-elevation-1 border border-outline-variant rounded-3xl bg-surface">
-            <div className="p-4 sm:p-6 border-b border-outline-variant flex justify-between items-center bg-surface-container-low">
-              <h3 className="font-extrabold text-base sm:text-lg text-on-surface">Weekly Availability</h3>
-              <div className="flex items-center gap-1.5 sm:gap-2 bg-surface px-2.5 sm:px-3 py-1.5 rounded-xl border border-outline-variant shadow-elevation-1">
-                <button onClick={handlePrevWeek} aria-label="Previous week" className="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-on-surface">
+          <div className="lg:col-span-8 flex flex-col p-0 overflow-hidden shadow-sm border border-border rounded-3xl bg-surface">
+            <div className="p-4 sm:p-6 border-b border-border flex justify-between items-center bg-surface-2">
+              <h3 className="font-extrabold text-base sm:text-lg text-text">Weekly Availability</h3>
+              <div className="flex items-center gap-1.5 sm:gap-2 bg-surface px-2.5 sm:px-3 py-1.5 rounded-xl border border-border shadow-sm">
+                <button onClick={handlePrevWeek} aria-label="Previous week" className="p-1 hover:bg-surface-2 rounded-lg transition-colors text-muted hover:text-text">
                   <span className="material-symbols-outlined text-md">chevron_left</span>
                 </button>
-                <span className="text-[11px] sm:text-xs font-bold text-on-surface">{getWeekRangeString()}</span>
-                <button onClick={handleNextWeek} aria-label="Next week" className="p-1 hover:bg-surface-container rounded-lg transition-colors text-on-surface-variant hover:text-on-surface">
+                <span className="text-[11px] sm:text-xs font-bold text-text">{getWeekRangeString()}</span>
+                <button onClick={handleNextWeek} aria-label="Next week" className="p-1 hover:bg-surface-2 rounded-lg transition-colors text-muted hover:text-text">
                   <span className="material-symbols-outlined text-md">chevron_right</span>
                 </button>
               </div>
@@ -531,16 +641,16 @@ export function Schedule() {
             <div className="p-4 sm:p-6 overflow-x-auto custom-scrollbar">
               <div className="min-w-[640px] sm:min-w-[700px]">
                 {/* Header Row */}
-                <div className="grid grid-cols-8 gap-2 mb-4 border-b border-outline-variant pb-3">
-                  <div className="text-right pr-4 text-xs font-bold text-on-surface-variant pt-2">GMT</div>
+                <div className="grid grid-cols-8 gap-2 mb-4 border-b border-border pb-3">
+                  <div className="text-right pr-4 text-xs font-bold text-muted pt-2">GMT</div>
                   {DAYS_SHORT.map((day, idx) => {
                     const date = new Date(weekStart);
                     date.setDate(date.getDate() + idx);
                     const isToday = new Date().toDateString() === date.toDateString();
                     return (
                       <div key={day} className="text-center">
-                        <div className={clsx("text-xs uppercase tracking-wider font-extrabold", isToday ? "text-primary" : "text-on-surface-variant")}>{day}</div>
-                        <div className={clsx("text-xs font-extrabold w-7 h-7 mx-auto flex items-center justify-center mt-1 rounded-full transition-transform hover:scale-105", isToday ? "bg-primary text-on-primary shadow-elevation-1" : "text-on-surface bg-surface-container")}>
+                        <div className={clsx("text-xs uppercase tracking-wider font-extrabold", isToday ? "text-primary-text" : "text-muted")}>{day}</div>
+                        <div className={clsx("text-xs font-extrabold w-7 h-7 mx-auto flex items-center justify-center mt-1 rounded-full transition-transform hover:scale-105", isToday ? "bg-primary text-on-primary shadow-sm" : "text-text bg-surface-2")}>
                           {date.getDate()}
                         </div>
                       </div>
@@ -551,7 +661,7 @@ export function Schedule() {
                 <div className="space-y-2">
                   {HOURS.map(hour => (
                     <div key={hour} className="grid grid-cols-8 gap-2 h-14 items-center">
-                      <div className="text-right pr-4 text-xs font-bold text-on-surface-variant">{formatHour(hour)}</div>
+                      <div className="text-right pr-4 text-xs font-bold text-muted">{formatHour(hour)}</div>
                       {DAYS_SHORT.map((_, dayIdx) => {
                         const cellSession = getSessionForSlot(dayIdx, hour);
                         if (cellSession) {
@@ -565,16 +675,16 @@ export function Schedule() {
                                 }
                               }}
                               className={clsx(
-                                "h-full rounded-xl p-2 overflow-hidden cursor-pointer select-none transition-all flex flex-col justify-between border-l-4 shadow-elevation-1 hover:-translate-y-0.5",
+                                "h-full rounded-xl p-2 overflow-hidden cursor-pointer select-none transition-all flex flex-col justify-between border-l-4 shadow-sm hover:-translate-y-0.5",
                                 isTeacher 
-                                  ? "bg-learning-amber-container border-l-learning-amber text-on-learning-amber-container hover:bg-learning-amber-container/80" 
-                                  : "bg-primary-container border-l-primary text-on-primary-container hover:bg-primary-container/80",
-                                cellSession.status === 'live' && "bg-alert-rose-container border-l-alert-rose animate-pulse text-on-alert-rose-container"
+                                  ? "bg-accent-tint border-l-accent text-accent-text hover:bg-accent-tint/80" 
+                                  : "bg-primary-tint border-l-primary text-primary-text hover:bg-primary-tint/80",
+                                cellSession.status === 'live' && "bg-danger/10 border-l-danger animate-pulse text-danger"
                               )}
                             >
                               <div className="text-xs truncate font-extrabold">{cellSession.title}</div>
-                              <div className="text-[10px] opacity-80 font-bold truncate flex items-center gap-1">
-                                <span className={clsx("w-1.5 h-1.5 rounded-full", isTeacher ? "bg-learning-amber" : "bg-primary")} />
+                              <div className="text-[10px] opacity-90 font-bold truncate flex items-center gap-1">
+                                <span className={clsx("w-1.5 h-1.5 rounded-full", isTeacher ? "bg-accent" : "bg-primary")} />
                                 {isTeacher ? `Teaching ${cellSession.student?.name}` : `Learning from ${cellSession.teacher?.name}`}
                               </div>
                             </div>
@@ -593,7 +703,7 @@ export function Schedule() {
                               setBookingTime(`${String(hour).padStart(2, '0')}:00`);
                               setIsBookingOpen(true);
                             }}
-                            className="h-full rounded-xl bg-surface-container border border-dashed border-outline-variant hover:border-primary/40 hover:bg-primary-container/30 cursor-pointer transition-all duration-200"
+                            className="h-full rounded-xl bg-surface-2 border border-dashed border-border hover:border-primary/40 hover:bg-primary-tint/30 cursor-pointer transition-all duration-200"
                           />
                         );
                       })}
@@ -602,25 +712,25 @@ export function Schedule() {
                 </div>
               </div>
             </div>
-            <div className="px-4 sm:px-6 py-4 border-t border-outline-variant flex flex-wrap gap-3 sm:gap-5 text-xs font-bold text-on-surface-variant bg-surface-container-low">
+            <div className="px-4 sm:px-6 py-4 border-t border-border flex flex-wrap gap-3 sm:gap-5 text-xs font-bold text-muted bg-surface-2">
               <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-primary"></span> Learning Session</div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-learning-amber"></span> Teaching Session</div>
-              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-alert-rose animate-pulse"></span> Live Room</div>
+              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-accent"></span> Teaching Session</div>
+              <div className="flex items-center gap-2"><span className="w-2.5 h-2.5 rounded-full bg-danger animate-pulse"></span> Live Room</div>
             </div>
           </div>
 
           {/* Appointments Column */}
-          <div className="lg:col-span-4 flex flex-col p-0 overflow-hidden shadow-elevation-1 border border-outline-variant rounded-2xl bg-surface h-auto lg:h-[620px] max-h-[620px]">
-            <div className="p-4 sm:p-6 border-b border-outline-variant bg-surface-container-low shrink-0">
-              <h3 className="font-extrabold text-base sm:text-lg text-on-surface mb-3 sm:mb-4">Appointments</h3>
-              <div className="flex p-1 bg-surface-container rounded-xl gap-1 border border-outline-variant">
+          <div className="lg:col-span-4 flex flex-col p-0 overflow-hidden shadow-sm border border-border rounded-2xl bg-surface h-auto lg:h-[620px] max-h-[620px]">
+            <div className="p-4 sm:p-6 border-b border-border bg-surface-2 shrink-0">
+              <h3 className="font-extrabold text-base sm:text-lg text-text mb-3 sm:mb-4">Appointments</h3>
+              <div className="flex p-1 bg-surface-2 rounded-xl gap-1 border border-border">
                 {['confirmed', 'pending', 'completed'].map(tab => (
                   <button
                     key={tab}
                     onClick={() => setActiveTab(tab)}
                     className={clsx(
                       "flex-1 py-1.5 px-2 sm:px-3 rounded-lg text-xs font-extrabold text-center transition-all duration-200 capitalize",
-                      activeTab === tab ? "bg-surface text-primary shadow-elevation-1" : "text-on-surface-variant hover:text-on-surface"
+                      activeTab === tab ? "bg-surface text-primary-text shadow-sm" : "text-muted hover:text-text"
                     )}
                   >
                     {tab}
@@ -628,15 +738,15 @@ export function Schedule() {
                 ))}
               </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-surface-container-low/50 custom-scrollbar">
+            <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-surface-2/40 custom-scrollbar">
               {filteredSessions.length === 0 ? (
-                <div className="text-center text-on-surface-variant text-xs py-16 flex flex-col items-center justify-center space-y-3">
-                  <div className="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center text-primary">
+                <div className="text-center text-muted text-xs py-16 flex flex-col items-center justify-center space-y-3">
+                  <div className="w-16 h-16 rounded-full bg-primary-tint text-primary-text border border-primary/20 flex items-center justify-center">
                     <span className="material-symbols-outlined text-3xl">event_available</span>
                   </div>
                   <div>
-                    <p className="font-bold text-on-surface text-sm">No {activeTab} sessions yet</p>
-                    <p className="text-on-surface-variant text-xs mt-1">Find a match or book a new session!</p>
+                    <p className="font-bold text-text text-sm">No {activeTab} sessions yet</p>
+                    <p className="text-muted text-xs mt-1">Find a match or book a new session!</p>
                   </div>
                   <Button variant="primary" className="py-2 text-xs" onClick={() => setIsBookingOpen(true)}>
                     + Schedule Session
@@ -670,8 +780,8 @@ export function Schedule() {
                     <div 
                       key={session.id} 
                       className={clsx(
-                        "p-4 rounded-2xl border-l-4 bg-surface shadow-elevation-1 hover:shadow-elevation-2 transition-all duration-200 group border-y border-r border-outline-variant",
-                        isSwap ? "border-l-primary" : (isTeacher ? "border-l-learning-amber" : "border-l-primary")
+                        "p-4 rounded-2xl border-l-4 bg-surface shadow-sm hover:shadow-md transition-all duration-200 group border-y border-r border-border",
+                        isSwap ? "border-l-primary" : (isTeacher ? "border-l-accent" : "border-l-primary")
                       )}
                     >
                       <div className="flex justify-between items-start mb-3">
@@ -682,54 +792,70 @@ export function Schedule() {
                               alt={partner?.name ? `${partner.name}'s profile avatar` : "Peer avatar"} 
                               className="w-10 h-10 rounded-full object-cover ring-2 ring-primary/20" 
                             />
-                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-teaching-emerald rounded-full ring-2 ring-surface" />
+                            <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-primary rounded-full ring-2 ring-surface" />
                           </div>
                           <div>
                             <div className="flex items-center gap-1.5">
-                              <p className="font-bold text-sm text-on-surface">{partner?.name}</p>
+                              <p className="font-bold text-sm text-text">{partner?.name}</p>
                               {isSwap && (
-                                <span className="px-1.5 py-0.2 rounded bg-primary-container text-on-primary-container text-[9px] font-black uppercase tracking-wider">
+                                <span className="px-1.5 py-0.2 rounded bg-primary-tint text-primary-text border border-primary/20 text-[9px] font-black uppercase tracking-wider">
                                   Swap
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-on-surface-variant font-medium truncate max-w-[130px]">{session.title}</p>
+                            <p className="text-[11px] text-muted truncate max-w-[200px]">{partner?.email ? `${partner.email} • ` : ''}{isTeacher ? 'Student' : 'Mentor'}</p>
+                            <p className="text-xs text-text font-medium truncate max-w-[200px]">{session.title}</p>
                           </div>
                         </div>
                         <div className="flex flex-col items-end gap-1">
-                          <span className={clsx(
-                            "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
-                            session.status === 'confirmed' && "bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20",
-                            session.status === 'pending' && "bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20",
-                            session.status === 'completed' && "bg-surface-container text-on-surface-variant border border-outline-variant"
-                          )}>
-                            {session.status}
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {(sessionNoteCounts[session.id] || 0) > 0 && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedSessionForNotes(session);
+                                }}
+                                className="px-1.5 py-0.5 rounded-full bg-primary-tint text-primary-text text-[10px] font-bold border border-primary/20 flex items-center gap-0.5 hover:opacity-80 transition cursor-pointer"
+                                title={`${sessionNoteCounts[session.id]} session note${sessionNoteCounts[session.id] !== 1 ? 's' : ''}`}
+                              >
+                                <span className="material-symbols-outlined text-[11px]">description</span>
+                                <span>{sessionNoteCounts[session.id]}</span>
+                              </button>
+                            )}
+                            <span className={clsx(
+                              "px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider",
+                              session.status === 'confirmed' && "bg-primary-tint text-primary-text border border-primary/20",
+                              session.status === 'pending' && "bg-accent-tint text-accent-text border border-accent/20",
+                              session.status === 'completed' && "bg-surface-2 text-muted border border-border"
+                            )}>
+                              {session.status}
+                            </span>
+                          </div>
                           {isSwap ? (
-                            <span className="text-[10px] font-bold text-on-teaching-emerald-container bg-teaching-emerald-container border border-teaching-emerald/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                            <span className="text-[10px] font-bold text-primary-text bg-primary-tint border border-primary/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                               <span className="material-symbols-outlined text-[11px]">swap_horiz</span>
                               Skill Swap (Free)
                             </span>
                           ) : isTeacher ? (
                             paidStudentsList.length > 0 ? (
-                              <span className="text-[10px] font-bold text-on-teaching-emerald-container bg-teaching-emerald-container border border-teaching-emerald/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                              <span className="text-[10px] font-bold text-primary-text bg-primary-tint border border-primary/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-[11px]">verified</span>
                                 Received ₹{teacherRevenueReceived} ({paidStudentsList.length}/{Math.max(1, totalEnrolledCount)} Paid)
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold text-on-learning-amber-container bg-learning-amber-container border border-learning-amber/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                              <span className="text-[10px] font-bold text-accent-text bg-accent-tint border border-accent/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-[11px]">schedule</span>
                                 Pending (0/{Math.max(1, totalEnrolledCount)} Paid)
                               </span>
                             )
                           ) : (
                             isPaidByMe ? (
-                              <span className="text-[10px] font-bold text-on-primary-container bg-primary-container border border-primary/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                              <span className="text-[10px] font-bold text-primary-text bg-primary-tint border border-primary/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-[11px]">verified</span>
                                 Paid ₹{currentStudentEntry?.amountPaid || session.pricePerStudent || session.amount || 499}
                               </span>
                             ) : (
-                              <span className="text-[10px] font-bold text-on-learning-amber-container bg-learning-amber-container border border-learning-amber/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
+                              <span className="text-[10px] font-bold text-accent-text bg-accent-tint border border-accent/20 px-1.5 py-0.5 rounded flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-[11px]">schedule</span>
                                 Pay After Class: ₹{session.pricePerStudent || session.amount || 499}
                               </span>
@@ -739,9 +865,9 @@ export function Schedule() {
                       </div>
                       {/* Group Cohort Badge & Classmates Roster */}
                       {(session.maxCapacity || 1) > 1 && (
-                        <div className="flex items-center justify-between bg-surface-container-low border border-outline-variant p-2 rounded-xl text-[11px] mb-3">
-                          <span className="font-bold text-on-surface flex items-center gap-1">
-                            <span className="material-symbols-outlined text-sm text-teaching-emerald">groups</span>
+                        <div className="flex items-center justify-between bg-surface-2 border border-border p-2 rounded-xl text-[11px] mb-3">
+                          <span className="font-bold text-text flex items-center gap-1">
+                            <span className="material-symbols-outlined text-sm text-primary-text">groups</span>
                             Cohort ({Array.isArray(session.students) ? session.students.length : (session.studentId ? 1 : 0)}/{session.maxCapacity || 5} Students)
                           </span>
                           <div className="flex -space-x-1.5 overflow-hidden">
@@ -751,30 +877,30 @@ export function Schedule() {
                                 src={st.avatar || `https://i.pravatar.cc/150?img=${sIdx + 11}`}
                                 alt={st.name}
                                 title={`${st.name} (${st.paymentStatus === 'paid' ? 'Paid' : 'Unpaid'})`}
-                                className={`inline-block h-5 w-5 rounded-full ring-1 ${st.paymentStatus === 'paid' ? 'ring-teaching-emerald' : 'ring-learning-amber'} object-cover`}
+                                className={`inline-block h-5 w-5 rounded-full ring-1 ${st.paymentStatus === 'paid' ? 'ring-primary' : 'ring-accent'} object-cover`}
                               />
                             ))}
                           </div>
                         </div>
                       )}
 
-                      <div className="flex items-center gap-4 text-xs font-medium text-on-surface-variant mb-4">
+                      <div className="flex items-center gap-4 text-xs font-medium text-muted mb-4">
                         <div className="flex items-center gap-1">
-                          <span className="material-symbols-outlined text-sm text-outline">event</span>
+                          <span className="material-symbols-outlined text-sm text-muted">event</span>
                           {new Date(session.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                         </div>
                         <div className="flex items-center gap-1">
-                          <span className="material-symbols-outlined text-sm text-outline">schedule</span>
+                          <span className="material-symbols-outlined text-sm text-muted">schedule</span>
                           {new Date(session.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </div>
                         {getCountdownBadge(session.scheduledAt)}
                       </div>
-                      <div className="flex flex-wrap gap-2 pt-1 border-t border-outline-variant">
+                      <div className="flex flex-wrap gap-2 pt-1 border-t border-border">
                         {/* Post-Lecture Payment Button for Students (Regular mentoring only) */}
                         {!isTeacher && !isPaidByMe && !isSwap && (
                           <button 
                             onClick={() => handlePayForSession(session)}
-                            className="w-full py-2 px-3 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-elevation-1 transition-all active:scale-95 mb-1"
+                            className="w-full py-2 px-3 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 mb-1"
                           >
                             <span className="material-symbols-outlined text-[16px]">payments</span>
                             Pay ₹{session.pricePerStudent || session.amount || session.teacher?.hourlyRate || 499} to Mentor via UPI / Direct
@@ -782,9 +908,9 @@ export function Schedule() {
                         )}
                         {(session.status === 'confirmed' || session.status === 'live') && (
                           <button 
-                            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-elevation-1 transition-all ${
+                            className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 shadow-sm transition-all ${
                               isSessionLiveNow(session.scheduledAt)
-                                ? 'bg-teaching-emerald hover:bg-teaching-emerald/90 text-white animate-pulse ring-2 ring-teaching-emerald/30'
+                                ? 'bg-primary hover:bg-primary-hover text-on-primary animate-pulse ring-2 ring-primary/30'
                                 : 'bg-primary hover:bg-primary-hover text-on-primary'
                             }`}
                             onClick={() => navigate(`/live/${session.id}`)}
@@ -802,23 +928,68 @@ export function Schedule() {
                         {session.status === 'pending' && (
                           isSwap ? (
                             isProposer ? (
-                              <div className="flex-1 py-1.5 px-3 bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
-                                <span className="material-symbols-outlined text-[16px] text-learning-amber">hourglass_top</span>
+                              <div className="flex-1 py-1.5 px-3 bg-accent-tint text-accent-text border border-accent/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
+                                <span className="material-symbols-outlined text-[16px] text-accent">hourglass_top</span>
                                 <span>Awaiting Peer Response</span>
                               </div>
-                            ) : null
+                            ) : (
+                              <div className="flex-1 flex gap-2">
+                                <button
+                                  onClick={() => handleApproveSession(session.id)}
+                                  className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                  <span>Accept Swap</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeclineSession(session.id)}
+                                  className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                >
+                                  <span>Decline</span>
+                                </button>
+                              </div>
+                            )
                           ) : (
-                            !isTeacher && (
-                              <div className="flex-1 py-1.5 px-3 bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
-                                <span className="material-symbols-outlined text-[16px] text-learning-amber">hourglass_top</span>
+                            isTeacher ? (
+                              <div className="flex-1 flex gap-2">
+                                <button
+                                  onClick={() => handleApproveSession(session.id)}
+                                  className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                                >
+                                  <span className="material-symbols-outlined text-[15px]">check_circle</span>
+                                  <span>Accept Request</span>
+                                </button>
+                                <button
+                                  onClick={() => handleDeclineSession(session.id)}
+                                  className="py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                >
+                                  <span>Decline</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="flex-1 py-1.5 px-3 bg-accent-tint text-accent-text border border-accent/20 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5">
+                                <span className="material-symbols-outlined text-[16px] text-accent">hourglass_top</span>
                                 <span>Waiting for Teacher Approval</span>
                               </div>
                             )
                           )
                         )}
                         <button
+                          onClick={() => setSelectedSessionForNotes(session)}
+                          className="px-2.5 py-1.5 bg-surface-2 hover:bg-surface text-text border border-border rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 active:scale-95 shadow-xs cursor-pointer"
+                          title="View or add session notes"
+                        >
+                          <span className="material-symbols-outlined text-[15px] text-primary">edit_note</span>
+                          <span>Notes</span>
+                          {(sessionNoteCounts[session.id] || 0) > 0 && (
+                            <span className="px-1.5 py-0.2 rounded-full bg-primary-tint text-primary-text font-black text-[10px] border border-primary/20">
+                              {sessionNoteCounts[session.id]}
+                            </span>
+                          )}
+                        </button>
+                        <button
                           onClick={() => handleCopySessionLink(session.id)}
-                          className="px-2.5 py-1.5 bg-primary-container text-on-primary-container border border-primary/20 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 active:scale-95 shadow-elevation-1"
+                          className="px-2.5 py-1.5 bg-primary-tint text-primary-text border border-primary/20 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 active:scale-95 shadow-sm cursor-pointer"
                           title="Copy direct invite link for this session"
                         >
                           <span className="material-symbols-outlined text-[14px]">{copiedSessionId === session.id ? 'check' : 'content_copy'}</span>
@@ -828,7 +999,7 @@ export function Schedule() {
                           <div className="inline-flex items-center gap-1">
                             <button
                               onClick={() => window.open(getGoogleCalendarUrl(session), '_blank')}
-                              className="px-2.5 py-1.5 bg-primary-container hover:bg-primary-container/80 text-on-primary-container border border-primary/20 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 active:scale-95 shadow-xs"
+                              className="px-2.5 py-1.5 bg-primary-tint hover:bg-primary-tint/80 text-primary-text border border-primary/20 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1 active:scale-95 shadow-xs"
                               title="Add to Google Calendar"
                             >
                               <span className="material-symbols-outlined text-[14px]">calendar_today</span>
@@ -836,7 +1007,7 @@ export function Schedule() {
                             </button>
                             <button
                               onClick={() => handleDownloadIcs(session)}
-                              className="px-2 py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface border border-outline-variant rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95"
+                              className="px-2 py-1.5 bg-surface-2 hover:bg-surface text-text border border-border rounded-xl text-xs font-bold transition-all flex items-center gap-1 active:scale-95"
                               title="Download .ics event file for Apple / Outlook Calendar"
                             >
                               <span className="material-symbols-outlined text-[14px]">download</span>
@@ -849,8 +1020,8 @@ export function Schedule() {
                             isRecipient ? (
                               <>
                                 <Button 
-                                  variant="mint" 
-                                  className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-elevation-1" 
+                                  variant="primary" 
+                                  className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-sm" 
                                   onClick={() => handleApproveSession(session.id)}
                                 >
                                   <span className="material-symbols-outlined text-[15px]">check_circle</span>
@@ -867,7 +1038,7 @@ export function Schedule() {
                             ) : (
                               <Button 
                                 variant="ghost" 
-                                className="py-1.5 px-3 font-bold text-[11px] text-on-surface-variant hover:text-alert-rose" 
+                                className="py-1.5 px-3 font-bold text-[11px] text-muted hover:text-danger" 
                                 onClick={() => handleDeleteSession(session.id)}
                               >
                                 Cancel Request
@@ -878,7 +1049,7 @@ export function Schedule() {
                               <>
                                 <Button 
                                   variant="primary" 
-                                  className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-elevation-1" 
+                                  className="py-1.5 px-3 text-xs font-bold flex items-center gap-1 shadow-sm" 
                                   onClick={() => handleApproveSession(session.id)}
                                 >
                                   <span className="material-symbols-outlined text-[15px]">check_circle</span>
@@ -896,12 +1067,12 @@ export function Schedule() {
                           )
                         )}
                         {session.status === 'confirmed' && isTeacher && !isSwap && (
-                          <Button variant="mint" className="py-1.5 px-3 text-xs font-bold" onClick={() => handleCompleteSession(session.id)}>
+                          <Button variant="primary" className="py-1.5 px-3 text-xs font-bold" onClick={() => handleCompleteSession(session.id)}>
                             Complete
                           </Button>
                         )}
                         {session.status !== 'pending' && session.status !== 'completed' && (
-                          <Button variant="ghost" className="py-1.5 px-3 font-bold text-[11px] text-on-surface-variant hover:text-alert-rose" onClick={() => handleDeleteSession(session.id)}>
+                          <Button variant="ghost" className="py-1.5 px-3 font-bold text-[11px] text-muted hover:text-danger" onClick={() => handleDeleteSession(session.id)}>
                             Cancel
                           </Button>
                         )}
@@ -918,20 +1089,20 @@ export function Schedule() {
       {/* New Booking Modal */}
       {isBookingOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-surface border border-outline-variant rounded-3xl w-full max-w-lg shadow-elevation-3 relative max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-surface border border-border rounded-3xl w-full max-w-lg shadow-lg relative max-h-[90vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             
             {/* Modal Header */}
-            <div className="p-6 pb-4 border-b border-outline-variant flex items-start justify-between shrink-0 bg-surface">
+            <div className="p-6 pb-4 border-b border-border flex items-start justify-between shrink-0 bg-surface">
               <div>
-                <h3 className="text-xl font-extrabold text-on-surface">New Booking</h3>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                <h3 className="text-xl font-extrabold text-text">New Booking</h3>
+                <p className="text-xs text-muted font-medium mt-0.5">
                   Choose 1-on-1 private lecture or group study cohort (Requires Teacher Approval).
                 </p>
               </div>
               <button 
                 onClick={() => { setIsBookingOpen(false); setConflictData(null); }}
                 aria-label="Close new booking modal"
-                className="text-on-surface-variant hover:text-on-surface hover:bg-surface-container rounded-full p-1.5 transition-colors"
+                className="text-muted hover:text-text hover:bg-surface-2 rounded-full p-1.5 transition-colors"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
@@ -940,43 +1111,58 @@ export function Schedule() {
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto flex-1 space-y-4 custom-scrollbar">
               {bookingError && (
-                <div className="bg-alert-rose-container border border-alert-rose/20 text-on-alert-rose-container rounded-xl p-3 text-xs font-semibold flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[16px] text-alert-rose">error</span>
+                <div className="bg-danger/10 border border-danger/20 text-danger rounded-xl p-3 text-xs font-semibold flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[16px] text-danger">error</span>
                   {bookingError}
                 </div>
               )}
 
               {/* Nearest Slot Recommendation Banner */}
               {conflictData && (
-                <div className="bg-learning-amber-container border border-learning-amber/20 rounded-xl p-3.5 space-y-2 text-xs">
-                  <div className="flex items-center gap-1.5 font-bold text-on-learning-amber-container">
-                    <span className="material-symbols-outlined text-learning-amber text-base">schedule</span>
-                    <span>Requested Slot Booked! Nearest Slot Found:</span>
+                conflictData.noAvailability || !conflictData.nearestSlot ? (
+                  <div className="bg-accent-tint border border-accent/20 rounded-xl p-3.5 space-y-1.5 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-accent-text">
+                      <span className="material-symbols-outlined text-accent text-base">event_busy</span>
+                      <span>No Availability Set</span>
+                    </div>
+                    <p className="text-accent-text/90 font-medium">
+                      This teacher hasn't set availability yet. Please reach out or check back later once their schedule is published.
+                    </p>
                   </div>
-                  <p className="text-on-learning-amber-container/90">
-                    The nearest available time slot with <strong>{selectedPeer?.name || 'this mentor'}</strong> is:
-                    <br />
-                    <span className="font-extrabold text-on-learning-amber-container text-sm">{conflictData.nearestSlotFormatted}</span>
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => handleCreateBooking(conflictData.nearestSlot)}
-                    className="w-full py-2 bg-learning-amber hover:bg-learning-amber-hover text-on-learning-amber font-black rounded-lg text-xs flex items-center justify-center gap-1 shadow-elevation-1 active:scale-98 transition-all"
-                  >
-                    <span className="material-symbols-outlined text-sm">event_available</span>
-                    <span>Book Nearest Slot ({conflictData.nearestSlotFormatted})</span>
-                  </button>
-                </div>
+                ) : (
+                  <div className="bg-accent-tint border border-accent/20 rounded-xl p-3.5 space-y-2 text-xs">
+                    <div className="flex items-center gap-1.5 font-bold text-accent-text">
+                      <span className="material-symbols-outlined text-accent text-base">schedule</span>
+                      <span>Requested Slot Booked! Nearest Slot Found:</span>
+                    </div>
+                    <p className="text-accent-text/90">
+                      The nearest available time slot with <strong>{selectedPeer?.name || 'this mentor'}</strong> is:
+                      <br />
+                      <span className="font-extrabold text-accent-text text-sm">{conflictData.nearestSlotFormatted}</span>
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleCreateBooking(conflictData.nearestSlot || undefined)}
+                      className="w-full py-2 bg-accent hover:bg-accent/90 text-text font-black rounded-lg text-xs flex items-center justify-center gap-1 shadow-sm active:scale-98 transition-all cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-sm">event_available</span>
+                      <span>Book Nearest Slot ({conflictData.nearestSlotFormatted})</span>
+                    </button>
+                  </div>
+                )
               )}
 
               <div>
-                <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider mb-2">Select Peer</label>
+                <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2">Select Peer</label>
                 <select 
-                  className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full rounded-xl border border-border bg-surface text-xs font-bold text-text p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   value={selectedPeerId}
                   onChange={(e) => {
                     const peerId = e.target.value;
                     setSelectedPeerId(peerId);
+                    setConflictData(null);
+                    setBookingError('');
+                    setIsSlotAvailable(null);
                     const peerObj = peers.find(p => p.id === peerId);
                     const peerSkills = peerObj && Array.isArray(peerObj.userSkills)
                       ? peerObj.userSkills.filter((us: any) => us && us.type === 'teaches')
@@ -1000,7 +1186,7 @@ export function Schedule() {
 
               {/* Lecture Format & Capacity Choice */}
               <div className="space-y-1.5">
-                <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider">Lecture Format (Student Choice)</label>
+                <label className="block text-xs font-extrabold text-text uppercase tracking-wider">Lecture Format (Student Choice)</label>
                 <div className="grid grid-cols-5 gap-1.5">
                   {[
                     { cap: 1, label: '1-on-1', icon: 'person' },
@@ -1017,27 +1203,27 @@ export function Schedule() {
                         type="button"
                         onClick={() => setBookingCapacity(item.cap)}
                         className={`p-2 rounded-xl border text-center transition-all flex flex-col items-center ${
-                          isSel ? 'bg-primary-container border-primary text-on-primary-container font-bold shadow-elevation-1' : 'bg-surface-container-low border-outline-variant text-on-surface-variant hover:bg-surface-container'
+                          isSel ? 'bg-primary-tint border-primary text-primary-text font-bold shadow-sm' : 'bg-surface-2 border-border text-muted hover:bg-surface'
                         }`}
                       >
                         <span className="material-symbols-outlined text-lg mb-0.5">{item.icon}</span>
                         <span className="text-[10px] font-bold">{item.label}</span>
-                        <span className="text-[10px] font-extrabold mt-0.5 text-primary">₹{price}</span>
+                        <span className="text-[10px] font-extrabold mt-0.5 text-primary-text">₹{price}</span>
                       </button>
                     );
                   })}
                 </div>
-                <div className="bg-primary-container/50 border border-primary/20 text-on-primary-container p-2.5 rounded-xl text-[11px] flex items-center justify-between mt-1">
+                <div className="bg-primary-tint/50 border border-primary/20 text-primary-text p-2.5 rounded-xl text-[11px] flex items-center justify-between mt-1">
                   <span className="font-semibold">{getCapacityDetails(bookingCapacity).label}:</span>
-                  <span className="text-primary font-bold">{getCapacityDetails(bookingCapacity).desc}</span>
+                  <span className="text-primary-text font-bold">{getCapacityDetails(bookingCapacity).desc}</span>
                 </div>
               </div>
 
               {selectedPeerId && (
                 <div>
-                  <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider mb-2">Select Skill</label>
+                  <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2">Select Skill</label>
                   <select 
-                    className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    className="w-full rounded-xl border border-border bg-surface text-xs font-bold text-text p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     value={selectedSkillId}
                     onChange={(e) => {
                       setSelectedSkillId(e.target.value);
@@ -1054,11 +1240,11 @@ export function Schedule() {
               )}
 
               <div>
-                <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider mb-2">Session Title</label>
+                <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2">Session Title</label>
                 <input 
                   type="text" 
                   placeholder="e.g. Intro to React"
-                  className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-medium text-on-surface p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                  className="w-full rounded-xl border border-border bg-surface text-xs font-medium text-text p-3 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                   value={bookingTitle}
                   onChange={(e) => setBookingTitle(e.target.value)}
                 />
@@ -1066,31 +1252,66 @@ export function Schedule() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider mb-2">Date</label>
+                  <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2">Date</label>
                   <input 
                     type="date" 
-                    className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    className="w-full rounded-xl border border-border bg-surface text-xs font-bold text-text p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     value={bookingDate}
-                    onChange={(e) => setBookingDate(e.target.value)}
+                    onChange={(e) => {
+                      setBookingDate(e.target.value);
+                      setConflictData(null);
+                      setBookingError('');
+                      setIsSlotAvailable(null);
+                    }}
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-on-surface uppercase tracking-wider mb-2">Time</label>
+                  <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2">Time</label>
                   <input 
                     type="time" 
-                    className="w-full rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
+                    className="w-full rounded-xl border border-border bg-surface text-xs font-bold text-text p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
                     value={bookingTime}
-                    onChange={(e) => setBookingTime(e.target.value)}
+                    onChange={(e) => {
+                      setBookingTime(e.target.value);
+                      setConflictData(null);
+                      setBookingError('');
+                      setIsSlotAvailable(null);
+                    }}
                   />
                 </div>
               </div>
+
+              {/* Real-time slot availability status */}
+              {isCheckingAvailability && (
+                <div className="flex items-center gap-1.5 text-xs text-muted font-medium py-1">
+                  <span className="animate-spin material-symbols-outlined text-sm text-primary">progress_activity</span>
+                  <span>Checking availability...</span>
+                </div>
+              )}
+              {!isCheckingAvailability && isSlotAvailable === true && !conflictData && (
+                <div className="flex items-center gap-1.5 text-xs text-primary font-bold py-1">
+                  <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
+                  <span>Time slot is available</span>
+                </div>
+              )}
             </div>
 
             {/* Modal Fixed Footer */}
-            <div className="p-4 px-6 border-t border-outline-variant bg-surface-container-low flex items-center justify-end gap-3 shrink-0 rounded-b-3xl">
+            <div className="p-4 px-6 border-t border-border bg-surface-2 flex items-center justify-end gap-3 shrink-0 rounded-b-3xl">
               <Button variant="ghost" onClick={() => setIsBookingOpen(false)}>Cancel</Button>
-              <Button variant="primary" onClick={() => handleCreateBooking()}>
-                Book for ₹{calculateSeatPrice(selectedPeer, bookingCapacity)}
+              <Button 
+                variant="primary" 
+                onClick={() => handleCreateBooking()}
+                disabled={isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict)}
+              >
+                {isCheckingAvailability ? (
+                  <>
+                    <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <span>Book for ₹{calculateSeatPrice(selectedPeer, bookingCapacity)}</span>
+                )}
               </Button>
             </div>
 
@@ -1110,6 +1331,29 @@ export function Schedule() {
           loadData();
         }}
       />
+
+      {/* Session Notes Modal Panel */}
+      {selectedSessionForNotes && (
+        <SessionNotesPanel
+          isOpen={Boolean(selectedSessionForNotes)}
+          onClose={() => {
+            setSelectedSessionForNotes(null);
+            api.getNotes().then((notesData: any[]) => {
+              if (Array.isArray(notesData)) {
+                const counts: Record<string, number> = {};
+                for (const n of notesData) {
+                  if (n.sessionId) {
+                    counts[n.sessionId] = (counts[n.sessionId] || 0) + 1;
+                  }
+                }
+                setSessionNoteCounts(counts);
+              }
+            }).catch(() => {});
+          }}
+          session={selectedSessionForNotes}
+          currentUserId={currentUser?.id}
+        />
+      )}
     </div>
   );
 }

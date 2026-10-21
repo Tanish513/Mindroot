@@ -27,3 +27,16 @@
 - **MISTAKE-009: Allowing Payment Confirmation on Unconfirmed/Pending Sessions**:
   - Problem: Students could submit payment confirmations against sessions that were still awaiting mentor approval.
   - Fix: Verify `session.status === 'confirmed'` before processing payments in `confirm-upi` and `confirm-payment`, returning `400 SESSION_NOT_CONFIRMED` otherwise.
+- **MISTAKE-010: Premature Auto-Completion and Auto-Cancellation of Pending Sessions**:
+  - Problem: Client `api.getSessions()` converted pending sessions to `completed` if `startTime + duration <= now`, and server cancelled pending requests immediately at `scheduledAt`.
+  - Fix: Never auto-complete pending sessions; require explicit teacher action or extended 24h grace period.
+- **MISTAKE-011: Hiding Past Pending Sessions in Schedule Tab**:
+  - Problem: Schedule filtered pending sessions with `s.status === 'pending' && !isPast`, immediately moving unconfirmed sessions into the Completed tab once their start time passed.
+  - Fix: Filter pending tab by `s.status === 'pending'` regardless of time, and only move confirmed sessions to completed.
+- **MISTAKE-012: Implicit `.env` Injection by `tsx` During Test Execution**:
+  - Problem: Running `npx tsx test/...` from inside `server/` causes `tsx` to automatically inject `server/.env`, inadvertently connecting test suites to the live remote database (where ad-hoc test users do not exist).
+  - Fix: Run tests from the project root (where root `.env` lacks `DATABASE_URL`) or explicitly override `DATABASE_URL="" DIRECT_URL=""` for DB-less tests, or point to an explicit local disposable PostgreSQL instance.
+- **MISTAKE-013: Dual `DIRECT_URL` and `DATABASE_URL` Precedence in `prisma.config.ts`**:
+  - Problem: Overriding only `DATABASE_URL` still allows Prisma CLI v6/v8 to connect to remote Supabase if `DIRECT_URL` is set, because `prisma.config.ts` prioritizes `process.env["DIRECT_URL"] || process.env["DATABASE_URL"]`.
+  - Fix: Always override **both** `$env:DATABASE_URL` and `$env:DIRECT_URL` (and `$env:SHADOW_DATABASE_URL`) when directing Prisma to local disposable test databases.
+

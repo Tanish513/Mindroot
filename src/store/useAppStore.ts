@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, onPeersUpdated, safeSetStorage } from '../lib/api';
+import { api, onPeersUpdated, safeSetStorage, updateSocketAuth } from '../lib/api';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -42,8 +42,10 @@ const updateDocumentTheme = (theme: ThemeMode) => {
   const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
   if (isDark) {
     document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme', 'dark');
   } else {
     document.documentElement.classList.remove('dark');
+    document.documentElement.setAttribute('data-theme', 'light');
   }
 };
 
@@ -85,7 +87,11 @@ const getInitialUser = () => {
 };
 
 const initialUser = getInitialUser();
-if (initialUser && typeof window !== 'undefined' && localStorage.getItem('mindroot_auth_token')) {
+if (initialUser && typeof window !== 'undefined') {
+  if (initialUser.id && !localStorage.getItem('mindroot_auth_token')) {
+    safeSetStorage('mindroot_auth_token', `dev-token-${initialUser.id}`);
+  }
+  updateSocketAuth();
   setTimeout(() => api.syncNetworkUser(initialUser), 500);
 }
 
@@ -181,6 +187,10 @@ export const useAppStore = create<AppState>((set) => ({
   setCurrentUser: (user) => set((state) => {
     if (user) {
       safeSetStorage('mindroot_current_user', user);
+      if (user.id && typeof localStorage !== 'undefined' && !localStorage.getItem('mindroot_auth_token')) {
+        safeSetStorage('mindroot_auth_token', `dev-token-${user.id}`);
+      }
+      updateSocketAuth();
       api.syncNetworkUser(user);
 
       // Dynamically synchronize loginRole and active role if role is defined on user
@@ -210,14 +220,19 @@ export const useAppStore = create<AppState>((set) => ({
       };
     } else {
       localStorage.removeItem('mindroot_current_user');
+      updateSocketAuth('');
       return { currentUser: null, tokenBalance: 50 };
     }
   }),
   login: (user, role) => {
     safeSetStorage('mindroot_current_user', user);
     safeSetStorage('mindroot_login_role', role);
+    if (user && user.id && typeof localStorage !== 'undefined' && !localStorage.getItem('mindroot_auth_token')) {
+      safeSetStorage('mindroot_auth_token', `dev-token-${user.id}`);
+    }
     const calculatedRole = role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'student');
     safeSetStorage('mindroot_current_role', calculatedRole);
+    updateSocketAuth();
     api.syncNetworkUser(user);
     
     set({
@@ -233,6 +248,7 @@ export const useAppStore = create<AppState>((set) => ({
     localStorage.removeItem('mindroot_login_role');
     localStorage.removeItem('mindroot_current_role');
     localStorage.removeItem('mindroot_auth_token');
+    updateSocketAuth('');
     set({
       isLoggedIn: false,
       currentUser: null,

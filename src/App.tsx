@@ -21,6 +21,7 @@ const Rewards = lazy(() => import('./pages/Rewards').then(m => ({ default: m.Rew
 const Discussions = lazy(() => import('./pages/Discussions').then(m => ({ default: m.Discussions })));
 const AdminPortal = lazy(() => import('./pages/AdminPortal').then(m => ({ default: m.AdminPortal })));
 const LiveRoom = lazy(() => import('./pages/LiveRoom').then(m => ({ default: m.LiveRoom })));
+const Notes = lazy(() => import('./pages/Notes').then(m => ({ default: m.Notes })));
 
 const SuspenseFallback = (
   <div className="flex items-center justify-center min-h-[400px] text-on-surface-variant text-xs font-bold">
@@ -147,6 +148,22 @@ function App() {
               element={
                 <ProtectedRoute>
                   <Schedule />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/notes" 
+              element={
+                <ProtectedRoute>
+                  <Notes />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/notes/daily" 
+              element={
+                <ProtectedRoute>
+                  <Notes />
                 </ProtectedRoute>
               } 
             />

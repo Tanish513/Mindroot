@@ -26,3 +26,28 @@
 - **DEC-009: 12-Digit Numeric UTR Enforcement & VPA Reset on Profile Edit**:
   - Decision: UPI UTR references must match strict 12-digit numeric format (`^\d{12}$`) and undergo global uniqueness checks (`409 DUPLICATE_UTR`). Any modification to a mentor's UPI ID resets `vpaVerified: false`.
   - Reason: Conforms to NPCI transaction standards and prevents fraud via recycled reference IDs or unverified account updates.
+- **DEC-010: Dynamic Socket Authentication with Guest Handshake Resilience**:
+  - Decision: Socket.IO handshake accepts connections without auth tokens by designating them as guests, and client supplies `auth: (cb) => cb({ token: getSocketAuthToken() })` with dynamic reconnection on login/logout (`updateSocketAuth`).
+  - Reason: Prevents socket handshake crashes on public/login pages while ensuring authenticated users seamlessly transition to authorized socket rooms upon login.
+- **DEC-011: Canonical Session Status Normalization**:
+  - Decision: Define a standardized `SessionStatus` enum across client and server with a shared `normalizeSessionStatus` mapping (`'accepted'` -> `'confirmed'`, `'rejected'` -> `'declined'`).
+  - Reason: Eliminates subtle state drift between frontend buttons/queries and database status constraints.
+- **DEC-012: Pending Session Expiration Grace Window**:
+  - Decision: Pending bookings expire only 24 hours after creation OR 2 hours after scheduled end time (whichever is later).
+  - Reason: Prevents bookings from prematurely expiring the exact second `scheduledAt` passes when mentors log in slightly after the scheduled start time.
+- **DEC-013: Isolated Feature Migrations Without Legacy Drift Bundling**:
+  - Decision: When authoring new database migrations (e.g. `20261020000000_add_notes_model`), isolate the migration strictly to the target feature (`Note` model, relations, indexes). Do not bundle unrelated pre-existing schema drift from HEAD.
+  - Reason: Keeps migration history modular, prevents unintended drops/modifications on live deployments, and preserves independent reviewability.
+- **DEC-014: Mandatory Local Disposable Database for Prisma CLI & Migration Testing**:
+  - Decision: Never execute `prisma migrate dev`, `prisma migrate deploy`, or migration testing against `.env` connection strings (`DATABASE_URL`). Always override `DATABASE_URL`, `DIRECT_URL`, and `SHADOW_DATABASE_URL` to local ephemeral databases (e.g. `postgresql://postgres:postgres@localhost:5432/disposable_...`).
+  - Reason: Safeguards remote production / staging databases from accidental schema resets, seed tampering, or data loss.
+- **DEC-015: Strict Placeholder Hygiene in `.env.example` Templates**:
+  - Decision: Repository `.env.example` templates must never contain real-looking 64-hex secrets or production credentials. Use explicit placeholders like `CHANGE_ME`.
+  - Reason: Prevents accidental deployment of default secret keys and reduces repository security scan exposure.
+- **DEC-016: Server-Authoritative Swap Pricing & Zero-Price Tamper Rejection**:
+  - Decision: In `POST /api/sessions`, swap bookings (`isSwap: true`) never trust client-supplied prices. If the mentor has an hourly rate, client-tampered lower prices are rejected with HTTP 400 `PRICE_TAMPERING_DETECTED`. If the mentor has no rate configured, the server strictly adopts the original session's server price; if no server price exists, it rejects with HTTP 400 `SWAP_PRICE_UNAVAILABLE`. Explicitly free swaps (`isFree: true`) stay ₹0; sending `pricePerStudent: 0` without `isFree: true` is rejected as tampering.
+  - Reason: Closes the price manipulation and zero-price bypass loophole for skill swaps.
+- **DEC-017: Scoped Payment Broadcasts & Note Event Author Isolation**:
+  - Decision: Real-time payment notifications (`session-payment-received`, `session-payment-confirmed`, `network-sessions-updated`) and note events (`note-created`, `note-updated`, `note-deleted`) are delivered exclusively to participant user rooms (`user:${studentId}`, `user:${teacherId}`, or `user:${authorId}`). Global emissions are completely eliminated.
+  - Reason: Protects student and teacher privacy by ensuring financial records, UTRs, and personal learning notes are never broadcast to unrelated connected sockets.
+

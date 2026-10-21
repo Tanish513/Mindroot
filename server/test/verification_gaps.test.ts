@@ -427,8 +427,8 @@ async function runVerificationGapsTests() {
     const swapStudent = `swap-student-${Date.now()}`;
     const swapStudentToken = createToken({ id: swapStudent, email: `${swapStudent}@test.com`, role: 'student' });
 
-    await seedTestUser({ id: swapMentorNoVpa, name: 'Swap Mentor No VPA', email: `${swapMentorNoVpa}@test.com`, role: 'teacher', upiId: null, version: 0 });
-    await seedTestUser({ id: swapMentorWithVpa, name: 'Swap Mentor With VPA', email: `${swapMentorWithVpa}@test.com`, role: 'teacher', upiId: 'swap.mentor@okaxis', vpaVerified: true, version: 0 });
+    await seedTestUser({ id: swapMentorNoVpa, name: 'Swap Mentor No VPA', email: `${swapMentorNoVpa}@test.com`, role: 'teacher', upiId: null, hourlyRate: 300, version: 0 });
+    await seedTestUser({ id: swapMentorWithVpa, name: 'Swap Mentor With VPA', email: `${swapMentorWithVpa}@test.com`, role: 'teacher', upiId: 'swap.mentor@okaxis', vpaVerified: true, hourlyRate: 300, version: 0 });
     await seedTestUser({ id: swapStudent, name: 'Swap Student', email: `${swapStudent}@test.com`, role: 'student', version: 0 });
 
     // 1. Paid swap with mentor lacking VPA -> rejected with 400 MENTOR_PAYOUT_NOT_CONFIGURED

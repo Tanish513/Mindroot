@@ -162,28 +162,28 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-outline-variant rounded-3xl w-full max-w-lg shadow-elevation-3 overflow-hidden transition-all duration-200">
+      <div className="bg-surface border border-border rounded-3xl w-full max-w-lg shadow-lg overflow-hidden transition-all duration-200">
         
         {/* Success / Receipt Screen */}
         {successDetails ? (
           <div className="p-6 md:p-8 text-center space-y-5">
-            <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-teaching-emerald/10 text-teaching-emerald ring-8 ring-teaching-emerald/5 animate-bounce">
+            <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-primary-tint text-primary-text border border-primary/20 ring-8 ring-primary/5 animate-bounce">
               <span className="material-symbols-outlined text-4xl">verified</span>
             </div>
 
             <div>
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teaching-emerald/10 text-teaching-emerald text-xs font-bold uppercase tracking-wider mb-2">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-xs font-bold uppercase tracking-wider mb-2">
                 <span className="material-symbols-outlined text-sm">check_circle</span>
                 {successDetails.isDemo ? 'Demo Payment Verified' : 'Real UPI Payment Submitted'}
               </div>
-              <h2 className="text-2xl font-black text-on-surface">Payment Submitted!</h2>
-              <p className="text-xs text-on-surface-variant font-medium mt-1">
+              <h2 className="text-2xl font-black text-text">Payment Submitted!</h2>
+              <p className="text-xs text-muted font-medium mt-1">
                 Your live interactive classroom and mentor session have been officially unlocked.
               </p>
             </div>
 
             {/* Provisional Access Assurance Banner */}
-            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-teaching-emerald/10 border border-teaching-emerald/25 text-teaching-emerald text-xs font-semibold text-left">
+            <div className="flex items-start gap-2.5 p-3.5 rounded-2xl bg-primary-tint border border-primary/25 text-primary-text text-xs font-semibold text-left">
               <span className="material-symbols-outlined text-lg shrink-0 mt-0.5">bolt</span>
               <div>
                 <p className="font-bold">Instant Provisional Access Granted!</p>
@@ -194,38 +194,38 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             </div>
 
             {/* Receipt Summary Card */}
-            <div className="bg-surface-container/60 border border-outline-variant/60 rounded-2xl p-4 text-left space-y-3">
+            <div className="bg-surface-2 border border-border rounded-2xl p-4 text-left space-y-3">
               <div className="flex justify-between items-center text-xs">
-                <span className="text-on-surface-variant font-semibold">Session Topic</span>
-                <span className="text-on-surface font-bold truncate max-w-[200px]">{sessionTitle}</span>
+                <span className="text-muted font-semibold">Session Topic</span>
+                <span className="text-text font-bold truncate max-w-[200px]">{sessionTitle}</span>
               </div>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-on-surface-variant font-semibold">Mentor / Teacher</span>
-                <span className="text-on-surface font-bold">{mentorName}</span>
+                <span className="text-muted font-semibold">Mentor / Teacher</span>
+                <span className="text-text font-bold">{mentorName}</span>
               </div>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-on-surface-variant font-semibold">Amount Paid</span>
-                <span className="text-teaching-emerald font-black text-sm">₹{successDetails.amount}</span>
+                <span className="text-muted font-semibold">Amount Paid</span>
+                <span className="text-primary-text font-black text-sm">₹{successDetails.amount}</span>
               </div>
               <div className="flex justify-between items-center text-xs">
-                <span className="text-on-surface-variant font-semibold">Payment Method</span>
-                <span className="text-on-surface font-bold">{successDetails.isDemo ? 'Instant Demo Mode' : 'Direct UPI Transfer'}</span>
+                <span className="text-muted font-semibold">Payment Method</span>
+                <span className="text-text font-bold">{successDetails.isDemo ? 'Instant Demo Mode' : 'Direct UPI Transfer'}</span>
               </div>
-              <div className="flex justify-between items-center text-xs border-t border-outline-variant/40 pt-2">
-                <span className="text-on-surface-variant font-semibold">Ref / UTR</span>
-                <span className="text-primary font-mono text-[11px] font-bold">{successDetails.utr}</span>
+              <div className="flex justify-between items-center text-xs border-t border-border pt-2">
+                <span className="text-muted font-semibold">Ref / UTR</span>
+                <span className="text-primary-text font-mono text-[11px] font-bold">{successDetails.utr}</span>
               </div>
             </div>
 
             {/* Platform Rewards Badge */}
-            <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-learning-amber/10 border border-learning-amber/20 text-learning-amber text-xs font-bold">
+            <div className="flex items-center justify-center gap-2 p-3 rounded-xl bg-accent-tint border border-accent/20 text-accent-text text-xs font-bold">
               <span className="material-symbols-outlined text-base">stars</span>
               <span>+50 Mindroot Reward Points earned for this on-platform session!</span>
             </div>
 
             <button
               onClick={onClose}
-              className="w-full py-3.5 px-4 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 transition-all flex items-center justify-center gap-2"
+              className="w-full py-3.5 px-4 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center justify-center gap-2"
             >
               <span>Continue to Classroom & Schedule</span>
               <span className="material-symbols-outlined text-base">arrow_forward</span>
@@ -234,43 +234,43 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
         ) : (
           <div>
             {/* Header */}
-            <div className="p-6 border-b border-outline-variant/60 flex items-start justify-between">
+            <div className="p-6 border-b border-border flex items-start justify-between">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold mb-2">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-[11px] font-bold mb-2">
                   <span className="material-symbols-outlined text-xs">lock</span>
                   <span>Mindroot Guaranteed Peer Settlement</span>
                 </div>
-                <h3 className="text-lg font-black text-on-surface">Pay Mentor: {mentorName}</h3>
-                <p className="text-xs text-on-surface-variant truncate max-w-sm mt-0.5">
+                <h3 className="text-lg font-black text-text">Pay Mentor: {mentorName}</h3>
+                <p className="text-xs text-muted truncate max-w-sm mt-0.5">
                   {sessionTitle}
                 </p>
               </div>
               <button
                 onClick={onClose}
-                className="h-8 w-8 rounded-full flex items-center justify-center text-on-surface-variant hover:text-on-surface hover:bg-surface-container transition-colors"
+                className="h-8 w-8 rounded-full flex items-center justify-center text-muted hover:text-text hover:bg-surface-2 transition-colors"
               >
                 <span className="material-symbols-outlined text-lg">close</span>
               </button>
             </div>
 
             {/* Price Banner */}
-            <div className="bg-surface-container/50 px-6 py-3.5 border-b border-outline-variant/40 flex items-center justify-between">
-              <span className="text-xs font-bold text-on-surface-variant">Total Amount Due</span>
+            <div className="bg-surface-2 px-6 py-3.5 border-b border-border flex items-center justify-between">
+              <span className="text-xs font-bold text-muted">Total Amount Due</span>
               <div className="flex items-baseline gap-1">
-                <span className="text-xs text-on-surface-variant font-bold">INR</span>
+                <span className="text-xs text-muted font-bold">INR</span>
                 <span className="text-2xl font-black text-primary">₹{amount}</span>
               </div>
             </div>
 
             {/* Mode Switcher Tabs — Only rendered if server has demoMode enabled */}
             {demoModeEnabled && (
-              <div className="grid grid-cols-2 p-3 gap-2 bg-surface-container/30 border-b border-outline-variant/40">
+              <div className="grid grid-cols-2 p-3 gap-2 bg-surface-2 border-b border-border">
                 <button
                   onClick={() => setActiveTab('qr')}
                   className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
                     activeTab === 'qr'
-                      ? 'bg-primary text-on-primary shadow-elevation-1'
-                      : 'bg-surface hover:bg-surface-container-high text-on-surface-variant'
+                      ? 'bg-primary text-on-primary shadow-sm'
+                      : 'bg-surface hover:bg-surface-2 text-muted'
                   }`}
                 >
                   <span className="material-symbols-outlined text-base">qr_code_2</span>
@@ -280,8 +280,8 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                   onClick={() => setActiveTab('demo')}
                   className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
                     activeTab === 'demo'
-                      ? 'bg-teaching-emerald text-on-teaching-emerald shadow-elevation-1'
-                      : 'bg-surface hover:bg-surface-container-high text-on-surface-variant'
+                      ? 'bg-primary text-on-primary shadow-sm'
+                      : 'bg-surface hover:bg-surface-2 text-muted'
                   }`}
                 >
                   <span className="material-symbols-outlined text-base">bolt</span>
@@ -296,7 +296,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                 <div className="space-y-4">
                   {/* Error Alert if any */}
                   {errorMessage && (
-                    <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs text-red-500 flex items-start gap-2 animate-fade-in">
+                    <div className="p-3 bg-danger/10 border border-danger/30 rounded-2xl text-xs text-danger flex items-start gap-2 animate-fade-in">
                       <span className="material-symbols-outlined text-base shrink-0 mt-0.5">error</span>
                       <span>{errorMessage}</span>
                     </div>
@@ -304,17 +304,17 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
                   {!mentorUpi ? (
                     /* Mentor has not registered a VPA */
-                    <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 space-y-3">
+                    <div className="p-5 rounded-2xl bg-accent-tint border border-accent/30 text-accent-text space-y-3">
                       <div className="flex items-start gap-3">
-                        <span className="material-symbols-outlined text-2xl shrink-0 mt-0.5 text-amber-500">warning</span>
+                        <span className="material-symbols-outlined text-2xl shrink-0 mt-0.5 text-accent">warning</span>
                         <div>
-                          <h4 className="font-extrabold text-sm text-on-surface">Direct UPI Payout Not Configured</h4>
-                          <p className="text-xs text-on-surface-variant mt-1 leading-relaxed">
+                          <h4 className="font-extrabold text-sm text-text">Direct UPI Payout Not Configured</h4>
+                          <p className="text-xs text-muted mt-1 leading-relaxed">
                             This mentor (<strong>{mentorName}</strong>) has not yet registered a valid UPI payout address (VPA). Direct peer UPI transfers cannot be processed for this session.
                           </p>
-                          <div className="mt-3 p-3 bg-surface-container rounded-xl border border-outline-variant/60 text-[11px] text-on-surface space-y-1">
+                          <div className="mt-3 p-3 bg-surface-2 rounded-xl border border-border text-[11px] text-text space-y-1">
                             <p className="font-bold">Alternative Options:</p>
-                            <ul className="list-disc list-inside space-y-0.5 text-on-surface-variant">
+                            <ul className="list-disc list-inside space-y-0.5 text-muted">
                               <li>Book using <strong>Skill Tokens</strong> (1 token per hour).</li>
                               <li>Propose a zero-fee reciprocal <strong>Skill Swap</strong>.</li>
                               <li>Message the mentor to set up their UPI ID in their Profile.</li>
@@ -327,17 +327,17 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                     <>
                       {/* Official Teacher ID Verification Trust Badge */}
                       {mentorDetails?.isIdVerified && (
-                        <div className="flex items-center justify-between p-3 bg-teaching-emerald/10 border border-teaching-emerald/30 rounded-2xl text-xs animate-fade-in">
+                        <div className="flex items-center justify-between p-3 bg-primary-tint border border-primary/30 rounded-2xl text-xs animate-fade-in">
                           <div className="flex items-center gap-2.5">
-                            <div className="w-8 h-8 rounded-xl bg-teaching-emerald/20 text-teaching-emerald flex items-center justify-center font-bold">
+                            <div className="w-8 h-8 rounded-xl bg-primary-tint text-primary-text border border-primary/20 flex items-center justify-center font-bold">
                               <span className="material-symbols-outlined text-lg">verified_user</span>
                             </div>
                             <div>
-                              <p className="font-extrabold text-teaching-emerald flex items-center gap-1">
+                              <p className="font-extrabold text-primary-text flex items-center gap-1">
                                 <span>Official Verified Mentor</span>
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-teaching-emerald text-on-teaching-emerald uppercase">ID Checked</span>
+                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary text-on-primary uppercase">ID Checked</span>
                               </p>
-                              <p className="text-[11px] text-on-surface-variant font-medium">
+                              <p className="text-[11px] text-muted font-medium">
                                 {mentorDetails.officialIdType === 'college_id' ? 'University Student ID Confirmed' :
                                  mentorDetails.officialIdType === 'faculty_id' ? 'Faculty / Professor ID Confirmed' :
                                  mentorDetails.officialIdType === 'govt_id' ? 'Government Photo ID Confirmed' :
@@ -345,12 +345,12 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                               </p>
                             </div>
                           </div>
-                          <span className="material-symbols-outlined text-teaching-emerald text-xl">shield</span>
+                          <span className="material-symbols-outlined text-primary-text text-xl">shield</span>
                         </div>
                       )}
 
                       {/* QR Code (Teacher Uploaded Official QR OR Auto-Generated Dynamic QR) */}
-                      <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-outline-variant/80 shadow-inner">
+                      <div className="flex flex-col items-center justify-center p-4 bg-white rounded-2xl border border-border shadow-inner">
                         {mentorDetails?.upiQrImage ? (
                           <div className="flex flex-col items-center space-y-2">
                             <div className="relative group">
@@ -359,7 +359,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                                 alt="Teacher's Official UPI QR Code"
                                 className="w-48 h-48 object-contain rounded-xl border border-slate-200 shadow-sm"
                               />
-                              <div className="absolute top-2 right-2 bg-teaching-emerald text-on-teaching-emerald text-[9px] font-black px-2 py-0.5 rounded-md shadow uppercase tracking-wide flex items-center gap-1">
+                              <div className="absolute top-2 right-2 bg-primary text-on-primary text-[9px] font-black px-2 py-0.5 rounded-md shadow uppercase tracking-wide flex items-center gap-1">
                                 <span className="material-symbols-outlined text-[11px]">verified</span>
                                 Teacher's Own QR
                               </div>
@@ -381,7 +381,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                           </div>
                         )}
                         <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-slate-700">
-                          <span className="material-symbols-outlined text-sm text-teaching-emerald">security</span>
+                          <span className="material-symbols-outlined text-sm text-primary">security</span>
                           <span>Scan with GPay, PhonePe, Paytm, BHIM, or Any Banking App</span>
                         </div>
                       </div>
@@ -389,34 +389,34 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                       {/* UPI ID Copy Field with Truthful Verification Label */}
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-bold text-on-surface-variant flex items-center gap-1.5">
+                          <label className="text-[11px] font-bold text-muted flex items-center gap-1.5">
                             <span>Mentor's UPI ID (VPA)</span>
                             {mentorDetails?.vpaVerified ? (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-teaching-emerald/10 text-teaching-emerald text-[10px] font-black uppercase tracking-wider">
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-[10px] font-black uppercase tracking-wider">
                                 <span className="material-symbols-outlined text-xs">verified</span>
                                 Verified
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant text-[10px] font-semibold">
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-surface-2 text-muted border border-border text-[10px] font-semibold">
                                 Unverified
                               </span>
                             )}
                           </label>
                           {mentorDetails?.upiQrImage && (
-                            <span className="text-[10px] font-bold text-teaching-emerald flex items-center gap-0.5">
+                            <span className="text-[10px] font-bold text-primary-text flex items-center gap-0.5">
                               <span className="material-symbols-outlined text-xs">check_circle</span>
                               QR & UPI Matched
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 px-3 py-2 bg-surface-container rounded-xl text-xs font-mono text-on-surface font-semibold border border-outline-variant/60 truncate">
+                          <div className="flex-1 px-3 py-2 bg-surface-2 rounded-xl text-xs font-mono text-text font-semibold border border-border truncate">
                             {mentorUpi}
                           </div>
                           <button
                             type="button"
                             onClick={handleCopyUpi}
-                            className="px-3 py-2 bg-surface-container-high hover:bg-primary hover:text-on-primary text-on-surface rounded-xl text-xs font-bold transition-all flex items-center gap-1"
+                            className="px-3 py-2 bg-surface hover:bg-primary hover:text-on-primary text-text border border-border rounded-xl text-xs font-bold transition-all flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-sm">{copied ? 'check' : 'content_copy'}</span>
                             <span>{copied ? 'Copied!' : 'Copy'}</span>
@@ -425,12 +425,12 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                       </div>
 
                       {/* Recipient Account Name Cross-Check Safeguard */}
-                      <div className="p-3 bg-surface-container/60 rounded-xl border border-outline-variant/50 text-xs space-y-1">
+                      <div className="p-3 bg-surface-2 rounded-xl border border-border text-xs space-y-1">
                         <div className="flex justify-between items-center">
-                          <span className="text-on-surface-variant font-medium">Payee Name</span>
-                          <span className="text-on-surface font-bold">{mentorDetails?.accountHolderName || mentorName}</span>
+                          <span className="text-muted font-medium">Payee Name</span>
+                          <span className="text-text font-bold">{mentorDetails?.accountHolderName || mentorName}</span>
                         </div>
-                        <p className="text-[11px] text-on-surface-variant font-normal">
+                        <p className="text-[11px] text-muted font-normal">
                           ⚠️ Verify in your UPI app that the recipient name matches <strong>{mentorDetails?.accountHolderName || mentorName}</strong> before completing payment.
                         </p>
                       </div>
@@ -445,20 +445,20 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                         }}
                         className={`w-full py-2.5 px-4 text-xs font-bold text-center block transition-all border rounded-xl ${
                           mentorUpi
-                            ? 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border-outline-variant/60 cursor-pointer'
-                            : 'opacity-50 pointer-events-none bg-surface-container text-on-surface-variant border-outline-variant/30'
+                            ? 'bg-surface hover:bg-surface-2 text-text border-border cursor-pointer'
+                            : 'opacity-50 pointer-events-none bg-surface-2 text-muted border-border'
                         }`}
                       >
                         📱 Open Directly in Mobile UPI App
                       </a>
 
                       {/* Mandatory 12-Digit UTR Input */}
-                      <div className="border-t border-outline-variant/40 pt-3 space-y-1.5">
+                      <div className="border-t border-border pt-3 space-y-1.5">
                         <div className="flex justify-between items-center">
-                          <label className="text-[11px] font-bold text-on-surface-variant">
-                            12-Digit UPI Reference Number (UTR) <span className="text-red-500">*</span>
+                          <label className="text-[11px] font-bold text-muted">
+                            12-Digit UPI Reference Number (UTR) <span className="text-danger">*</span>
                           </label>
-                          <span className={`text-[10px] font-mono ${utrInput.length === 12 ? 'text-teaching-emerald font-bold' : 'text-on-surface-variant'}`}>
+                          <span className={`text-[10px] font-mono ${utrInput.length === 12 ? 'text-primary-text font-bold' : 'text-muted'}`}>
                             {utrInput.length} / 12 digits
                           </span>
                         </div>
@@ -473,10 +473,10 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                             const val = e.target.value.replace(/[^0-9]/g, '');
                             setUtrInput(val);
                           }}
-                          className="w-full px-3 py-2 bg-surface-container rounded-xl text-xs font-mono text-on-surface border border-outline-variant/60 focus:outline-none focus:border-primary"
+                          className="w-full px-3 py-2 bg-surface-2 rounded-xl text-xs font-mono text-text border border-border focus:outline-none focus:ring-2 focus:ring-primary/20"
                         />
                         {utrInput.length > 0 && utrInput.length < 12 && (
-                          <p className="text-[10px] text-amber-500 font-medium">
+                          <p className="text-[10px] text-accent font-medium">
                             UTR must be exactly 12 numeric digits from your bank SMS or payment receipt.
                           </p>
                         )}
@@ -486,7 +486,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                       <button
                         onClick={() => handleConfirmPayment(false)}
                         disabled={isSubmitting || !mentorUpi || utrInput.length !== 12}
-                        className="w-full py-3.5 px-4 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 transition-all flex items-center justify-center gap-2"
+                        className="w-full py-3.5 px-4 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center justify-center gap-2"
                       >
                         {isSubmitting ? (
                           <>
@@ -506,31 +506,31 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
               ) : (
                 /* Demo Mode Tab */
                 <div className="space-y-4 py-2">
-                  <div className="p-4 rounded-2xl bg-teaching-emerald/10 border border-teaching-emerald/20 text-left space-y-2">
-                    <div className="flex items-center gap-2 text-teaching-emerald font-black text-sm">
+                  <div className="p-4 rounded-2xl bg-primary-tint border border-primary/20 text-left space-y-2">
+                    <div className="flex items-center gap-2 text-primary-text font-black text-sm">
                       <span className="material-symbols-outlined text-lg">bolt</span>
                       <span>Instant Hackathon Demo Mode</span>
                     </div>
-                    <p className="text-xs text-on-surface-variant leading-relaxed">
+                    <p className="text-xs text-muted leading-relaxed">
                       Evaluate the complete Mindroot payment and session unlocking flow instantly. No real bank accounts or payment credentials are required!
                     </p>
                   </div>
 
-                  <div className="bg-surface-container/50 border border-outline-variant/60 rounded-2xl p-4 text-left space-y-2.5 text-xs">
-                    <div className="flex items-center gap-2 text-on-surface font-bold">
-                      <span className="material-symbols-outlined text-base text-teaching-emerald">check_circle</span>
+                  <div className="bg-surface-2 border border-border rounded-2xl p-4 text-left space-y-2.5 text-xs">
+                    <div className="flex items-center gap-2 text-text font-bold">
+                      <span className="material-symbols-outlined text-base text-primary-text">check_circle</span>
                       <span>Instantly generates a verified receipt</span>
                     </div>
-                    <div className="flex items-center gap-2 text-on-surface font-bold">
-                      <span className="material-symbols-outlined text-base text-teaching-emerald">check_circle</span>
+                    <div className="flex items-center gap-2 text-text font-bold">
+                      <span className="material-symbols-outlined text-base text-primary-text">check_circle</span>
                       <span>Credits ₹{amount} directly to mentor's wallet</span>
                     </div>
-                    <div className="flex items-center gap-2 text-on-surface font-bold">
-                      <span className="material-symbols-outlined text-base text-teaching-emerald">check_circle</span>
+                    <div className="flex items-center gap-2 text-text font-bold">
+                      <span className="material-symbols-outlined text-base text-primary-text">check_circle</span>
                       <span>Sends real-time Socket.io handshake to mentor's screen</span>
                     </div>
-                    <div className="flex items-center gap-2 text-on-surface font-bold">
-                      <span className="material-symbols-outlined text-base text-teaching-emerald">check_circle</span>
+                    <div className="flex items-center gap-2 text-text font-bold">
+                      <span className="material-symbols-outlined text-base text-primary-text">check_circle</span>
                       <span>Unlocks Whiteboard, LiveKit Room & AI Notes</span>
                     </div>
                   </div>
@@ -538,7 +538,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                   <button
                     onClick={() => handleConfirmPayment(true)}
                     disabled={isSubmitting}
-                    className="w-full py-4 px-4 bg-teaching-emerald hover:bg-teaching-emerald/90 disabled:opacity-60 text-on-teaching-emerald rounded-xl text-xs font-extrabold shadow-elevation-2 transition-all flex items-center justify-center gap-2"
+                    className="w-full py-4 px-4 bg-primary hover:bg-primary-hover disabled:opacity-60 text-on-primary rounded-xl text-xs font-extrabold shadow-md transition-all flex items-center justify-center gap-2"
                   >
                     {isSubmitting ? (
                       <>

@@ -11,7 +11,6 @@ This document details all required environment variables and post-deployment set
 
 * **`VITE_BACKEND_URL`** *(Required)*: The full public URL of your deployed backend API server (e.g. `https://api.mindroot.app` or `http://localhost:3000`).
 * **`VITE_GOOGLE_CLIENT_ID`** *(Optional)*: Your Google OAuth 2.0 Client ID for client-side Google Sign-In. Required if enabling Google SSO.
-* **`VITE_RAZORPAY_KEY_ID`** *(Required for Razorpay)*: Your Razorpay Key ID (`rzp_test_...` for testing or `rzp_live_...` for production).
 
 ---
 
@@ -20,9 +19,8 @@ This document details all required environment variables and post-deployment set
 
 * **`DATABASE_URL`** *(Required)*: PostgreSQL connection string formatted as `postgresql://user:password@host:5432/dbname?schema=public`.
 * **`JWT_SECRET`** *(Required)*: Cryptographically secure secret string used for signing session authentication tokens.
+* **`ADMIN_PASSWORD`** *(Optional / Recommended in production)*: Strong password for the platform administrator (`admin@mindroot.com`). Replaces `CHANGE_ME` from `.env.example`.
 * **`FRONTEND_URL`** *(Required)*: The exact deployed frontend web domain (e.g. `https://mindroot.app`). Restricts Express CORS and Socket.io signaling origins.
-* **`RAZORPAY_KEY_ID`** *(Required for Razorpay)*: Razorpay Key ID matching `VITE_RAZORPAY_KEY_ID` (`rzp_live_...` in production).
-* **`RAZORPAY_KEY_SECRET`** *(Required for Razorpay)*: Razorpay Secret Key generated from Razorpay Dashboard under API Keys (`rzp_live_...` secret).
 * **`RESEND_API_KEY`** *(Required for email sending)*: API Key from [Resend Dashboard](https://resend.com) for sending verification emails, password resets, payment receipts, and session notifications.
 * **`EMAIL_FROM`** *(Optional)*: Sender address (defaults to `Mindroot Learning <onboarding@resend.dev>` or your verified domain e.g. `Mindroot <noreply@yourdomain.com>`).
 * **`GOOGLE_CLIENT_ID`** *(Optional)*: OAuth Client ID matching `VITE_GOOGLE_CLIENT_ID` for backend Google ID token verification.
@@ -33,9 +31,9 @@ This document details all required environment variables and post-deployment set
 ## 3. Docker / Docker Compose Variables
 *Used when running via `docker-compose.yml` or containerized environments.*
 
-* **`POSTGRES_USER`** *(Required)*: Database administrator username for the PostgreSQL container.
-* **`POSTGRES_PASSWORD`** *(Required)*: Database administrator password for the PostgreSQL container.
-* **`POSTGRES_DB`** *(Required)*: Default database name created on PostgreSQL startup.
+* **`POSTGRES_USER`** *(Required)*: Database administrator username for the PostgreSQL container (defaults to `postgres`).
+* **`POSTGRES_PASSWORD`** *(Required)*: Database administrator password for the PostgreSQL container. When creating your `.env` from `.env.example`, replace `CHANGE_ME` with your secure database password before running `docker-compose up`.
+* **`POSTGRES_DB`** *(Required)*: Default database name created on PostgreSQL startup (defaults to `mindroot`).
 
 ---
 

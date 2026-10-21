@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
-import { api, getSessionApproverId } from '../lib/api';
+import { api, getSessionApproverId, onSessionsUpdated, onSessionRequestCreated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
+import { isValidPrice, calculateBatchPricing } from '../lib/pricing';
+import { showAppToast } from '../components/NotificationManager';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const HOURS = ['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '02:00 PM', '03:00 PM'];
@@ -43,13 +45,7 @@ export function TeacherPortal() {
       return { ...currentUser.batchPricing };
     }
     const base = typeof currentUser?.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
-    return {
-      1: base,
-      2: Math.round(base * 0.8),
-      3: Math.round(base * 0.7),
-      4: Math.round(base * 0.6),
-      5: Math.round(base * 0.5)
-    };
+    return calculateBatchPricing(base);
   });
   const [savingRates, setSavingRates] = useState(false);
   const [ratesSavedNotice, setRatesSavedNotice] = useState(false);
@@ -68,13 +64,7 @@ export function TeacherPortal() {
           setPortalRates({ ...user.batchPricing });
         } else if (typeof user?.hourlyRate === 'number') {
           const base = user.hourlyRate;
-          setPortalRates({
-            1: base,
-            2: Math.round(base * 0.8),
-            3: Math.round(base * 0.7),
-            4: Math.round(base * 0.6),
-            5: Math.round(base * 0.5)
-          });
+          setPortalRates(calculateBatchPricing(base));
         }
       }).catch(console.error);
     } else {
@@ -88,13 +78,7 @@ export function TeacherPortal() {
         setPortalRates({ ...currentUser.batchPricing });
       } else if (typeof currentUser.hourlyRate === 'number') {
         const base = currentUser.hourlyRate;
-        setPortalRates({
-          1: base,
-          2: Math.round(base * 0.8),
-          3: Math.round(base * 0.7),
-          4: Math.round(base * 0.6),
-          5: Math.round(base * 0.5)
-        });
+        setPortalRates(calculateBatchPricing(base));
       }
     }
     api.getSessions().then(setSessions).catch(console.error);
@@ -103,6 +87,13 @@ export function TeacherPortal() {
 
   const handleSaveRates = async () => {
     if (!currentUser?.id) return;
+    for (let cap = 1; cap <= 5; cap++) {
+      const p = portalRates[cap];
+      if (p !== undefined && !isValidPrice(p)) {
+        alert(`Enter a whole amount of ₹1 or more for batch pricing (Capacity ${cap}).`);
+        return;
+      }
+    }
     setSavingRates(true);
     try {
       const base1on1 = typeof portalRates[1] === 'number' ? portalRates[1] : (typeof currentUser.hourlyRate === 'number' ? currentUser.hourlyRate : 499);
@@ -131,10 +122,36 @@ export function TeacherPortal() {
 
   useEffect(() => {
     loadData();
+
+    const unsubUpdated = onSessionsUpdated((newSessions: any[]) => {
+      setSessions(newSessions);
+    });
+    const unsubCreated = onSessionRequestCreated((createdSession: any) => {
+      setSessions((prev) => {
+        if (prev.some(s => s.id === createdSession.id)) return prev;
+        return [createdSession, ...prev];
+      });
+    });
+
+    const pollInterval = setInterval(() => {
+      api.getSessions().then(setSessions).catch(() => {});
+      api.getTransactions().then(setTransactions).catch(() => {});
+    }, 10000);
+
+    return () => {
+      unsubUpdated();
+      unsubCreated();
+      clearInterval(pollInterval);
+    };
   }, [loadData]);
 
   const teacherSessions = sessions.filter(s => currentUser && (s.teacherId === currentUser.id || s.teacher?.id === currentUser.id));
-  const pendingSessions = sessions.filter(s => currentUser && getSessionApproverId(s) === currentUser.id && s.status === 'pending');
+  const pendingSessions = sessions.filter(s => {
+    if (!currentUser) return false;
+    const isTeacher = s.teacherId === currentUser.id || s.teacher?.id === currentUser.id;
+    const isApprover = getSessionApproverId(s) === currentUser.id;
+    return (isTeacher || isApprover) && s.status === 'pending';
+  });
   const confirmedSessions = teacherSessions.filter(s => s.status === 'confirmed' || s.status === 'live');
 
   // Calculate live teacher revenue from earned transactions
@@ -157,9 +174,10 @@ export function TeacherPortal() {
     setActingId(id);
     try {
       await api.acceptSession(id);
+      showAppToast({ type: 'request', title: 'Booking Accepted', body: 'Student session confirmed and added to your schedule.' });
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to approve booking request');
+      showAppToast({ type: 'reminder', title: 'Approval Error', body: err.message || 'Failed to approve booking request' });
     } finally {
       setActingId(null);
     }
@@ -169,9 +187,10 @@ export function TeacherPortal() {
     setActingId(id);
     try {
       await api.declineSession(id);
+      showAppToast({ type: 'reminder', title: 'Request Declined', body: 'Booking request declined and slot freed.' });
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to decline booking request');
+      showAppToast({ type: 'reminder', title: 'Decline Error', body: err.message || 'Failed to decline booking request' });
     } finally {
       setActingId(null);
     }
@@ -326,10 +345,12 @@ export function TeacherPortal() {
             { cap: 5, label: 'Masterclass Batch', icon: 'school', desc: '5 Students (Max)' },
           ].map(tier => {
             const teacherBaseRate = typeof currentUser?.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
-            const price = portalRates[tier.cap] ?? (tier.cap === 1 ? teacherBaseRate : Math.round(teacherBaseRate * (1 - tier.cap * 0.1)));
-            const totalHour = price * tier.cap;
+            const defaultPrice = calculateBatchPricing(teacherBaseRate)[tier.cap];
+            const price = portalRates[tier.cap] !== undefined ? portalRates[tier.cap] : defaultPrice;
+            const totalHour = isValidPrice(price) ? Number(price) * tier.cap : 0;
+            const isTierValid = isValidPrice(price);
             return (
-              <div key={tier.cap} className="p-3 bg-surface-container-low rounded-xl border border-outline-variant flex flex-col justify-between space-y-2 hover:border-primary/40 transition-all">
+              <div key={tier.cap} className={`p-3 bg-surface-container-low rounded-xl border ${!isTierValid ? 'border-danger' : 'border-outline-variant'} flex flex-col justify-between space-y-2 hover:border-primary/40 transition-all`}>
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-on-surface flex items-center gap-1">
                     <span className="material-symbols-outlined text-sm text-primary">{tier.icon}</span>
@@ -342,17 +363,24 @@ export function TeacherPortal() {
                     <span className="absolute left-2.5 top-1.5 text-xs font-bold text-on-surface-variant">₹</span>
                     <input 
                       type="number"
-                      min={0}
-                      max={10000}
-                      step={25}
+                      min={1}
+                      max={100000}
+                      step={1}
                       value={price}
                       onChange={(e) => {
-                        const val = Number(e.target.value);
+                        const raw = e.target.value;
+                        const val = raw === '' ? ('' as any) : Number(raw);
                         setPortalRates(prev => ({ ...prev, [tier.cap]: val }));
                       }}
+                      onInvalid={(e) => e.preventDefault()}
                       className="w-full pl-6 pr-2 py-1.5 text-xs font-bold rounded-lg border border-outline-variant bg-surface text-on-surface outline-none focus:border-primary"
                     />
                   </div>
+                  {!isTierValid && (
+                    <p className="text-danger text-[10px] font-semibold mt-1 flex items-center gap-0.5">
+                      <span>Enter a whole amount of ₹1 or more</span>
+                    </p>
+                  )}
                   <span className="text-[10px] text-on-surface-variant block mt-0.5 text-right font-medium">per student</span>
                 </div>
                 <div className="pt-1.5 border-t border-outline-variant flex items-center justify-between text-[11px] font-extrabold">
@@ -455,59 +483,81 @@ export function TeacherPortal() {
                 <p className="text-[11px] text-on-surface-variant mt-0.5">New session bookings will appear here.</p>
               </div>
             ) : (
-              filteredPending.map((session, idx) => (
-                <div key={session.id} className="bg-surface border border-outline-variant rounded-xl p-3.5 shadow-elevation-1 space-y-2.5">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={avatars[idx % avatars.length]}
-                      alt="Student Avatar"
-                      className="w-9 h-9 rounded-full object-cover border border-outline-variant"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-bold text-on-surface truncate">{session.student?.name || 'Student'}</p>
-                      <p className="text-[11px] text-on-surface-variant font-medium truncate">{session.title}</p>
+              filteredPending.map((session, idx) => {
+                const studentAvatar = session.student?.avatar || avatars[idx % avatars.length];
+                const studentName = session.student?.name || 'Student';
+                const capacity = session.maxCapacity || 1;
+                const formatLabel = capacity <= 1 ? '1-on-1 Mentoring' : `${capacity}-Seat Cohort`;
+                const amount = session.amount || session.pricePerStudent || session.teacher?.hourlyRate || 499;
+
+                return (
+                  <div key={session.id} className="bg-surface border border-outline-variant rounded-xl p-3.5 shadow-elevation-1 space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <img
+                        src={studentAvatar}
+                        alt={`${studentName}'s avatar`}
+                        className="w-10 h-10 rounded-full object-cover border border-outline-variant"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-1">
+                          <p className="text-xs font-bold text-on-surface truncate">{studentName}</p>
+                          <span className="text-[11px] font-black text-primary shrink-0">₹{amount}</span>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant font-medium truncate">{session.title || 'Mentoring Lecture'}</p>
+                      </div>
                     </div>
-                    {(session.maxCapacity || 1) > 1 && (
-                      <span className="px-2 py-0.5 bg-teaching-emerald-container text-on-teaching-emerald-container text-[10px] font-bold rounded-md border border-teaching-emerald/20 shrink-0">
-                        {session.maxCapacity}-Seat Cohort
+
+                    <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                      <span className="px-2 py-0.5 bg-teaching-emerald-container text-on-teaching-emerald-container text-[10px] font-bold rounded-md border border-teaching-emerald/20">
+                        {formatLabel}
                       </span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-on-surface-variant pt-1 border-t border-outline-variant">
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-xs text-outline">event</span>
-                      {new Date(session.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                    </span>
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-xs text-outline">schedule</span>
-                      {new Date(session.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  </div>
-                  {session.paymentStatus === 'held' && (
-                    <div className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20 text-center">
-                      Tokens Held in Escrow (Auto-settles upon approval)
+                      {session.paymentStatus === 'held' ? (
+                        <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] font-bold border border-amber-500/20">
+                          Tokens Held
+                        </span>
+                      ) : session.paymentStatus === 'paid' ? (
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold border border-emerald-500/20">
+                          Prepaid
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded bg-primary-container text-on-primary-container text-[10px] font-bold border border-primary/20">
+                          Pay After Class
+                        </span>
+                      )}
                     </div>
-                  )}
-                  <div className="flex gap-2 pt-1">
-                    <Button
-                      variant="secondary"
-                      disabled={actingId === session.id}
-                      className="flex-1 py-1 text-xs font-semibold text-alert-rose hover:bg-alert-rose/10"
-                      onClick={() => handleDecline(session.id)}
-                    >
-                      Decline
-                    </Button>
-                    <Button
-                      variant="primary"
-                      disabled={actingId === session.id}
-                      className="flex-1 py-1 text-xs font-semibold bg-teaching-emerald hover:bg-teaching-emerald/90 text-white shadow-xs"
-                      onClick={() => handleApprove(session.id)}
-                    >
-                      {actingId === session.id ? 'Approving...' : 'Accept'}
-                    </Button>
+
+                    <div className="flex items-center justify-between text-[11px] text-on-surface-variant pt-1 border-t border-outline-variant">
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs text-outline">event</span>
+                        {new Date(session.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      </span>
+                      <span className="flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs text-outline">schedule</span>
+                        {new Date(session.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        variant="secondary"
+                        disabled={actingId === session.id}
+                        className="flex-1 py-1 text-xs font-semibold text-alert-rose hover:bg-alert-rose/10 cursor-pointer"
+                        onClick={() => handleDecline(session.id)}
+                      >
+                        Decline
+                      </Button>
+                      <Button
+                        variant="primary"
+                        disabled={actingId === session.id}
+                        className="flex-1 py-1 text-xs font-semibold bg-teaching-emerald hover:bg-teaching-emerald/90 text-white shadow-xs cursor-pointer"
+                        onClick={() => handleApprove(session.id)}
+                      >
+                        {actingId === session.id ? 'Approving...' : 'Accept'}
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

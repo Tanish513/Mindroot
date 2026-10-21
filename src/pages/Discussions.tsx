@@ -43,22 +43,10 @@ const PRESET_TAGS = ['All', 'React', 'Python', 'JavaScript', 'DSA', 'System Desi
 
 export function getTagColorStyle(tag: string): string {
   const t = tag.toLowerCase().trim();
-  if (['react', 'frontend', 'ui/ux', 'css', 'web'].includes(t)) {
-    return 'bg-electric-cyan-container text-on-electric-cyan-container border-electric-cyan/30';
+  if (['career', 'interview', 'guidance', 'resume', 'bounty'].includes(t)) {
+    return 'bg-accent-tint text-accent-text border-accent/30';
   }
-  if (['system design', 'architecture', 'devops', 'cloud', 'security'].includes(t)) {
-    return 'bg-trust-purple-container text-on-trust-purple-container border-trust-purple/30';
-  }
-  if (['python', 'backend', 'dsa', 'java', 'sql', 'database'].includes(t)) {
-    return 'bg-sky-blue-container text-on-sky-blue-container border-sky-blue/30';
-  }
-  if (['career', 'interview', 'guidance', 'resume'].includes(t)) {
-    return 'bg-learning-amber-container text-on-learning-amber-container border-learning-amber/30';
-  }
-  if (['javascript', 'typescript', 'node'].includes(t)) {
-    return 'bg-teaching-emerald-container text-on-teaching-emerald-container border-teaching-emerald/30';
-  }
-  return 'bg-surface-container text-on-surface-variant border-outline-variant/50';
+  return 'bg-primary-tint text-primary-text border-primary/20';
 }
 
 export function Discussions() {
@@ -368,17 +356,17 @@ export function Discussions() {
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12">
       {/* Hero / Header Section */}
-      <div className="relative overflow-hidden rounded-3xl bg-surface border border-outline-variant p-6 md:p-8 shadow-elevation-1">
+      <div className="relative overflow-hidden rounded-3xl bg-surface border border-border p-6 md:p-8 shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-container text-on-surface border border-outline-variant text-xs font-semibold tracking-wide uppercase">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-2 text-text border border-border text-xs font-semibold tracking-wide uppercase">
               <span className="material-symbols-outlined text-sm text-primary">forum</span>
               Peer Q&A & Community Hub
             </div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-on-surface">
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-text">
               Ask, Discuss & Master Together
             </h1>
-            <p className="text-sm text-on-surface-variant font-medium leading-relaxed">
+            <p className="text-sm text-muted font-medium leading-relaxed">
               Stuck on a tricky bug or concept? Ask fellow learners and mentors, upvote verified solutions, and earn rewards for contributing!
             </p>
           </div>
@@ -386,7 +374,7 @@ export function Discussions() {
           <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full md:w-auto">
             <Button
               onClick={() => setIsAskModalOpen(true)}
-              className="bg-primary hover:bg-primary/90 text-on-primary font-bold px-5 py-3 rounded-xl shadow-elevation-1 flex items-center justify-center gap-2"
+              className="bg-primary hover:bg-primary-hover text-on-primary font-bold px-5 py-3 rounded-xl shadow-sm flex items-center justify-center gap-2"
             >
               <span className="material-symbols-outlined text-lg">add_comment</span>
               Ask a Question
@@ -395,9 +383,9 @@ export function Discussions() {
         </div>
 
         {/* Search & Tag Chips */}
-        <div className="relative z-10 mt-6 pt-5 border-t border-outline-variant/60 flex flex-col md:flex-row items-stretch md:items-center gap-4">
+        <div className="relative z-10 mt-6 pt-5 border-t border-border/60 flex flex-col md:flex-row items-stretch md:items-center gap-4">
           <div className="relative flex-1">
-            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-lg">
+            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-lg">
               search
             </span>
             <input
@@ -405,7 +393,7 @@ export function Discussions() {
               placeholder="Search discussions, topics, or code keywords..."
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-surface-container-high/60 border border-outline-variant rounded-xl text-sm font-medium text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none focus:border-primary transition-colors"
+              className="w-full pl-10 pr-4 py-2.5 bg-surface-2 border border-border rounded-xl text-sm font-medium text-text placeholder:text-muted focus:outline-none focus:border-primary transition-colors"
             />
           </div>
 
@@ -420,7 +408,7 @@ export function Discussions() {
                   className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all ${
                     isSelected
                       ? 'bg-primary text-on-primary shadow-xs'
-                      : 'bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-on-surface border border-outline-variant/50'
+                      : 'bg-surface-2 hover:bg-surface text-muted hover:text-text border border-border'
                   }`}
                 >
                   #{tag}
@@ -438,7 +426,7 @@ export function Discussions() {
           <div className="flex items-center justify-between">
             <button
               onClick={() => setSelectedThread(null)}
-              className="inline-flex items-center gap-2 text-xs font-bold text-on-surface-variant hover:text-primary transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 text-xs font-bold text-muted hover:text-primary transition-colors cursor-pointer"
             >
               <span className="material-symbols-outlined text-base">arrow_back</span>
               Back to All Discussions
@@ -447,7 +435,7 @@ export function Discussions() {
               <Button
                 variant="secondary"
                 onClick={() => navigate('/marketplace')}
-                className="text-xs font-bold px-3 py-1.5 rounded-xl border-outline-variant hover:border-primary flex items-center gap-1.5"
+                className="text-xs font-bold px-3 py-1.5 rounded-xl border-border hover:border-primary flex items-center gap-1.5"
               >
                 <span className="material-symbols-outlined text-sm">person_search</span>
                 Book 1-on-1 Mentor
@@ -456,22 +444,22 @@ export function Discussions() {
           </div>
 
           {/* Thread Question Card */}
-          <div className="bg-surface border border-outline-variant rounded-3xl p-6 md:p-8 shadow-elevation-1 space-y-5">
+          <div className="bg-surface border border-border rounded-3xl p-6 md:p-8 shadow-sm space-y-5">
             <div className="flex items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <img
                   src={selectedThread.authorAvatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'}
                   alt={selectedThread.authorName}
-                  className="w-11 h-11 rounded-full object-cover border border-outline-variant"
+                  className="w-11 h-11 rounded-full object-cover border border-border"
                 />
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-sm text-on-surface">{selectedThread.authorName}</span>
-                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-primary-container text-on-primary-container">
+                    <span className="font-bold text-sm text-text">{selectedThread.authorName}</span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase bg-primary-tint text-primary-text">
                       {selectedThread.authorRole}
                     </span>
                   </div>
-                  <span className="text-xs text-on-surface-variant font-medium">
+                  <span className="text-xs text-muted font-medium">
                     Asked {new Date(selectedThread.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </span>
                 </div>
@@ -480,18 +468,18 @@ export function Discussions() {
               {/* Status Badges */}
               <div className="flex items-center gap-2">
                 {selectedThread.bounty && selectedThread.bounty.amount > 0 && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-learning-amber/20 text-learning-amber border border-learning-amber/40 text-xs font-extrabold shadow-xs">
-                    <span className="material-symbols-outlined text-sm">stars</span>
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-accent-tint text-accent-text border border-accent/30 text-xs font-extrabold shadow-xs">
+                    <span className="material-symbols-outlined text-sm text-accent">stars</span>
                     +{selectedThread.bounty.amount} {selectedThread.bounty.type === 'tokens' ? 'Tokens' : 'Pts'} Bounty
                   </span>
                 )}
                 {selectedThread.isAnswered ? (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/30 text-xs font-extrabold">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-xs font-extrabold">
                     <span className="material-symbols-outlined text-sm">check_circle</span>
                     Solved
                   </span>
                 ) : (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-container text-on-surface-variant text-xs font-bold">
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-surface-2 text-muted border border-border text-xs font-bold">
                     <span className="material-symbols-outlined text-sm">schedule</span>
                     Open
                   </span>
@@ -501,16 +489,16 @@ export function Discussions() {
 
             {/* Question Title & Body */}
             <div className="space-y-3 pt-2">
-              <h2 className="text-xl md:text-2xl font-black text-on-surface tracking-tight">
+              <h2 className="text-xl md:text-2xl font-black text-text tracking-tight">
                 {selectedThread.title}
               </h2>
-              <div className="text-sm text-on-surface-variant font-medium leading-relaxed whitespace-pre-line bg-surface-container-lowest p-5 rounded-2xl border border-outline-variant/40 font-mono">
+              <div className="text-sm text-text font-medium leading-relaxed whitespace-pre-line bg-surface-2 p-5 rounded-2xl border border-border font-mono">
                 {selectedThread.content}
               </div>
             </div>
 
             {/* Tags & Upvote CTA */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-outline-variant/50">
+            <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-border">
               <div className="flex flex-wrap items-center gap-1.5">
                 {selectedThread.tags?.map((t, idx) => (
                   <span
@@ -528,7 +516,7 @@ export function Discussions() {
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
                     selectedThread.upvotes?.includes(currentUser?.id)
                       ? 'bg-primary text-on-primary border-primary shadow-xs'
-                      : 'bg-surface-container hover:bg-surface-container-high text-on-surface border-outline-variant'
+                      : 'bg-surface-2 hover:bg-surface text-text border-border'
                   }`}
                 >
                   <span className="material-symbols-outlined text-base">thumb_up</span>
@@ -541,10 +529,10 @@ export function Discussions() {
           {/* Answers & Replies Section */}
           <div className="space-y-4">
             <div className="flex items-center justify-between px-1">
-              <h3 className="text-base font-black text-on-surface flex items-center gap-2">
+              <h3 className="text-base font-black text-text flex items-center gap-2">
                 <span>{selectedThread.comments?.length || 0} Peer Solutions & Replies</span>
               </h3>
-              <span className="text-xs text-on-surface-variant font-medium">
+              <span className="text-xs text-muted font-medium">
                 Earn +5 Pts for contributing
               </span>
             </div>
@@ -561,8 +549,8 @@ export function Discussions() {
                       key={comment.id}
                       className={`rounded-2xl p-5 border transition-all ${
                         isAccepted
-                          ? 'bg-teaching-emerald-container/20 border-teaching-emerald/50 shadow-elevation-1'
-                          : 'bg-surface border-outline-variant'
+                          ? 'bg-primary-tint/30 border-primary/40 shadow-sm'
+                          : 'bg-surface border-border'
                       }`}
                     >
                       <div className="flex items-start justify-between gap-3">
@@ -570,22 +558,22 @@ export function Discussions() {
                           <img
                             src={comment.authorAvatar || 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?auto=format&fit=crop&w=256&q=80'}
                             alt={comment.authorName}
-                            className="w-9 h-9 rounded-full object-cover border border-outline-variant"
+                            className="w-9 h-9 rounded-full object-cover border border-border"
                           />
                           <div>
                             <div className="flex items-center gap-2">
-                              <span className="font-bold text-xs text-on-surface">{comment.authorName}</span>
-                              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-surface-container text-on-surface-variant">
+                              <span className="font-bold text-xs text-text">{comment.authorName}</span>
+                              <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold uppercase bg-surface-2 text-muted">
                                 {comment.authorRole}
                               </span>
                               {isAccepted && (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-teaching-emerald-container text-on-teaching-emerald-container text-[10px] font-black uppercase">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-primary-tint text-primary-text border border-primary/20 text-[10px] font-black uppercase">
                                   <span className="material-symbols-outlined text-xs">verified</span>
                                   Accepted Solution
                                 </span>
                               )}
                             </div>
-                            <span className="text-[11px] text-on-surface-variant font-medium">
+                            <span className="text-[11px] text-muted font-medium">
                               {new Date(comment.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                             </span>
                           </div>
@@ -596,7 +584,7 @@ export function Discussions() {
                           {isAuthor && !isAccepted && (
                             <button
                               onClick={() => handleAcceptAnswer(comment.id)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-teaching-emerald hover:bg-teaching-emerald/10 border border-teaching-emerald/30 transition-colors"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold text-primary hover:bg-primary-tint border border-primary/30 transition-colors"
                               title="Mark as accepted answer"
                             >
                               <span className="material-symbols-outlined text-sm">check_circle</span>
@@ -609,7 +597,7 @@ export function Discussions() {
                             className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition-colors ${
                               comment.upvotes?.includes(currentUser?.id)
                                 ? 'bg-primary text-on-primary border-primary'
-                                : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border-outline-variant/60'
+                                : 'bg-surface-2 hover:bg-surface text-text border-border'
                             }`}
                           >
                             <span className="material-symbols-outlined text-xs">thumb_up</span>
@@ -618,7 +606,7 @@ export function Discussions() {
                         </div>
                       </div>
 
-                      <div className="mt-3 text-xs md:text-sm text-on-surface font-medium leading-relaxed whitespace-pre-line bg-surface-container-lowest p-4 rounded-xl border border-outline-variant/30 font-mono">
+                      <div className="mt-3 text-xs md:text-sm text-text font-medium leading-relaxed whitespace-pre-line bg-surface-2 p-4 rounded-xl border border-border font-mono">
                         {comment.content}
                       </div>
                     </div>
@@ -626,22 +614,22 @@ export function Discussions() {
                 })}
               </div>
             ) : (
-              <div className="text-center py-10 bg-surface rounded-2xl border border-outline-variant p-6 space-y-2">
-                <span className="material-symbols-outlined text-3xl text-on-surface-variant">chat_bubble_outline</span>
-                <p className="text-sm font-bold text-on-surface">No answers yet!</p>
-                <p className="text-xs text-on-surface-variant max-w-sm mx-auto">
+              <div className="text-center py-10 bg-surface rounded-2xl border border-border p-6 space-y-2">
+                <span className="material-symbols-outlined text-3xl text-muted">chat_bubble_outline</span>
+                <p className="text-sm font-bold text-text">No answers yet!</p>
+                <p className="text-xs text-muted max-w-sm mx-auto">
                   Be the first to share an answer or helpful insight. You will earn reward loyalty points!
                 </p>
               </div>
             )}
 
             {/* Reply Composer Form */}
-            <form onSubmit={handleSubmitReply} className="bg-surface border border-outline-variant rounded-2xl p-5 space-y-3 shadow-elevation-1">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-on-surface-variant">
+            <form onSubmit={handleSubmitReply} className="bg-surface border border-border rounded-2xl p-5 space-y-3 shadow-sm">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-muted">
                 Post Your Solution or Insight
               </h4>
               {replyError && (
-                <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-xs font-bold">
+                <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-danger text-xs font-bold">
                   {replyError}
                 </div>
               )}
@@ -650,16 +638,16 @@ export function Discussions() {
                 value={replyText}
                 onChange={e => setReplyText(e.target.value)}
                 placeholder="Type your explanation, code snippets, or reference links..."
-                className="w-full p-3.5 bg-surface-container-lowest border border-outline-variant rounded-xl text-xs md:text-sm text-on-surface font-mono placeholder:text-on-surface-variant/70 focus:outline-none focus:border-primary transition-colors resize-y"
+                className="w-full p-3.5 bg-surface-2 border border-border rounded-xl text-xs md:text-sm text-text font-mono placeholder:text-muted focus:outline-none focus:border-primary transition-colors resize-y"
               />
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-on-surface-variant">
+                <span className="text-[11px] text-muted">
                   💡 Markdown & code block formatting supported
                 </span>
                 <Button
                   type="submit"
                   disabled={submittingReply || !replyText.trim()}
-                  className="bg-primary hover:bg-primary/90 text-on-primary font-bold px-4 py-2 text-xs rounded-xl flex items-center gap-1.5"
+                  className="bg-primary hover:bg-primary-hover text-on-primary font-bold px-4 py-2 text-xs rounded-xl flex items-center gap-1.5"
                 >
                   <span className="material-symbols-outlined text-base">send</span>
                   {submittingReply ? 'Posting...' : 'Post Solution'}
@@ -672,7 +660,7 @@ export function Discussions() {
         /* Discussion Thread List View */
         <div className="space-y-4">
           {/* Sorting / Filter Bar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 bg-surface p-2.5 rounded-2xl border border-outline-variant">
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-surface p-2.5 rounded-2xl border border-border">
             <div className="flex items-center gap-1">
               {[
                 { id: 'newest', label: 'Recent', icon: 'schedule' },
@@ -686,7 +674,7 @@ export function Discussions() {
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                     sortTab === tab.id
                       ? 'bg-primary text-on-primary shadow-xs'
-                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container'
+                      : 'text-muted hover:text-text hover:bg-surface-2'
                   }`}
                 >
                   <span className="material-symbols-outlined text-sm">{tab.icon}</span>
@@ -695,31 +683,31 @@ export function Discussions() {
               ))}
             </div>
 
-            <span className="text-xs font-bold text-on-surface-variant pr-2">
+            <span className="text-xs font-bold text-muted pr-2">
               {filteredDiscussions.length} Questions
             </span>
           </div>
 
           {/* Discussions Cards */}
           {loading ? (
-            <div className="text-center py-16 bg-surface rounded-3xl border border-outline-variant space-y-3">
+            <div className="text-center py-16 bg-surface rounded-3xl border border-border space-y-3">
               <span className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin inline-block" />
-              <p className="text-xs font-bold text-on-surface-variant">Loading discussions...</p>
+              <p className="text-xs font-bold text-muted">Loading discussions...</p>
             </div>
           ) : filteredDiscussions.length === 0 ? (
-            <div className="text-center py-16 bg-surface rounded-3xl border border-outline-variant p-8 space-y-4">
-              <div className="w-14 h-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mx-auto">
+            <div className="text-center py-16 bg-surface rounded-3xl border border-border p-8 space-y-4">
+              <div className="w-14 h-14 rounded-2xl bg-primary-tint text-primary-text flex items-center justify-center mx-auto">
                 <span className="material-symbols-outlined text-3xl">question_answer</span>
               </div>
               <div className="space-y-1">
-                <h3 className="text-base font-black text-on-surface">No discussions found</h3>
-                <p className="text-xs text-on-surface-variant max-w-sm mx-auto">
+                <h3 className="text-base font-black text-text">No discussions found</h3>
+                <p className="text-xs text-muted max-w-sm mx-auto">
                   Be the pioneer! Ask a question or share a problem with the community to start the discussion.
                 </p>
               </div>
               <Button
                 onClick={() => setIsAskModalOpen(true)}
-                className="bg-primary hover:bg-primary/90 text-on-primary font-bold px-4 py-2 rounded-xl text-xs"
+                className="bg-primary hover:bg-primary-hover text-on-primary font-bold px-4 py-2 rounded-xl text-xs"
               >
                 Ask the First Question
               </Button>
@@ -734,7 +722,7 @@ export function Discussions() {
                   <div
                     key={disc.id}
                     onClick={() => setSelectedThread(disc)}
-                    className="group bg-surface hover:bg-surface-container-lowest border border-outline-variant hover:border-outline rounded-2xl p-5 shadow-elevation-1 hover:shadow-elevation-2 transition-all cursor-pointer flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
+                    className="group bg-surface hover:bg-surface-2 border border-border rounded-2xl p-5 shadow-sm transition-all cursor-pointer flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
                   >
                     <div className="flex items-start gap-4 flex-1">
                       {/* Upvote Pill */}
@@ -743,7 +731,7 @@ export function Discussions() {
                         className={`flex flex-col items-center justify-center min-w-[48px] h-12 rounded-xl border transition-colors ${
                           isVoted
                             ? 'bg-primary text-on-primary border-primary'
-                            : 'bg-surface-container-high hover:bg-surface-container-highest text-on-surface border-outline-variant/60'
+                            : 'bg-surface-2 hover:bg-surface text-text border-border'
                         }`}
                       >
                         <span className="material-symbols-outlined text-base leading-none">arrow_drop_up</span>
@@ -752,24 +740,24 @@ export function Discussions() {
 
                       <div className="space-y-1.5 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <h3 className="text-sm md:text-base font-black text-on-surface group-hover:text-primary transition-colors">
+                          <h3 className="text-sm md:text-base font-black text-text group-hover:text-primary-text transition-colors">
                             {disc.title}
                           </h3>
                           {disc.isAnswered && (
-                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-teaching-emerald-container text-on-teaching-emerald-container text-[10px] font-black uppercase">
+                            <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-[10px] font-black uppercase">
                               <span className="material-symbols-outlined text-xs">check_circle</span>
                               Solved
                             </span>
                           )}
                           {hasBounty && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-learning-amber/20 text-learning-amber text-[10px] font-black uppercase">
-                              <span className="material-symbols-outlined text-xs">stars</span>
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent-tint text-accent-text border border-accent/30 text-[10px] font-black uppercase">
+                              <span className="material-symbols-outlined text-xs text-accent">stars</span>
                               +{disc.bounty?.amount} {disc.bounty?.type === 'tokens' ? 'Tokens' : 'Pts'}
                             </span>
                           )}
                         </div>
 
-                        <p className="text-xs text-on-surface-variant font-medium line-clamp-2 max-w-3xl">
+                        <p className="text-xs text-muted font-medium line-clamp-2 max-w-3xl">
                           {disc.content}
                         </p>
 
@@ -782,8 +770,8 @@ export function Discussions() {
                               #{t}
                             </span>
                           ))}
-                          <span className="text-[11px] text-on-surface-variant/80 font-medium ml-1">
-                            by <span className="font-bold text-on-surface">{disc.authorName}</span> • {new Date(disc.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          <span className="text-[11px] text-muted font-medium ml-1">
+                            by <span className="font-bold text-text">{disc.authorName}</span> • {new Date(disc.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                           </span>
                         </div>
                       </div>
@@ -791,11 +779,11 @@ export function Discussions() {
 
                     {/* Right side stats */}
                     <div className="flex items-center gap-3 shrink-0 self-end md:self-center">
-                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-container-high border border-outline-variant/60 text-xs font-bold text-on-surface-variant">
+                      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-surface-2 border border-border text-xs font-bold text-muted">
                         <span className="material-symbols-outlined text-base">chat_bubble</span>
                         <span>{disc.comments?.length || 0}</span>
                       </div>
-                      <span className="material-symbols-outlined text-on-surface-variant group-hover:translate-x-1 transition-transform">
+                      <span className="material-symbols-outlined text-muted group-hover:translate-x-1 transition-transform">
                         chevron_right
                       </span>
                     </div>
@@ -815,30 +803,30 @@ export function Discussions() {
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.95 }}
-              className="bg-surface border border-outline-variant rounded-3xl p-6 md:p-8 max-w-2xl w-full shadow-elevation-4 max-h-[90vh] overflow-y-auto space-y-5 custom-scrollbar"
+              className="bg-surface border border-border rounded-3xl p-6 md:p-8 max-w-2xl w-full shadow-lg max-h-[90vh] overflow-y-auto space-y-5 custom-scrollbar"
             >
-              <div className="flex items-center justify-between border-b border-outline-variant/60 pb-4">
+              <div className="flex items-center justify-between border-b border-border pb-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-primary/20 text-primary flex items-center justify-center">
+                  <div className="w-9 h-9 rounded-xl bg-primary-tint text-primary-text flex items-center justify-center">
                     <span className="material-symbols-outlined text-xl">help_center</span>
                   </div>
                   <div>
-                    <h3 className="text-lg font-black text-on-surface">Ask the Community</h3>
-                    <p className="text-xs text-on-surface-variant font-medium">
+                    <h3 className="text-lg font-black text-text">Ask the Community</h3>
+                    <p className="text-xs text-muted font-medium">
                       Get fast answers and mentor assistance from peer students.
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setIsAskModalOpen(false)}
-                  className="p-1 rounded-lg text-on-surface-variant hover:text-on-surface hover:bg-surface-container"
+                  className="p-1 rounded-lg text-muted hover:text-text hover:bg-surface-2"
                 >
                   <span className="material-symbols-outlined text-xl">close</span>
                 </button>
               </div>
 
               {askError && (
-                <div className="p-3 rounded-xl bg-error/10 border border-error/30 text-error text-xs font-bold">
+                <div className="p-3 rounded-xl bg-danger/10 border border-danger/30 text-danger text-xs font-bold">
                   {askError}
                 </div>
               )}
@@ -846,8 +834,8 @@ export function Discussions() {
               <form onSubmit={handleSubmitAsk} className="space-y-4">
                 {/* Title */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-on-surface">
-                    Question Title <span className="text-error">*</span>
+                  <label className="text-xs font-bold text-text">
+                    Question Title <span className="text-danger">*</span>
                   </label>
                   <input
                     type="text"
@@ -855,20 +843,20 @@ export function Discussions() {
                     placeholder="e.g. How to implement binary search trees with iterative traversal in Python?"
                     value={askTitle}
                     onChange={e => setAskTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 bg-surface-container-lowest border border-outline-variant rounded-xl text-xs md:text-sm font-medium text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none focus:border-primary"
+                    className="w-full px-3.5 py-2.5 bg-surface-2 border border-border rounded-xl text-xs md:text-sm font-medium text-text placeholder:text-muted focus:outline-none focus:border-primary"
                   />
                 </div>
 
                 {/* Tags */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-on-surface">
+                  <label className="text-xs font-bold text-text">
                     Tags (Up to 5)
                   </label>
                   <div className="flex flex-wrap items-center gap-1.5 mb-2">
                     {askTags.map(t => (
                       <span
                         key={t}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-container text-on-primary-container text-xs font-bold"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-primary-tint text-primary-text text-xs font-bold"
                       >
                         #{t}
                         <button type="button" onClick={() => handleRemoveTag(t)}>
@@ -889,7 +877,7 @@ export function Discussions() {
                           handleAddTag(tagInput);
                         }
                       }}
-                      className="flex-1 px-3.5 py-2 bg-surface-container-lowest border border-outline-variant rounded-xl text-xs font-medium text-on-surface focus:outline-none focus:border-primary"
+                      className="flex-1 px-3.5 py-2 bg-surface-2 border border-border rounded-xl text-xs font-medium text-text focus:outline-none focus:border-primary"
                     />
                     <Button
                       type="button"
@@ -902,13 +890,13 @@ export function Discussions() {
                   </div>
                   {/* Preset tag hints */}
                   <div className="flex flex-wrap items-center gap-1 pt-1">
-                    <span className="text-[10px] text-on-surface-variant font-bold mr-1">Suggestions:</span>
+                    <span className="text-[10px] text-muted font-bold mr-1">Suggestions:</span>
                     {['React', 'Python', 'DSA', 'SQL', 'JavaScript'].map(hint => (
                       <button
                         key={hint}
                         type="button"
                         onClick={() => handleAddTag(hint)}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-container text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high"
+                        className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-2 text-muted hover:text-text hover:bg-surface"
                       >
                         +{hint}
                       </button>
@@ -918,8 +906,8 @@ export function Discussions() {
 
                 {/* Content */}
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold text-on-surface">
-                    Details & Code Snippet <span className="text-error">*</span>
+                  <label className="text-xs font-bold text-text">
+                    Details & Code Snippet <span className="text-danger">*</span>
                   </label>
                   <textarea
                     rows={5}
@@ -927,20 +915,20 @@ export function Discussions() {
                     placeholder="Describe what you are trying to accomplish, what you tried, and paste relevant code snippets..."
                     value={askContent}
                     onChange={e => setAskContent(e.target.value)}
-                    className="w-full p-3.5 bg-surface-container-lowest border border-outline-variant rounded-xl text-xs md:text-sm text-on-surface font-mono placeholder:text-on-surface-variant/70 focus:outline-none focus:border-primary resize-y"
+                    className="w-full p-3.5 bg-surface-2 border border-border rounded-xl text-xs md:text-sm text-text font-mono placeholder:text-muted focus:outline-none focus:border-primary resize-y"
                   />
                 </div>
 
                 {/* Optional Bounty Card */}
-                <div className="bg-surface-container-low border border-outline-variant/60 rounded-2xl p-4 space-y-3">
+                <div className="bg-surface-2 border border-border rounded-2xl p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-learning-amber text-lg">stars</span>
-                      <span className="text-xs font-extrabold text-on-surface uppercase tracking-wide">
+                      <span className="material-symbols-outlined text-accent text-lg">stars</span>
+                      <span className="text-xs font-extrabold text-text uppercase tracking-wide">
                         Incentive Bounty (Optional)
                       </span>
                     </div>
-                    <span className="text-[11px] text-on-surface-variant">
+                    <span className="text-[11px] text-muted">
                       Awarded to verified solution
                     </span>
                   </div>
@@ -957,8 +945,8 @@ export function Discussions() {
                         onClick={() => setBountyType(b.id as any)}
                         className={`p-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
                           bountyType === b.id
-                            ? 'bg-primary-container text-on-primary-container border-primary shadow-xs'
-                            : 'bg-surface hover:bg-surface-container text-on-surface-variant border-outline-variant'
+                            ? 'bg-primary-tint text-primary-text border-primary shadow-xs'
+                            : 'bg-surface hover:bg-surface-2 text-muted border-border'
                         }`}
                       >
                         <span className="material-symbols-outlined text-base">{b.icon}</span>
@@ -969,16 +957,16 @@ export function Discussions() {
 
                   {bountyType !== 'none' && (
                     <div className="flex items-center gap-3 pt-2">
-                      <label className="text-xs font-bold text-on-surface">Bounty Amount:</label>
+                      <label className="text-xs font-bold text-text">Bounty Amount:</label>
                       <input
                         type="number"
                         min={bountyType === 'tokens' ? 1 : 5}
                         max={bountyType === 'tokens' ? 20 : 100}
                         value={bountyAmount}
                         onChange={e => setBountyAmount(parseInt(e.target.value, 10) || 0)}
-                        className="w-24 px-3 py-1.5 bg-surface border border-outline-variant rounded-xl text-xs font-bold text-on-surface text-center focus:outline-none focus:border-primary"
+                        className="w-24 px-3 py-1.5 bg-surface border border-border rounded-xl text-xs font-bold text-text text-center focus:outline-none focus:border-primary"
                       />
-                      <span className="text-xs font-bold text-on-surface-variant">
+                      <span className="text-xs font-bold text-muted">
                         {bountyType === 'tokens' ? 'Tokens' : 'Points'} (Balance: {bountyType === 'tokens' ? (currentUser?.tokenBalance || 0) : (currentUser?.rewardPoints || 0)})
                       </span>
                     </div>
@@ -986,7 +974,7 @@ export function Discussions() {
                 </div>
 
                 {/* Modal Footer Actions */}
-                <div className="flex items-center justify-end gap-3 pt-3 border-t border-outline-variant/60">
+                <div className="flex items-center justify-end gap-3 pt-3 border-t border-border">
                   <Button
                     type="button"
                     variant="secondary"
@@ -998,7 +986,7 @@ export function Discussions() {
                   <Button
                     type="submit"
                     disabled={submittingAsk || !askTitle.trim() || !askContent.trim()}
-                    className="bg-primary hover:bg-primary/90 text-on-primary font-bold px-5 py-2 text-xs rounded-xl flex items-center gap-1.5"
+                    className="bg-primary hover:bg-primary-hover text-on-primary font-bold px-5 py-2 text-xs rounded-xl flex items-center gap-1.5"
                   >
                     <span className="material-symbols-outlined text-base">send</span>
                     {submittingAsk ? 'Publishing...' : 'Publish Question'}

@@ -3,6 +3,8 @@ import type { ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../lib/api';
+import { showAppToast } from '../components/NotificationManager';
+import { isValidPrice, roundPrice, calculateBatchPricing } from '../lib/pricing';
 
 const PRESET_AVATARS = [
   'https://i.pravatar.cc/150?img=11',
@@ -63,43 +65,114 @@ export function Profile() {
   const [newTeachSkill, setNewTeachSkill] = useState('');
   const [newLearnSkill, setNewLearnSkill] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedSnapshot, setSavedSnapshot] = useState<string>('');
   const [showCertificateModal, setShowCertificateModal] = useState(false);
 
   const [isPublic, setIsPublic] = useState<boolean>(currentUser?.isPublic !== false);
   const [isTogglingVisibility, setIsTogglingVisibility] = useState(false);
   const [visibilityFeedback, setVisibilityFeedback] = useState<string | null>(null);
 
+  const getSnapshot = (
+    n = name,
+    e = email,
+    b = bio,
+    r = accountRole,
+    pub = isPublic,
+    hr = hourlyRate,
+    u = upiId,
+    qr = upiQrImage,
+    idt = officialIdType,
+    idn = officialIdNumber,
+    idd = officialIdDocument,
+    ids = officialIdStatus,
+    bp = batchPricing,
+    av = avatar,
+    st = skillsTaught,
+    sl = skillsLearned
+  ) => {
+    return JSON.stringify({
+      name: (n || '').trim(),
+      email: (e || '').trim(),
+      bio: (b || '').trim(),
+      role: r,
+      isPublic: !!pub,
+      hourlyRate: Number(hr) || 0,
+      upiId: (u || '').trim().toLowerCase(),
+      upiQrImage: qr || '',
+      officialIdType: idt || '',
+      officialIdNumber: (idn || '').trim(),
+      officialIdDocument: idd || '',
+      officialIdStatus: ids || '',
+      batchPricing: bp || {},
+      avatar: av || '',
+      skillsTaught: [...st].sort(),
+      skillsLearned: [...sl].sort()
+    });
+  };
+
   useEffect(() => {
     if (currentUser) {
-      setName(currentUser.name || '');
-      setEmail(currentUser.email || '');
-      setBio(currentUser.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.');
-      setIsPublic(currentUser.isPublic !== false);
-      if (currentUser.role === 'student' || currentUser.role === 'teacher' || currentUser.role === 'both') {
-        setAccountRole(currentUser.role);
-      }
+      const initialName = currentUser.name || '';
+      const initialEmail = currentUser.email || '';
+      const initialBio = currentUser.bio || 'Passionate about peer-to-peer knowledge sharing and skill exchanges.';
+      const initialPub = currentUser.isPublic !== false;
+      const initialRole = (currentUser.role === 'student' || currentUser.role === 'teacher' || currentUser.role === 'both')
+        ? currentUser.role
+        : 'student';
       const base = typeof currentUser.hourlyRate === 'number' ? currentUser.hourlyRate : 499;
+      const initialUpi = currentUser.upiId || '';
+      const initialQr = currentUser.upiQrImage || '';
+      const initialIdType = currentUser.officialIdType || 'college_id';
+      const initialIdNumber = currentUser.officialIdNumber || '';
+      const initialIdDoc = currentUser.officialIdDocument || '';
+      const initialIdStatus = currentUser.officialIdStatus || (currentUser.officialIdDocument ? 'verified' : 'unverified');
+      const initialBp = (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') ? { ...currentUser.batchPricing } : {
+        1: base,
+        2: Math.round(base * 0.8),
+        3: Math.round(base * 0.7),
+        4: Math.round(base * 0.6),
+        5: Math.round(base * 0.5)
+      };
+      const initialAv = currentUser.avatar || 'https://i.pravatar.cc/150?img=11';
+      const initialSt = currentUser.skillsTaught || (currentUser.userSkills ? currentUser.userSkills.filter((us: any) => us.type === 'teaches').map((us: any) => us.skill?.name) : ['UI Design', 'Figma']);
+      const initialSl = currentUser.skillsLearned || (currentUser.userSkills ? currentUser.userSkills.filter((us: any) => us.type === 'wants_to_learn').map((us: any) => us.skill?.name) : ['Python', 'React']);
+
+      setName(initialName);
+      setEmail(initialEmail);
+      setBio(initialBio);
+      setIsPublic(initialPub);
+      setAccountRole(initialRole);
       setHourlyRate(base);
-      setUpiId(currentUser.upiId || '');
-      setUpiQrImage(currentUser.upiQrImage || '');
-      setOfficialIdType(currentUser.officialIdType || 'college_id');
-      setOfficialIdNumber(currentUser.officialIdNumber || '');
-      setOfficialIdDocument(currentUser.officialIdDocument || '');
-      setOfficialIdStatus(currentUser.officialIdStatus || (currentUser.officialIdDocument ? 'verified' : 'unverified'));
-      if (currentUser.batchPricing && typeof currentUser.batchPricing === 'object') {
-        setBatchPricing({ ...currentUser.batchPricing });
-      } else {
-        setBatchPricing({
-          1: base,
-          2: Math.round(base * 0.8),
-          3: Math.round(base * 0.7),
-          4: Math.round(base * 0.6),
-          5: Math.round(base * 0.5)
-        });
-      }
-      setAvatar(currentUser.avatar || 'https://i.pravatar.cc/150?img=11');
-      if (currentUser.skillsTaught) setSkillsTaught(currentUser.skillsTaught);
-      if (currentUser.skillsLearned) setSkillsLearned(currentUser.skillsLearned);
+      setUpiId(initialUpi);
+      setUpiQrImage(initialQr);
+      setOfficialIdType(initialIdType);
+      setOfficialIdNumber(initialIdNumber);
+      setOfficialIdDocument(initialIdDoc);
+      setOfficialIdStatus(initialIdStatus);
+      setBatchPricing(initialBp);
+      setAvatar(initialAv);
+      setSkillsTaught(initialSt);
+      setSkillsLearned(initialSl);
+
+      setSavedSnapshot(getSnapshot(
+        initialName,
+        initialEmail,
+        initialBio,
+        initialRole,
+        initialPub,
+        base,
+        initialUpi,
+        initialQr,
+        initialIdType,
+        initialIdNumber,
+        initialIdDoc,
+        initialIdStatus,
+        initialBp,
+        initialAv,
+        initialSt,
+        initialSl
+      ));
     }
   }, [currentUser]);
 
@@ -135,16 +208,21 @@ export function Profile() {
     }
   };
 
-  const handleHourlyRateChange = (val: number) => {
-    const safeVal = Math.max(0, isNaN(val) ? 0 : Math.round(val));
+  const handleHourlyRateChange = (val: number | string) => {
+    if (val === '' || isNaN(Number(val))) {
+      setHourlyRate('' as any);
+      return;
+    }
+    const safeVal = Math.max(1, Math.round(Number(val)));
     setHourlyRate(safeVal);
+    const defaultBatch = calculateBatchPricing(safeVal);
     setBatchPricing(prev => ({
       ...prev,
       1: safeVal,
-      2: prev[2] !== undefined ? prev[2] : Math.round(safeVal * 0.8),
-      3: prev[3] !== undefined ? prev[3] : Math.round(safeVal * 0.7),
-      4: prev[4] !== undefined ? prev[4] : Math.round(safeVal * 0.6),
-      5: prev[5] !== undefined ? prev[5] : Math.round(safeVal * 0.5),
+      2: prev[2] !== undefined ? prev[2] : defaultBatch[2],
+      3: prev[3] !== undefined ? prev[3] : defaultBatch[3],
+      4: prev[4] !== undefined ? prev[4] : defaultBatch[4],
+      5: prev[5] !== undefined ? prev[5] : defaultBatch[5],
     }));
   };
 
@@ -244,16 +322,26 @@ export function Profile() {
   };
 
   const handleSaveProfile = async () => {
+    // Prevent duplicate rapid clicks while in-flight
+    if (isSaving) return;
+
     const isTeacherOrBoth = accountRole === 'teacher' || accountRole === 'both';
     const isStudentOrBoth = accountRole === 'student' || accountRole === 'both';
 
     if (isTeacherOrBoth) {
-      if (isNaN(Number(hourlyRate)) || Number(hourlyRate) < 0) {
-        alert('Please enter a valid non-negative teaching rate.');
+      if (!isValidPrice(hourlyRate)) {
+        alert('Enter a whole amount of ₹1 or more for Base Rate.');
         return;
       }
+      for (let cap = 1; cap <= 5; cap++) {
+        const p = batchPricing[cap];
+        if (p !== undefined && !isValidPrice(p)) {
+          alert(`Enter a whole amount of ₹1 or more for batch pricing (Capacity ${cap}).`);
+          return;
+        }
+      }
     }
-    const cleanRate = isTeacherOrBoth ? Math.round(Number(hourlyRate)) : undefined;
+    const cleanRate = isTeacherOrBoth ? roundPrice(Number(hourlyRate)) : undefined;
     const cleanUpiId = upiId.trim().toLowerCase();
     if (isTeacherOrBoth && cleanUpiId) {
       const vpaRegex = /^[a-zA-Z0-9.\-_]{2,256}@[a-zA-Z]{2,64}$/;
@@ -262,52 +350,68 @@ export function Profile() {
         return;
       }
     }
-    const upiChanged = cleanUpiId !== (currentUser?.upiId || '');
-    const currentVpaVerified = upiChanged ? false : (currentUser?.vpaVerified ?? false);
 
-    const updatedUser: any = {
-      ...(currentUser || {}),
-      id: currentUser?.id || 'user-' + Date.now(),
-      name,
-      email,
-      bio,
-      role: accountRole,
-      isPublic,
-      hourlyRate: cleanRate,
-      upiId: isTeacherOrBoth ? (cleanUpiId || undefined) : undefined,
-      vpaVerified: isTeacherOrBoth ? currentVpaVerified : undefined,
-      upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
-      officialIdType: isTeacherOrBoth ? officialIdType : undefined,
-      officialIdNumber: isTeacherOrBoth ? officialIdNumber : undefined,
-      officialIdDocument: isTeacherOrBoth ? officialIdDocument : undefined,
-      officialIdStatus: isTeacherOrBoth ? officialIdStatus : undefined,
-      batchPricing: isTeacherOrBoth ? batchPricing : undefined,
-      avatar,
-      skillsTaught: isTeacherOrBoth ? skillsTaught : [],
-      skillsLearned: isStudentOrBoth ? skillsLearned : [],
-      userSkills: [
-        ...(isTeacherOrBoth ? skillsTaught.map(t => ({ type: 'teaches', skill: { id: 's-' + t, name: t, category: 'Software & AI' } })) : []),
-        ...(isStudentOrBoth ? skillsLearned.map(l => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l, category: 'Software & AI' } })) : [])
-      ]
-    };
+    // Check if any changes were made compared to initial/saved snapshot
+    const currentSnapshot = getSnapshot();
+    if (savedSnapshot && currentSnapshot === savedSnapshot) {
+      showAppToast({
+        type: 'info',
+        title: 'No changes to save',
+        body: 'Your profile is already up to date.'
+      });
+      return;
+    }
 
-    setCurrentUser(updatedUser);
-    loginAction(updatedUser, accountRole);
-    api.syncNetworkUser(updatedUser);
+    setIsSaving(true);
 
-    if (currentUser?.id && !currentUser.id.startsWith('peer-')) {
-      try {
-        await api.updateUser(currentUser.id, {
-          name,
-          email,
-          bio,
+    try {
+      // Simulate/detect failed network request if offline
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        throw new Error('Network connection is offline');
+      }
+
+      const upiChanged = cleanUpiId !== (currentUser?.upiId || '');
+      const currentVpaVerified = upiChanged ? false : (currentUser?.vpaVerified ?? false);
+
+      const updatedUser: any = {
+        ...(currentUser || {}),
+        id: currentUser?.id || 'user-' + Date.now(),
+        name: name.trim(),
+        email: email.trim(),
+        bio: bio.trim(),
+        role: accountRole,
+        isPublic,
+        hourlyRate: cleanRate,
+        upiId: isTeacherOrBoth ? (cleanUpiId || undefined) : undefined,
+        vpaVerified: isTeacherOrBoth ? currentVpaVerified : undefined,
+        upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
+        officialIdType: isTeacherOrBoth ? officialIdType : undefined,
+        officialIdNumber: isTeacherOrBoth ? officialIdNumber.trim() : undefined,
+        officialIdDocument: isTeacherOrBoth ? officialIdDocument : undefined,
+        officialIdStatus: isTeacherOrBoth ? officialIdStatus : undefined,
+        batchPricing: isTeacherOrBoth ? batchPricing : undefined,
+        avatar,
+        skillsTaught: isTeacherOrBoth ? skillsTaught : [],
+        skillsLearned: isStudentOrBoth ? skillsLearned : [],
+        userSkills: [
+          ...(isTeacherOrBoth ? skillsTaught.map(t => ({ type: 'teaches', skill: { id: 's-' + t, name: t, category: 'Software & AI' } })) : []),
+          ...(isStudentOrBoth ? skillsLearned.map(l => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l, category: 'Software & AI' } })) : [])
+        ]
+      };
+
+      // 1. API Call to updateUser
+      if (currentUser?.id && !currentUser.id.startsWith('peer-')) {
+        const updateRes = await api.updateUser(currentUser.id, {
+          name: name.trim(),
+          email: email.trim(),
+          bio: bio.trim(),
           role: accountRole,
           isPublic,
           hourlyRate: cleanRate,
-          upiId: isTeacherOrBoth ? upiId.trim().toLowerCase() : undefined,
+          upiId: isTeacherOrBoth ? cleanUpiId : undefined,
           upiQrImage: isTeacherOrBoth ? upiQrImage : undefined,
           officialIdType: isTeacherOrBoth ? officialIdType : undefined,
-          officialIdNumber: isTeacherOrBoth ? officialIdNumber : undefined,
+          officialIdNumber: isTeacherOrBoth ? officialIdNumber.trim() : undefined,
           officialIdDocument: isTeacherOrBoth ? officialIdDocument : undefined,
           officialIdStatus: isTeacherOrBoth ? officialIdStatus : undefined,
           batchPricing: isTeacherOrBoth ? batchPricing : undefined,
@@ -315,30 +419,58 @@ export function Profile() {
           skillsTaught: isTeacherOrBoth ? skillsTaught : [],
           skillsLearned: isStudentOrBoth ? skillsLearned : []
         });
-      } catch (err) {
-        console.warn('API update in handleSaveProfile had non-blocking error:', err);
-      }
-    }
 
-    if (isTeacherOrBoth) {
-      try {
-        await api.savePayoutAccount({
-          accountHolderName: name,
-          upiId: upiId.trim().toLowerCase(),
+        if (updateRes && (updateRes.error || updateRes.success === false)) {
+          throw new Error(updateRes.error || 'Failed to update user profile on the server');
+        }
+      }
+
+      // 2. Save Payout Account if teacher
+      if (isTeacherOrBoth) {
+        const payoutRes = await api.savePayoutAccount({
+          accountHolderName: name.trim(),
+          upiId: cleanUpiId,
           payoutMethod: 'upi',
           upiQrImage: upiQrImage || undefined,
           officialIdType,
-          officialIdNumber,
+          officialIdNumber: officialIdNumber.trim(),
           officialIdDocument: officialIdDocument || undefined,
           officialIdStatus
         });
-      } catch (err) {
-        console.warn('Payout sync in handleSaveProfile had non-blocking notice:', err);
-      }
-    }
 
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+        if (payoutRes && (payoutRes.error || payoutRes.success === false)) {
+          throw new Error(payoutRes.error || 'Failed to synchronize payout details');
+        }
+      }
+
+      // Commit to store and sync peers ONLY after API call resolves
+      setCurrentUser(updatedUser);
+      loginAction(updatedUser, accountRole);
+      api.syncNetworkUser(updatedUser);
+
+      // Reset dirty state to new saved snapshot
+      setSavedSnapshot(currentSnapshot);
+
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+
+      // Success notification toast
+      showAppToast({
+        type: 'success',
+        title: 'Profile updated successfully',
+        body: 'Your changes have been synchronized.'
+      });
+    } catch (err: any) {
+      console.error('Failed to save profile:', err);
+      // Keep form values intact and display error notification toast
+      showAppToast({
+        type: 'error',
+        title: "Couldn't save your changes.",
+        body: "Please try again."
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Only allow mode switching if user registered with 'both' mode
@@ -689,13 +821,20 @@ export function Profile() {
                     <label className="block text-xs font-bold text-on-surface mb-1">Teaching Base Rate (1-on-1 ₹/Hour)</label>
                     <input 
                       type="number" 
-                      min={0}
-                      max={10000}
-                      step={25}
+                      min={1}
+                      max={100000}
+                      step={1}
                       value={hourlyRate} 
-                      onChange={(e) => handleHourlyRateChange(Number(e.target.value))}
-                      className="w-full px-3.5 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface"
+                      onChange={(e) => handleHourlyRateChange(e.target.value)}
+                      onInvalid={(e) => e.preventDefault()}
+                      className={`w-full px-3.5 py-2.5 bg-surface-container border ${!isValidPrice(hourlyRate) ? 'border-danger' : 'border-outline-variant'} rounded-xl text-xs font-semibold text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface`}
                     />
+                    {!isValidPrice(hourlyRate) && (
+                      <p className="text-danger text-[11px] font-semibold mt-1 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-xs">error</span>
+                        <span>Enter a whole amount of ₹1 or more</span>
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs font-bold text-on-surface mb-1 flex items-center justify-between">
@@ -767,10 +906,12 @@ export function Profile() {
                       { cap: 4, label: 'Cohort', icon: 'diversity_3', desc: '4 Students' },
                       { cap: 5, label: 'Masterclass', icon: 'school', desc: '5 Students' },
                     ].map(tier => {
-                      const price = batchPricing[tier.cap] ?? (tier.cap === 1 ? hourlyRate : Math.round(hourlyRate * (1 - tier.cap * 0.1)));
-                      const totalPerHour = price * tier.cap;
+                      const defaultPrice = calculateBatchPricing(Number(hourlyRate) || 499)[tier.cap];
+                      const price = batchPricing[tier.cap] !== undefined ? batchPricing[tier.cap] : defaultPrice;
+                      const totalPerHour = isValidPrice(price) ? Number(price) * tier.cap : 0;
+                      const isTierValid = isValidPrice(price);
                       return (
-                        <div key={tier.cap} className="p-2.5 bg-surface-container rounded-xl border border-outline-variant flex flex-col justify-between">
+                        <div key={tier.cap} className={`p-2.5 bg-surface-container rounded-xl border ${!isTierValid ? 'border-danger' : 'border-outline-variant'} flex flex-col justify-between`}>
                           <div>
                             <div className="flex items-center gap-1 text-[11px] font-bold text-on-surface">
                               <span className="material-symbols-outlined text-xs text-primary">{tier.icon}</span>
@@ -783,18 +924,25 @@ export function Profile() {
                               <span className="absolute left-2 top-1.5 text-xs font-bold text-on-surface-variant">₹</span>
                               <input 
                                 type="number"
-                                min={0}
-                                max={10000}
-                                step={25}
+                                min={1}
+                                max={100000}
+                                step={1}
                                 value={price}
                                 onChange={(e) => {
-                                  const val = Number(e.target.value);
+                                  const raw = e.target.value;
+                                  const val = raw === '' ? ('' as any) : Number(raw);
                                   setBatchPricing(prev => ({ ...prev, [tier.cap]: val }));
-                                  if (tier.cap === 1) setHourlyRate(val);
+                                  if (tier.cap === 1 && isValidPrice(val)) setHourlyRate(Number(val));
                                 }}
+                                onInvalid={(e) => e.preventDefault()}
                                 className="w-full pl-5 pr-1 py-1 text-xs font-bold rounded-lg border border-outline-variant bg-surface text-on-surface outline-none focus:border-primary"
                               />
                             </div>
+                            {!isTierValid && (
+                              <p className="text-danger text-[10px] font-semibold mt-1 flex items-center gap-0.5">
+                                <span>Enter a whole amount of ₹1 or more</span>
+                              </p>
+                            )}
                             <div className="text-[10px] font-extrabold text-teaching-emerald mt-1 text-center">
                               Earns ₹{totalPerHour}/hr
                             </div>
@@ -1130,11 +1278,22 @@ export function Profile() {
 
           <div className="flex justify-end">
             <button 
+              type="button"
               onClick={handleSaveProfile}
-              className="px-8 py-3.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+              disabled={isSaving}
+              className="px-8 py-3.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold shadow transition-all hover:scale-105 active:scale-95 disabled:hover:scale-100 disabled:active:scale-100 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
             >
-              <span className="material-symbols-outlined text-lg">save</span>
-              Save & Synchronize Profile
+              {isSaving ? (
+                <>
+                  <span className="w-4 h-4 border-2 border-on-primary border-t-transparent rounded-full animate-spin shrink-0" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-lg">save</span>
+                  <span>Save & Synchronize Profile</span>
+                </>
+              )}
             </button>
           </div>
 

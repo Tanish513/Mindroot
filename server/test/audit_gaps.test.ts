@@ -482,6 +482,16 @@ async function runAuditGapsTests() {
     ]);
 
     const testRoom = `room-sync-${Date.now()}`;
+    inMemorySessions.push({
+      id: testRoom,
+      title: 'Audit Gaps Test Room',
+      teacherId: socketUserId,
+      studentId: socketUserId,
+      status: 'confirmed',
+      scheduledAt: new Date().toISOString(),
+      duration: 60,
+      format: '1-on-1'
+    } as any);
     clientA.emit('join-room', { roomId: testRoom, userId: socketUserId });
     clientB.emit('join-room', { roomId: testRoom, userId: socketUserId });
 
