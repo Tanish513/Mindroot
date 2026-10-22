@@ -230,7 +230,7 @@ export function Dashboard() {
 
   const pendingRequestsForMe = useMemo(() => {
     if (!currentUser?.id) return [];
-    return sessions.filter(s => s && s.status === 'pending' && getSessionApproverId(s) === currentUser.id && !isPastSession(s));
+    return sessions.filter(s => s && s.status === 'pending' && getSessionApproverId(s) === currentUser.id);
   }, [sessions, currentUser?.id]);
 
   // Dynamically compute top recommended peer match from database peers
@@ -728,6 +728,11 @@ export function Dashboard() {
               <span className="material-symbols-outlined text-primary text-xl animate-pulse">mark_email_unread</span>
               <h3 className="text-sm font-black text-text">
                 Pending Student Booking Requests ({pendingRequestsForMe.length})
+                {isBothRole && role === 'student' && (
+                  <span className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                    Mentor Action Required
+                  </span>
+                )}
               </h3>
             </div>
             <span className="text-[11px] font-bold text-muted">Review & approve to unlock live classroom</span>

@@ -124,9 +124,48 @@ export interface SendMailResult {
   messageId?: string;
 }
 
-export async function sendMail({ to, subject }: SendMailOptions): Promise<SendMailResult> {
-  // Completely simulated mode: zero network overhead, zero port blocking, zero domain restrictions
-  console.log(`[Email Service - Simulated] 📢 Notification generated for ${to}: "${subject}"`);
+export async function sendMail({ to, subject, html, text }: SendMailOptions): Promise<SendMailResult> {
+  const provider = getEmailProvider();
+  
+  if (provider === 'smtp') {
+    const transporter = getSmtpTransporter();
+    if (transporter) {
+      try {
+        const info = await transporter.sendMail({
+          from: getFromEmail(),
+          to,
+          subject,
+          html,
+          text: text || html.replace(/<[^>]*>/g, '')
+        });
+        console.log(`[Email Service - SMTP] Sent email to ${to}: "${subject}" (Message ID: ${info.messageId})`);
+        return { success: true, transport: 'smtp', messageId: info.messageId, data: info };
+      } catch (smtpErr: any) {
+        console.error(`[Email Error] SMTP delivery to ${to} failed: ${smtpErr.message || smtpErr}. Attempting Resend fallback...`);
+      }
+    }
+  }
+
+  // Attempt Resend if configured or as fallback
+  const resend = getResendClient();
+  if (resend) {
+    try {
+      const resendRes = await resend.emails.send({
+        from: getResendFromEmail(),
+        to,
+        subject,
+        html,
+        text: text || html.replace(/<[^>]*>/g, '')
+      });
+      console.log(`[Email Service - Resend] Sent email to ${to}: "${subject}"`);
+      return { success: true, transport: 'resend', data: resendRes };
+    } catch (resendErr: any) {
+      console.error(`[Email Error] Resend delivery to ${to} failed: ${resendErr.message || resendErr}.`);
+    }
+  }
+
+  // Clear logging when SMTP and Resend both fail or are unconfigured
+  console.log(`[Email Service - Simulated] 📢 Notification generated for ${to}: "${subject}" (SMTP/Resend failed or unconfigured; simulated fallback used)`);
   return { success: true, transport: 'simulated', simulated: true };
 }
 

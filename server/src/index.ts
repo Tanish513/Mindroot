@@ -1525,10 +1525,11 @@ function filterSessionsForUser(sessionsList: any[], userId?: string, role?: stri
   if (!userId) return [];
   return sessionsList.filter(s => {
     if (!s) return false;
-    const isTeacher = s.teacherId === userId || s.teacher?.id === userId;
+    const isTeacher = s.teacherId === userId || s.teacher?.id === userId || s.mentorId === userId;
     const isStudent = s.studentId === userId || s.student?.id === userId;
-    const isInCohort = Array.isArray(s.students) && s.students.some((st: any) => st.id === userId);
-    return isTeacher || isStudent || isInCohort;
+    const isInCohort = Array.isArray(s.students) && s.students.some((st: any) => (st.id || st) === userId);
+    const isApprover = getSessionApproverId(s) === userId;
+    return isTeacher || isStudent || isInCohort || isApprover;
   });
 }
 
@@ -1766,13 +1767,8 @@ io.use((socket, next) => {
       }
       next();
     } else {
-      // Graceful fallback for invalid/expired tokens instead of throwing fatal handshake error
-      const guestId = 'guest-' + socket.id;
-      (socket as any).userId = guestId;
-      (socket as any).userRole = 'guest';
-      socket.data.userId = guestId;
-      socket.data.userRole = 'guest';
-      return next();
+      // Reject invalid or expired tokens so client is notified of auth error rather than silently dropped to guest
+      return next(new Error('Authentication error: Invalid or expired token'));
     }
   }
 });
@@ -2192,11 +2188,19 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
   // Cross-laptop user registration & session sync handlers
   socket.on('register-user-sync', (user) => {
     const callerId = (socket as any).userId || socket.data?.userId;
-    if (callerId && user && user.id && user.id !== callerId && socket.data?.userRole !== 'admin') {
+    if (callerId && !callerId.startsWith('guest-') && user && user.id && user.id !== callerId && socket.data?.userRole !== 'admin') {
       socket.emit('socket-error', { message: 'Forbidden: Cannot sync another user profile' });
       return;
     }
     if (user && user.id) {
+      if (callerId && callerId.startsWith('guest-')) {
+        (socket as any).userId = user.id;
+        socket.data.userId = user.id;
+        if (user.role) {
+          (socket as any).userRole = user.role;
+          socket.data.userRole = user.role;
+        }
+      }
       registerUserSocket(user.id, socket.id);
       const idx = inMemoryUsers.findIndex(u => u.id === user.id);
       if (idx >= 0) {
@@ -4014,6 +4018,42 @@ app.post('/api/wallet/withdraw', requireAuth, async (req: any, res: any) => {
 });
 
 // GET /api/sessions — user-scoped sessions (optional auth: authenticated users get scoped sessions, guests get public sessions)
+// GET /api/sessions/pending-count (requireAuth) — returns pending approval count and requests for current approver
+app.get('/api/sessions/pending-count', requireAuth, async (req: any, res: any) => {
+  const userId = req.userId;
+  checkAndExpirePendingSessions();
+
+  try {
+    if (process.env.DATABASE_URL && prisma) {
+      const dbSessions = await prisma.session.findMany({
+        where: {
+          status: 'pending',
+          OR: [
+            { teacherId: userId },
+            { studentId: userId }
+          ]
+        },
+        include: { teacher: true, student: true },
+        orderBy: { scheduledAt: 'asc' }
+      });
+      if (dbSessions && dbSessions.length) {
+        const safeSessions = dbSessions.map((s: any) => ({
+          ...s,
+          teacher: toPublicUser(s.teacher),
+          student: toPublicUser(s.student)
+        }));
+        const forApprover = safeSessions.filter((s: any) => getSessionApproverId(s) === userId && s.status === 'pending');
+        return res.json({ count: forApprover.length, sessions: forApprover });
+      }
+    }
+  } catch (err) {
+    logger.error({ err }, 'Error querying pending count in Prisma');
+  }
+
+  const memForApprover = inMemorySessions.filter((s: any) => s && s.status === 'pending' && getSessionApproverId(s) === userId);
+  return res.json({ count: memForApprover.length, sessions: memForApprover });
+});
+
 app.get('/api/sessions', async (req: any, res: any) => {
   consolidateGroupSessions();
   checkAndExpirePendingSessions();

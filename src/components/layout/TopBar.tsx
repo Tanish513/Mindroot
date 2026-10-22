@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store/useAppStore';
 import { useEffect, useState, useRef } from 'react';
-import { api, globalSocket, setAuthItem } from '../../lib/api';
+import { api, globalSocket, setAuthItem, isSocketConnected, onSocketConnectionChange, updateSocketAuth } from '../../lib/api';
+import { usePendingApprovals } from '../../hooks/usePendingApprovals';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useDebounce } from '../../hooks/useDebounce';
@@ -46,6 +47,15 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   const [incomingPaymentAlert, setIncomingPaymentAlert] = useState<any>(null);
   const [seedingDemo, setSeedingDemo] = useState(false);
   const [demoMessage, setDemoMessage] = useState<string | null>(null);
+  const { pendingCount } = usePendingApprovals();
+  const [socketConnected, setSocketConnected] = useState<boolean>(isSocketConnected());
+
+  useEffect(() => {
+    const unsub = onSocketConnectionChange((connected) => {
+      setSocketConnected(connected);
+    });
+    return () => unsub();
+  }, []);
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [peers, setPeers] = useState<any[]>([]);
@@ -258,7 +268,25 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   };
 
   return (
-    <header className="h-[64px] flex items-center justify-between px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
+    <>
+      {!socketConnected && currentUser && (
+        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 z-50 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-base text-amber-600 animate-pulse">cloud_off</span>
+            <span>
+              <strong>Live socket disconnected.</strong> Updates continue automatically over REST background refresh.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => updateSocketAuth()}
+            className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-[11px] border border-amber-500/30 transition-colors cursor-pointer"
+          >
+            Reconnect
+          </button>
+        </div>
+      )}
+      <header className="h-[64px] flex items-center justify-between px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
       <div className="flex items-center gap-4 flex-1">
         <button 
           onClick={onOpenMobileMenu}
@@ -591,6 +619,21 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           )}
         </div>
 
+        {/* Pending Requests Badge Button for Mentors/Approvers */}
+        {pendingCount > 0 && (
+          <Link
+            to="/teacher"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30 hover:bg-amber-500/25 transition-all text-xs font-bold shrink-0 animate-in fade-in"
+            title={`${pendingCount} pending student booking request(s) awaiting your review`}
+          >
+            <span className="material-symbols-outlined text-sm">mark_email_unread</span>
+            <span className="hidden sm:inline">Requests</span>
+            <span className="min-w-4 h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-black flex items-center justify-center">
+              {pendingCount > 9 ? '9+' : pendingCount}
+            </span>
+          </Link>
+        )}
+
         {/* Notifications Icon and Dropdown Panel */}
         <div className="relative">
           <button 
@@ -833,5 +876,6 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         </div>
       )}
     </header>
+    </>
   );
 }

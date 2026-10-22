@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAppStore } from '../../store/useAppStore';
 import { api } from '../../lib/api';
 import clsx from 'clsx';
+import { usePendingApprovals } from '../../hooks/usePendingApprovals';
 
 const navItems = [
   { path: '/dashboard', icon: 'dashboard', label: 'Dashboard', shortcut: '⌘D', roles: ['student'] },
@@ -128,11 +129,15 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
   const isExpanded = !isSidebarCollapsed || isHovered;
   const isFloatingOverlay = isSidebarCollapsed && isHovered;
 
+  const { pendingCount } = usePendingApprovals();
   const canSwitchRole = loginRole === 'both' || currentUser?.role === 'both';
   const activeRole = canSwitchRole
     ? role
     : (currentUser?.role === 'teacher' || loginRole === 'teacher' ? 'teacher' : 'student');
-  const filteredItems = navItems.filter(item => item.roles.includes(activeRole));
+  const filteredItems = navItems.filter(item => {
+    if (item.path === '/teacher' && canSwitchRole && pendingCount > 0) return true;
+    return item.roles.includes(activeRole);
+  });
 
   const handleLogout = () => {
     logout();
@@ -242,6 +247,11 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                 </div>
 
                 {/* Pulsing joinable session dot on Live Room icon */}
+                {item.path === '/teacher' && pendingCount > 0 && (
+                  <span className="absolute top-1.5 right-1.5 min-w-4 h-4 px-1 flex items-center justify-center rounded-full bg-amber-500 text-white text-[9px] font-black ring-2 ring-sidebar-bg" title={`${pendingCount} pending requests`}>
+                    {pendingCount > 9 ? '9+' : pendingCount}
+                  </span>
+                )}
                 {item.label === 'Live Room' && hasJoinableSession && (
                   <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5" title="Live lecture joinable now">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -259,6 +269,9 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                 )}
               >
                 <span>{item.label}</span>
+                {item.path === '/teacher' && pendingCount > 0 && (
+                  <span className="ml-1 text-[10px] text-amber-500 font-bold">({pendingCount})</span>
+                )}
                 {item.shortcut && (
                   <span className="ml-1.5 text-muted font-mono text-[10px] bg-surface-2 px-1 py-0.5 rounded border border-border">
                     {item.shortcut}
@@ -405,6 +418,14 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               )}
             >
               <span>Switch to {activeRole === 'student' ? 'Teacher' : 'Student'}</span>
+              {activeRole === 'student' && pendingCount > 0 && (
+                <span className="ml-auto px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white shrink-0">
+                  {pendingCount}
+                </span>
+              )}
+              {activeRole === 'student' && pendingCount > 0 && (
+                <span className="ml-1 text-[10px] text-amber-500 font-bold">({pendingCount})</span>
+              )}
             </div>
 
             <div

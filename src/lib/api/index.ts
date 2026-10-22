@@ -44,6 +44,29 @@ export const updateSocketAuth = (token?: string) => {
 };
 const globalBc = new BroadcastChannel('mindroot_network_sync');
 
+export const isSocketConnected = (): boolean => {
+  return globalSocket.connected;
+};
+
+const socketConnectionListeners: Array<(connected: boolean) => void> = [];
+
+export const onSocketConnectionChange = (cb: (connected: boolean) => void) => {
+  socketConnectionListeners.push(cb);
+  try {
+    cb(globalSocket.connected);
+  } catch {}
+  return () => {
+    const idx = socketConnectionListeners.indexOf(cb);
+    if (idx >= 0) socketConnectionListeners.splice(idx, 1);
+  };
+};
+
+const notifySocketConnection = (connected: boolean) => {
+  socketConnectionListeners.forEach(cb => {
+    try { cb(connected); } catch {}
+  });
+};
+
 // Safe LocalStorage helpers with size limits to prevent QuotaExceededError
 const sanitizeForStorage = (data: any): any => {
   if (data === null || data === undefined) return data;
@@ -326,6 +349,7 @@ const notifyDiscussionListeners = (discussions: any[]) => {
 
 // Multi-laptop real-time synchronization listeners
 globalSocket.on('connect', () => {
+  notifySocketConnection(true);
   const storedUser = getAuthItem('mindroot_current_user');
   if (storedUser) {
     try {
@@ -335,6 +359,14 @@ globalSocket.on('connect', () => {
       }
     } catch {}
   }
+});
+
+globalSocket.on('disconnect', () => {
+  notifySocketConnection(false);
+});
+
+globalSocket.on('connect_error', () => {
+  notifySocketConnection(false);
 });
 
 globalSocket.on('network-peers-updated', (peers: any[]) => {
@@ -886,6 +918,40 @@ export const api = {
     } catch (err) {
       console.error('Failed to delete session:', err);
       return { success: false };
+    }
+  },
+
+  getPendingApprovalCount: async (): Promise<{ count: number; sessions: any[] }> => {
+    try {
+      const r = await fetch(`${getBASE()}/api/sessions/pending-count`, { headers: getHeaders() });
+      if (r.ok) {
+        const data = await safeParse(r, null);
+        if (data && typeof data.count === 'number') {
+          return data;
+        }
+      }
+    } catch (err) {
+      console.warn('[Pending Approval Count] Failed to fetch from REST endpoint, falling back to session filter:', err);
+    }
+
+    try {
+      const allSessions = await api.getSessions();
+      let userId = '';
+      const storedUser = typeof window !== 'undefined' ? getAuthItem('mindroot_current_user') : null;
+      if (storedUser) {
+        try {
+          const u = JSON.parse(storedUser);
+          userId = u?.id || '';
+        } catch {}
+      }
+      if (!userId) return { count: 0, sessions: [] };
+      const pendingSessions = allSessions.filter((s: any) => {
+        const approverId = getSessionApproverId(s);
+        return approverId === userId && s.status === 'pending';
+      });
+      return { count: pendingSessions.length, sessions: pendingSessions };
+    } catch {
+      return { count: 0, sessions: [] };
     }
   },
 
