@@ -972,6 +972,7 @@ async function recordUserActivity(userId: string, activityType: 'session' | 'dis
 }
 
 const DB_FILE = path.join(__dirname, '../db.json');
+const DEFAULT_SEED_FILE = path.join(__dirname, 'defaultSeed.json');
 
 function saveDb() {
   const isTestEnv = process.env.NODE_ENV === 'test' || process.env.npm_lifecycle_event === 'test' || process.argv.some(a => a.includes('test'));
@@ -1001,8 +1002,9 @@ function saveDb() {
 
 function loadDb() {
   try {
-    if (fs.existsSync(DB_FILE)) {
-      const raw = fs.readFileSync(DB_FILE, 'utf-8');
+    const sourceFile = fs.existsSync(DB_FILE) ? DB_FILE : (fs.existsSync(DEFAULT_SEED_FILE) ? DEFAULT_SEED_FILE : null);
+    if (sourceFile) {
+      const raw = fs.readFileSync(sourceFile, 'utf-8');
       if (raw && raw.trim()) {
         const data = JSON.parse(raw);
         if (Array.isArray(data.users) && data.users.length > 0) {
@@ -1189,8 +1191,14 @@ async function syncWithDatabase() {
 
     const dbUsers = await prisma.user.findMany({ include: { userSkills: { include: { skill: true } } } });
     if (dbUsers && dbUsers.length > 0) {
-      inMemoryUsers.length = 0;
-      dbUsers.forEach((u: any) => inMemoryUsers.push({ ...u, emailVerified: true }));
+      dbUsers.forEach((dbU: any) => {
+        const idx = inMemoryUsers.findIndex(u => u.id === dbU.id || (u.email && dbU.email && u.email.toLowerCase() === dbU.email.toLowerCase()));
+        if (idx >= 0) {
+          inMemoryUsers[idx] = { ...inMemoryUsers[idx], ...dbU, emailVerified: true };
+        } else {
+          inMemoryUsers.push({ ...dbU, emailVerified: true });
+        }
+      });
     }
 
     // 2. Guarantee admin user is present in inMemoryUsers
@@ -1218,8 +1226,56 @@ async function syncWithDatabase() {
     }
     const dbSessions = await prisma.session.findMany();
     if (dbSessions && dbSessions.length > 0) {
-      inMemorySessions.length = 0;
-      dbSessions.forEach((s: any) => inMemorySessions.push(s));
+      dbSessions.forEach((dbS: any) => {
+        const idx = inMemorySessions.findIndex(s => s.id === dbS.id);
+        if (idx >= 0) {
+          inMemorySessions[idx] = { ...inMemorySessions[idx], ...dbS };
+        } else {
+          inMemorySessions.push(dbS);
+        }
+      });
+    }
+
+    // Two-way background backfill: If database is freshly initialized and missing seed users/sessions,
+    // populate them from inMemoryUsers so the remote database gets all peers and history immediately
+    if (inMemoryUsers.length > (dbUsers ? dbUsers.length : 0)) {
+      (async () => {
+        for (const memU of inMemoryUsers) {
+          if (!memU || !memU.id || memU.id === 'user-admin') continue;
+          try {
+            await prisma.user.upsert({
+              where: { id: memU.id },
+              update: {
+                name: memU.name,
+                email: memU.email || null,
+                role: memU.role || 'student',
+                tokenBalance: memU.tokenBalance ?? 4,
+                trustScore: memU.trustScore ?? 5.0,
+                rewardPoints: memU.rewardPoints ?? 0,
+                hourlyRate: memU.hourlyRate ?? 499,
+                bio: memU.bio || null,
+                avatar: memU.avatar || null,
+                isPublic: memU.isPublic !== false
+              },
+              create: {
+                id: memU.id,
+                name: memU.name,
+                email: memU.email || null,
+                password: memU.password || null,
+                emailVerified: true,
+                role: memU.role || 'student',
+                tokenBalance: memU.tokenBalance ?? 4,
+                trustScore: memU.trustScore ?? 5.0,
+                rewardPoints: memU.rewardPoints ?? 0,
+                hourlyRate: memU.hourlyRate ?? 499,
+                bio: memU.bio || null,
+                avatar: memU.avatar || null,
+                isPublic: memU.isPublic !== false
+              }
+            });
+          } catch {}
+        }
+      })().catch(() => {});
     }
     const dbTransactions = await prisma.transaction.findMany();
     if (dbTransactions && dbTransactions.length > 0) {
@@ -2540,7 +2596,9 @@ app.get('/api/peers', async (req: any, res) => {
         where: whereClause,
         include: { userSkills: { include: { skill: true } } }
       });
-      return res.json(toPublicUser(peers, userRole));
+      if (peers && peers.length > 0) {
+        return res.json(toPublicUser(peers, userRole));
+      }
     } catch (err: any) {
       logger.error({ err }, 'Database error in /api/peers');
       return res.status(500).json({ error: 'Database error retrieving peer list.' });
@@ -3211,10 +3269,33 @@ app.post('/api/auth/google', async (req, res) => {
       });
     } catch (dbErr) {
       logger.warn({ dbErr, cleanEmail }, 'Error searching existing OAuth user in DB, falling back to in-memory store');
-      existingUser = inMemoryUsers.find(u => u.email?.toLowerCase() === cleanEmail);
     }
-  } else {
+  }
+
+  // If not found in PostgreSQL (or DB query failed/returned null), always fall back to existing inMemoryUsers
+  if (!existingUser) {
     existingUser = inMemoryUsers.find(u => u.email?.toLowerCase() === cleanEmail);
+    // If found in inMemoryUsers and database is active, backfill into PostgreSQL so it stays synced under their original user ID
+    if (existingUser && process.env.DATABASE_URL && prisma) {
+      try {
+        await prisma.user.upsert({
+          where: { id: existingUser.id },
+          update: { email: cleanEmail, name: existingUser.name, avatar: avatar || existingUser.avatar },
+          create: {
+            id: existingUser.id,
+            name: existingUser.name,
+            email: cleanEmail,
+            role: existingUser.role || 'both',
+            tokenBalance: existingUser.tokenBalance ?? 50,
+            trustScore: existingUser.trustScore ?? 5.0,
+            hourlyRate: existingUser.hourlyRate ?? 499,
+            avatar: avatar || existingUser.avatar
+          }
+        });
+      } catch (upsertErr) {
+        logger.warn({ upsertErr }, 'Failed to backfill inMemory user to DB during OAuth login');
+      }
+    }
   }
 
   if (existingUser) {
