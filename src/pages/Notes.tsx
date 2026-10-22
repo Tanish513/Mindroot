@@ -307,6 +307,7 @@ export function Notes() {
   // On Save / Delete callbacks
   const handleSaveSuccess = (saved: any) => {
     loadNotes();
+    setSelectedNote(saved);
     addNotification({
       type: 'session',
       title: 'Note Saved',

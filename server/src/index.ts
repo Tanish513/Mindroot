@@ -4390,7 +4390,8 @@ app.post('/api/sessions', requireAuth, async (req: any, res: any) => {
     status: 'pending', // Requires Recipient Approval
     paymentStatus: (isSwapSession && seatPrice === 0) ? 'swap' : 'pending',
     scheduledAt: scheduledAt || new Date().toISOString(),
-    durationMin: durationMin ? parseInt(durationMin, 10) : 60
+    durationMin: durationMin ? parseInt(durationMin, 10) : 60,
+    createdAt: new Date().toISOString()
   };
 
   const { voucherId } = req.body;

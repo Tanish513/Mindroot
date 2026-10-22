@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import type { ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
@@ -1318,6 +1319,7 @@ export function Profile() {
               </div>
               <button
                 type="button"
+                data-testid="delete-account-button"
                 onClick={() => {
                   setDeleteError(null);
                   setShowDeleteModal(true);
@@ -1478,15 +1480,21 @@ export function Profile() {
       )}
 
       {/* Delete Account Confirmation Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+      {showDeleteModal && typeof document !== 'undefined' && createPortal(
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-account-title"
+          data-testid="delete-account-modal"
+          className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
+        >
           <div className="bg-surface border-2 border-alert-rose/40 rounded-3xl w-full max-w-md shadow-elevation-4 overflow-hidden p-6 sm:p-7 relative space-y-5">
             <div className="flex items-start gap-3.5">
               <div className="w-12 h-12 rounded-2xl bg-alert-rose/15 text-alert-rose flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-2xl">error</span>
               </div>
               <div>
-                <h3 className="text-lg font-black text-on-surface tracking-tight">Delete Your Account?</h3>
+                <h3 id="delete-account-title" className="text-lg font-black text-on-surface tracking-tight">Delete Your Account?</h3>
                 <p className="text-xs text-on-surface-variant font-medium mt-1 leading-relaxed">
                   Are you sure you want to delete your account? This action cannot be undone. All your profile information, teaching sessions, chat messages, and reviews will be permanently deleted.
                 </p>
@@ -1503,6 +1511,7 @@ export function Profile() {
             <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-outline-variant/60">
               <button
                 type="button"
+                data-testid="cancel-delete-account-button"
                 disabled={isDeleting}
                 onClick={() => setShowDeleteModal(false)}
                 className="px-4 py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-bold transition-colors cursor-pointer"
@@ -1511,6 +1520,7 @@ export function Profile() {
               </button>
               <button
                 type="button"
+                data-testid="confirm-delete-account-button"
                 disabled={isDeleting}
                 onClick={handleDeleteAccount}
                 className="px-5 py-2.5 bg-alert-rose hover:bg-alert-rose/90 text-white rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 cursor-pointer"
@@ -1529,7 +1539,8 @@ export function Profile() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

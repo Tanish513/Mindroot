@@ -61,13 +61,51 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
   const autosaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialMount = useRef(true);
 
+  const lastSavedRef = useRef<{
+    title: string;
+    content: string;
+    tags: string[];
+    sessionId: string | null;
+    visibility: 'private' | 'shared';
+    attachments: Attachment[];
+  }>({
+    title: (initialNote?.title || '').trim(),
+    content: initialNote?.content || '',
+    tags: Array.isArray(initialNote?.tags) ? [...initialNote.tags] : [],
+    sessionId: initialNote?.sessionId || defaultSessionId || null,
+    visibility: initialNote?.visibility || 'private',
+    attachments: Array.isArray(initialNote?.attachments) ? [...initialNote.attachments] : []
+  });
+
+  const updateLastSaved = (noteObj: any) => {
+    lastSavedRef.current = {
+      title: (noteObj?.title || '').trim(),
+      content: noteObj?.content || '',
+      tags: Array.isArray(noteObj?.tags) ? [...noteObj.tags] : [],
+      sessionId: noteObj?.sessionId || defaultSessionId || null,
+      visibility: noteObj?.visibility || 'private',
+      attachments: Array.isArray(noteObj?.attachments) ? [...noteObj.attachments] : []
+    };
+  };
+
+  const checkIfDirty = () => {
+    const saved = lastSavedRef.current;
+    if (title.trim() !== saved.title) return true;
+    if (content !== saved.content) return true;
+    if (sessionId !== saved.sessionId) return true;
+    if (visibility !== saved.visibility) return true;
+    if (tags.length !== saved.tags.length || tags.some((t, i) => t !== saved.tags[i])) return true;
+    if (attachments.length !== saved.attachments.length) return true;
+    return false;
+  };
+
   // Read-only state if shared note where user is not author
   const isReadOnly = Boolean(initialNote?.id && initialNote?.authorId && currentUserId && initialNote.authorId !== currentUserId);
 
   // Selected session details
   const selectedSession = sessions.find(s => s.id === sessionId);
-  const isMentorOfSession = Boolean(selectedSession && currentUserId && (selectedSession.teacherId === currentUserId || selectedSession.teacher?.id === currentUserId));
-  const studentName = selectedSession?.student?.name || (Array.isArray(selectedSession?.students) && selectedSession?.students[0]?.name) || 'Student';
+  const isMentorOfSession = Boolean(selectedSession && currentUserId && (selectedSession.teacherId === currentUserId || selectedSession.teacher?.id === currentUserId || selectedSession.mentorId === currentUserId));
+  const studentName = selectedSession?.student?.name || (Array.isArray(selectedSession?.students) && (selectedSession?.students[0]?.name || selectedSession?.students[0])) || 'Student';
 
   // Expose insertHeading for quick prompts
   useImperativeHandle(ref, () => ({
@@ -112,6 +150,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     setSessionId(initialNote?.sessionId || defaultSessionId || null);
     setVisibility(initialNote?.visibility || 'private');
     setAttachments(initialNote?.attachments || []);
+    updateLastSaved(initialNote);
     setHasUnsavedChanges(false);
     setSaveStatus('idle');
     setErrorMessage(null);
@@ -129,7 +168,15 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     }
     if (isReadOnly) return;
 
-    setHasUnsavedChanges(true);
+    const dirty = checkIfDirty();
+    setHasUnsavedChanges(dirty);
+
+    if (!dirty) {
+      if (autosaveTimerRef.current) {
+        clearTimeout(autosaveTimerRef.current);
+      }
+      return;
+    }
 
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current);
@@ -258,6 +305,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
       const res = await api.saveNote(payload);
       setSaveStatus('saved');
       setHasUnsavedChanges(false);
+      updateLastSaved(res);
 
       if (onSaveSuccess && res) {
         onSaveSuccess(res);

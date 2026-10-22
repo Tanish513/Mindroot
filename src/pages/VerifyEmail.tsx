@@ -16,7 +16,6 @@ export default function VerifyEmail() {
   useEffect(() => {
     if (!token) {
       setLoading(false);
-      setError('Missing email verification token.');
       return;
     }
 
@@ -68,13 +67,37 @@ export default function VerifyEmail() {
               </p>
               <button
                 onClick={() => navigate('/dashboard')}
-                className="w-full mt-4 py-3 px-4 bg-primary text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 transition-all hover:bg-primary-hover"
+                className="w-full mt-4 py-3 px-4 bg-primary text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 transition-all hover:bg-primary-hover cursor-pointer"
               >
                 Continue to Dashboard
               </button>
             </div>
+          ) : !token ? (
+            <div className="space-y-4 py-4" data-testid="verify-email-no-token">
+              <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-primary-container text-on-primary-container mb-2">
+                <span className="material-symbols-outlined text-3xl">mark_email_unread</span>
+              </div>
+              <h2 className="text-xl font-black text-on-surface">Email Verification Link Required</h2>
+              <p className="text-xs font-semibold text-on-surface-variant leading-relaxed">
+                It looks like you arrived here without a verification token. To verify your email address, please click the link sent to your registered email inbox.
+              </p>
+              <p className="text-[11px] text-on-surface-variant/80 font-medium leading-relaxed">
+                If you haven't received an email yet, please check your spam folder or sign in to your dashboard to request a new link.
+              </p>
+              <div className="pt-2">
+                <button
+                  type="button"
+                  data-testid="return-home-btn"
+                  onClick={() => navigate('/')}
+                  className="w-full py-3 px-4 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold shadow-elevation-1 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-base">home</span>
+                  <span>Return Home</span>
+                </button>
+              </div>
+            </div>
           ) : (
-            <div className="space-y-4 py-4">
+            <div className="space-y-4 py-4" data-testid="verify-email-failed">
               <div className="inline-flex items-center justify-center h-16 w-16 rounded-full bg-alert-rose-container text-on-alert-rose-container mb-2">
                 <span className="material-symbols-outlined text-3xl">gpp_maybe</span>
               </div>
@@ -88,13 +111,13 @@ export default function VerifyEmail() {
               <div className="flex gap-2 pt-2">
                 <button
                   onClick={() => navigate('/login')}
-                  className="flex-1 py-2.5 px-3 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-bold transition-all"
+                  className="flex-1 py-2.5 px-3 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Sign In
                 </button>
                 <button
                   onClick={() => navigate('/dashboard')}
-                  className="flex-1 py-2.5 px-3 bg-primary text-on-primary rounded-xl text-xs font-bold transition-all"
+                  className="flex-1 py-2.5 px-3 bg-primary text-on-primary rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   Go to Dashboard
                 </button>

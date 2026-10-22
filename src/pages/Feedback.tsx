@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Button } from '../components/ui/Button';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
@@ -38,7 +38,9 @@ export function Feedback() {
   const [reviews, setReviews] = useState<any[]>([]);
   const [submitted, setSubmitted] = useState(false);
   const [submittingError, setSubmittingError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [peers, setPeers] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<any[]>([]);
   const [targetUserId, setTargetUserId] = useState('');
   const [selectedTopic, setSelectedTopic] = useState('React Fundamentals');
 
@@ -66,13 +68,71 @@ export function Feedback() {
     if (!currentUser) {
       api.getMe().then(setCurrentUser).catch(console.error);
     }
-    api.getPeers().then(data => {
-      setPeers(data);
-      if (data.length > 0) {
-        setTargetUserId(data[0].id);
-      }
+    Promise.all([
+      api.getPeers().catch(() => []),
+      api.getSessions().catch(() => [])
+    ]).then(([peersData, sessionsData]) => {
+      setPeers(Array.isArray(peersData) ? peersData : []);
+      setSessions(Array.isArray(sessionsData) ? sessionsData : []);
     }).catch(console.error);
   }, [currentUser, setCurrentUser]);
+
+  // Filter peers to only those with verified sessions (confirmed, completed, or live)
+  const verifiedPeers = useMemo(() => {
+    if (!currentUser) return [];
+    const verifiedStatuses = new Set(['confirmed', 'completed', 'live']);
+    const verifiedPartnerIds = new Set<string>();
+
+    sessions.forEach(s => {
+      if (!s || !verifiedStatuses.has(s.status)) return;
+      const isTeacher = s.teacherId === currentUser.id || s.teacher?.id === currentUser.id;
+      const isStudent = s.studentId === currentUser.id || s.student?.id === currentUser.id ||
+        (Array.isArray(s.students) && s.students.some((st: any) => (st.id || st) === currentUser.id));
+
+      if (isTeacher) {
+        if (s.studentId && s.studentId !== currentUser.id) verifiedPartnerIds.add(s.studentId);
+        if (s.student?.id && s.student.id !== currentUser.id) verifiedPartnerIds.add(s.student.id);
+        if (Array.isArray(s.students)) {
+          s.students.forEach((st: any) => {
+            const sid = st.id || st;
+            if (sid && sid !== currentUser.id) verifiedPartnerIds.add(sid);
+          });
+        }
+      } else if (isStudent) {
+        const tid = s.teacherId || s.teacher?.id;
+        if (tid && tid !== currentUser.id) verifiedPartnerIds.add(tid);
+      }
+    });
+
+    const list: any[] = [];
+    const seen = new Set<string>();
+
+    verifiedPartnerIds.forEach(pId => {
+      if (seen.has(pId)) return;
+      seen.add(pId);
+      const found = peers.find(p => p.id === pId);
+      if (found) {
+        list.push(found);
+      } else {
+        const partnerSession = sessions.find(s => s.teacherId === pId || s.teacher?.id === pId || s.studentId === pId || s.student?.id === pId);
+        const name = (partnerSession?.teacherId === pId ? partnerSession?.teacher?.name : partnerSession?.student?.name) || 'Verified Peer';
+        list.push({ id: pId, name });
+      }
+    });
+
+    return list;
+  }, [currentUser, peers, sessions]);
+
+  // Keep targetUserId in sync with verifiedPeers
+  useEffect(() => {
+    if (verifiedPeers.length > 0) {
+      if (!targetUserId || !verifiedPeers.some(p => p.id === targetUserId)) {
+        setTargetUserId(verifiedPeers[0].id);
+      }
+    } else {
+      setTargetUserId('');
+    }
+  }, [verifiedPeers, targetUserId]);
 
   useEffect(() => {
     loadReviews();
@@ -82,66 +142,35 @@ export function Feedback() {
     setSelectedChips(prev => prev.includes(chip) ? prev.filter(c => c !== chip) : [...prev, chip]);
   };
 
-  const handleSubmit = () => {
-    if (rating === 0 || !currentUser || !targetUserId) return;
-    
-    const tempId = 'opt-rev-' + Date.now();
-    const targetPeer = peers.find(p => p.id === targetUserId);
-    const reviewPayload = {
-      id: tempId,
-      authorId: currentUser.id,
-      author: currentUser,
-      targetId: targetUserId,
-      target: targetPeer,
-      topic: selectedTopic,
-      rating,
-      quote: testimonial || 'Excellent session!',
-      chips: selectedChips,
-      createdAt: new Date().toISOString(),
-      status: 'submitting' as const
-    };
+  const handleSubmit = async () => {
+    if (rating === 0 || !currentUser || !targetUserId || isSubmitting) return;
 
-    // Preserve form state in case rollback is needed
-    const prevRating = rating;
-    const prevChips = selectedChips;
-    const prevTestimonial = testimonial;
-
-    // Optimistically update UI
-    setReviews(prev => [reviewPayload, ...prev]);
-    setRating(0);
-    setSelectedChips([]);
-    setTestimonial('');
-    setSubmitted(true);
+    setIsSubmitting(true);
     setSubmittingError('');
+    setSubmitted(false);
 
-    api.postReview({
-      authorId: currentUser.id,
-      targetId: targetUserId,
-      topic: selectedTopic,
-      rating: prevRating,
-      quote: prevTestimonial || 'Excellent session!',
-      chips: prevChips
-    })
-      .then(savedRev => {
-        if (savedRev && savedRev.id) {
-          setReviews(prev => prev.map(r => r.id === tempId ? { ...savedRev, status: 'confirmed' } : r));
-        } else {
-          setReviews(prev => prev.map(r => r.id === tempId ? { ...r, status: 'confirmed' } : r));
-        }
-        loadReviews();
-        api.getMe().then(setCurrentUser).catch(console.error);
-        setTimeout(() => setSubmitted(false), 3000);
-      })
-      .catch(err => {
-        console.error('Failed to submit review:', err);
-        // ROLLBACK: Remove optimistic entry, restore form state, surface failure message
-        setReviews(prev => prev.filter(r => r.id !== tempId));
-        setSubmitted(false);
-        setRating(prevRating);
-        setSelectedChips(prevChips);
-        setTestimonial(prevTestimonial);
-        setSubmittingError('Failed to submit feedback. Form state restored — please try submitting again.');
+    try {
+      await api.postReview({
+        authorId: currentUser.id,
+        targetId: targetUserId,
+        topic: selectedTopic || 'Peer Mentoring Session',
+        rating,
+        quote: testimonial.trim() || 'Excellent session!',
+        chips: selectedChips
       });
+
+      setSubmitted(true);
+      setRating(0);
+      setSelectedChips([]);
+      setTestimonial('');
+      loadReviews();
+      api.getMe().then(setCurrentUser).catch(console.error);
+    } catch (err: any) {
+      console.error('Failed to submit review:', err);
+      setSubmittingError(err?.message || 'Failed to submit feedback. Please try again.');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -222,33 +251,45 @@ export function Feedback() {
 
         {/* Rate Recent Session Form */}
         <div className="bg-surface border border-outline-variant rounded-2xl p-6 shadow-elevation-1 lg:col-span-2">
-          <div className="flex items-center justify-between mb-6 border-b border-outline-variant pb-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6 border-b border-outline-variant pb-4">
             <h3 className="text-lg font-black text-on-surface">Rate Recent Session</h3>
             <div className="flex items-center gap-3">
               <span className="text-xs font-bold text-on-surface-variant">Review for:</span>
-              <select 
-                value={targetUserId}
-                onChange={e => setTargetUserId(e.target.value)}
-                className="rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
-              >
-                {peers.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              {verifiedPeers.length === 0 ? (
+                <span className="text-xs text-on-surface-variant font-bold italic">No peers with verified sessions yet</span>
+              ) : (
+                <select 
+                  data-testid="feedback-peer-select"
+                  value={targetUserId}
+                  onChange={e => setTargetUserId(e.target.value)}
+                  className="rounded-xl border border-outline-variant bg-surface text-xs font-bold text-on-surface p-2 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                >
+                  {verifiedPeers.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              )}
             </div>
           </div>
 
+          {verifiedPeers.length === 0 && (
+            <div className="mb-4 p-3 bg-surface-container border border-outline-variant text-on-surface-variant rounded-xl text-xs flex items-center gap-2">
+              <span className="material-symbols-outlined text-base">info</span>
+              <span>You can only review peers after completing a verified mentoring session with them.</span>
+            </div>
+          )}
+
           {submittingError && (
-            <div className="mb-4 p-3.5 bg-alert-rose-container border border-alert-rose/20 text-on-alert-rose-container rounded-xl text-xs font-semibold flex items-center gap-2">
+            <div data-testid="feedback-error-banner" className="mb-4 p-3.5 bg-alert-rose-container border border-alert-rose/20 text-on-alert-rose-container rounded-xl text-xs font-semibold flex items-center gap-2">
               <span className="material-symbols-outlined text-alert-rose text-base">error</span>
-              {submittingError}
+              <span>{submittingError}</span>
             </div>
           )}
 
           {submitted && (
-            <div className="mb-4 p-3.5 bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded-xl text-xs font-semibold flex items-center gap-2">
+            <div data-testid="feedback-success-banner" className="mb-4 p-3.5 bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded-xl text-xs font-semibold flex items-center gap-2">
               <span className="material-symbols-outlined text-teaching-emerald text-base">check_circle</span>
-              Feedback submitted successfully! Thank you for rating your peer.
+              <span>Feedback submitted successfully! Thank you for rating your peer.</span>
             </div>
           )}
 
@@ -305,8 +346,14 @@ export function Feedback() {
             </div>
 
             <div className="flex justify-end">
-              <Button variant="primary" onClick={handleSubmit} className={`font-bold px-6 ${rating === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}>
-                Submit Feedback
+              <Button 
+                variant="primary" 
+                data-testid="submit-feedback-btn"
+                disabled={rating === 0 || !targetUserId || isSubmitting}
+                onClick={handleSubmit} 
+                className={`font-bold px-6 ${rating === 0 || !targetUserId || isSubmitting ? 'opacity-50 cursor-not-allowed' : ''}`}
+              >
+                {isSubmitting ? 'Submitting…' : 'Submit Feedback'}
               </Button>
             </div>
           </div>

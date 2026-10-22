@@ -6,6 +6,7 @@ import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
 import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
+import { getUserTimezone, getTimezoneAbbreviation } from '../lib/timezone';
 
 const DAYS_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const HOURS = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]; // 8 AM to 9 PM
@@ -32,6 +33,8 @@ const getDefaultTimeString = () => {
 };
 
 export function Schedule() {
+  const userTz = getUserTimezone();
+  const tzAbbr = getTimezoneAbbreviation(userTz);
   const [activeTab, setActiveTab] = useState('confirmed');
   const [sessions, setSessions] = useState<any[]>([]);
   const [peers, setPeers] = useState<any[]>([]);
@@ -202,7 +205,7 @@ export function Schedule() {
   const getWeekRangeString = () => {
     const end = new Date(weekStart);
     end.setDate(end.getDate() + 6);
-    return `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    return `${weekStart.toLocaleDateString('en-US', { timeZone: userTz, month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { timeZone: userTz, month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
   // Filter sessions involving current user (teacher, student, or enrolled in cohort)
@@ -314,11 +317,31 @@ export function Schedule() {
     return userSessions.find(s => {
       if (s.status === 'completed' || isPastSession(s)) return false;
       const sDate = new Date(s.scheduledAt);
+
+      const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: userTz,
+        year: 'numeric',
+        month: 'numeric',
+        day: 'numeric',
+        hour: 'numeric',
+        hourCycle: 'h23'
+      });
+      const sParts = formatter.formatToParts(sDate);
+      const sY = sParts.find(p => p.type === 'year')?.value;
+      const sM = sParts.find(p => p.type === 'month')?.value;
+      const sD = sParts.find(p => p.type === 'day')?.value;
+      const sH = parseInt(sParts.find(p => p.type === 'hour')?.value || '0', 10);
+
+      const slotParts = formatter.formatToParts(slotDate);
+      const slotY = slotParts.find(p => p.type === 'year')?.value;
+      const slotM = slotParts.find(p => p.type === 'month')?.value;
+      const slotD = slotParts.find(p => p.type === 'day')?.value;
+
       const matchesSlot = (
-        sDate.getFullYear() === slotDate.getFullYear() &&
-        sDate.getMonth() === slotDate.getMonth() &&
-        sDate.getDate() === slotDate.getDate() &&
-        sDate.getHours() === hour
+        sY === slotY &&
+        sM === slotM &&
+        sD === slotD &&
+        sH === hour
       );
       if (!matchesSlot) return false;
       if (searchQuery.trim() === '') return true;
@@ -506,7 +529,9 @@ export function Schedule() {
       setConflictData(null);
       setIsSlotAvailable(null);
     } catch (err: any) {
-      if (err.conflict) {
+      if (err.code === 'MENTOR_PAYOUT_NOT_CONFIGURED' || err.message?.includes('MENTOR_PAYOUT_NOT_CONFIGURED') || err.message?.includes('payout address (VPA)')) {
+        setBookingError('This mentor has not set up payments yet. Booking is currently unavailable for this mentor.');
+      } else if (err.conflict) {
         setIsSlotAvailable(false);
         setConflictData({
           nearestSlot: err.nearestSlot || null,
@@ -516,7 +541,7 @@ export function Schedule() {
         });
         const peerName = peers.find(p => p.id === selectedPeerId)?.name || 'this teacher';
         setBookingError(err.message || `This time slot is already booked for ${peerName}.`);
-      } else if (err.message && (err.message.includes('Unauthorized') || err.message.includes('authentication token') || err.message.includes('token'))) {
+      } else if (err.status === 401 || (err.message && (err.message.includes('Unauthorized') || err.message.includes('authentication token') || err.message.includes('auth token') || err.message.includes('session has expired')))) {
         setBookingError('Your session has expired or requires sign-in. Please sign in to reserve this lecture.');
       } else {
         setBookingError(err.message || 'Failed to create booking.');
@@ -627,7 +652,12 @@ export function Schedule() {
           {/* Weekly Grid */}
           <div className="lg:col-span-8 flex flex-col p-0 overflow-hidden shadow-sm border border-border rounded-3xl bg-surface">
             <div className="p-4 sm:p-6 border-b border-border flex justify-between items-center bg-surface-2">
-              <h3 className="font-extrabold text-base sm:text-lg text-text">Weekly Availability</h3>
+              <div className="flex items-center gap-2">
+                <h3 className="font-extrabold text-base sm:text-lg text-text">Weekly Availability</h3>
+                <span className="px-2 py-0.5 rounded-full bg-primary-tint text-primary-text font-bold text-[10px]" title={userTz}>
+                  {tzAbbr} ({userTz})
+                </span>
+              </div>
               <div className="flex items-center gap-1.5 sm:gap-2 bg-surface px-2.5 sm:px-3 py-1.5 rounded-xl border border-border shadow-sm">
                 <button onClick={handlePrevWeek} aria-label="Previous week" className="p-1 hover:bg-surface-2 rounded-lg transition-colors text-muted hover:text-text">
                   <span className="material-symbols-outlined text-md">chevron_left</span>
@@ -642,7 +672,7 @@ export function Schedule() {
               <div className="min-w-[640px] sm:min-w-[700px]">
                 {/* Header Row */}
                 <div className="grid grid-cols-8 gap-2 mb-4 border-b border-border pb-3">
-                  <div className="text-right pr-4 text-xs font-bold text-muted pt-2">GMT</div>
+                  <div className="text-right pr-4 text-xs font-bold text-primary pt-2" title={userTz}>{tzAbbr}</div>
                   {DAYS_SHORT.map((day, idx) => {
                     const date = new Date(weekStart);
                     date.setDate(date.getDate() + idx);
@@ -696,9 +726,9 @@ export function Schedule() {
                             onClick={() => {
                               const cellDate = new Date(weekStart);
                               cellDate.setDate(cellDate.getDate() + dayIdx);
-                              const year = cellDate.getFullYear();
-                              const month = String(cellDate.getMonth() + 1).padStart(2, '0');
-                              const date = String(cellDate.getDate()).padStart(2, '0');
+                              const year = cellDate.toLocaleDateString('en-CA', { timeZone: userTz, year: 'numeric' });
+                              const month = cellDate.toLocaleDateString('en-CA', { timeZone: userTz, month: '2-digit' });
+                              const date = cellDate.toLocaleDateString('en-CA', { timeZone: userTz, day: '2-digit' });
                               setBookingDate(`${year}-${month}-${date}`);
                               setBookingTime(`${String(hour).padStart(2, '0')}:00`);
                               setIsBookingOpen(true);
@@ -1178,10 +1208,21 @@ export function Schedule() {
                   <option value="">-- Choose Peer --</option>
                   {peers
                     .filter(p => p.role === 'teacher' || p.role === 'both' || (Array.isArray(p.skillsTaught) && p.skillsTaught.length > 0) || (Array.isArray(p.userSkills) && p.userSkills.some((us: any) => us.type === 'teaches')))
-                    .map(p => (
-                      <option key={p.id} value={p.id}>{p.name} — ₹{p.hourlyRate || 499}/hr</option>
-                    ))}
+                    .map(p => {
+                      const hasUpi = Boolean(p.upiId || p.hasUpiConfigured);
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {hasUpi ? `— ₹${p.hourlyRate || 499}/hr` : '(Payments Not Set Up)'}
+                        </option>
+                      );
+                    })}
                 </select>
+                {selectedPeer && !selectedPeer.upiId && !selectedPeer.hasUpiConfigured && (
+                  <div className="p-3 rounded-2xl bg-accent-tint border border-accent/40 text-accent-text text-xs flex items-center gap-2 mt-2">
+                    <span className="material-symbols-outlined text-base shrink-0">warning</span>
+                    <span>This mentor has not set up payments yet. Booking is currently unavailable for this mentor.</span>
+                  </div>
+                )}
               </div>
 
               {/* Lecture Format & Capacity Choice */}
@@ -1266,7 +1307,10 @@ export function Schedule() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2">Time</label>
+                  <label className="block text-xs font-extrabold text-text uppercase tracking-wider mb-2 flex items-center justify-between">
+                    <span>Time</span>
+                    <span className="text-[10px] font-bold text-muted px-1.5 py-0.5 rounded bg-surface-2 border border-border">{tzAbbr}</span>
+                  </label>
                   <input 
                     type="time" 
                     className="w-full rounded-xl border border-border bg-surface text-xs font-bold text-text p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
@@ -1302,7 +1346,7 @@ export function Schedule() {
               <Button 
                 variant="primary" 
                 onClick={() => handleCreateBooking()}
-                disabled={isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict)}
+                disabled={isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict) || Boolean(selectedPeer && !selectedPeer.upiId && !selectedPeer.hasUpiConfigured)}
               >
                 {isCheckingAvailability ? (
                   <>

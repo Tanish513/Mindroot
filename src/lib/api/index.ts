@@ -1644,25 +1644,20 @@ export const api = {
   },
 
   postReview: async (data: NewReviewInput) => {
-    let createdRev: any = null;
-    try {
-      const r = await fetch(`${getBASE()}/api/reviews`, {
-        method: 'POST',
-        headers: getHeaders(),
-        body: JSON.stringify(data)
-      });
-      if (r.ok) createdRev = await safeParse(r, null);
-    } catch {}
-
-    if (!createdRev) {
-      createdRev = { id: 'review-' + Date.now(), ...data, createdAt: new Date().toISOString() };
+    const r = await fetch(`${getBASE()}/api/reviews`, {
+      method: 'POST',
+      headers: getHeaders(),
+      body: JSON.stringify(data)
+    });
+    if (!r.ok) {
+      const errRes = await safeParse(r, {});
+      throw new Error(errRes.error || 'Failed to submit review');
     }
-
+    const createdRev = await safeParse(r, null);
     try {
       globalSocket.emit('post-review-sync', createdRev);
       globalBc.postMessage({ type: 'post-review-sync', review: createdRev });
     } catch {}
-
     return createdRev;
   },
 

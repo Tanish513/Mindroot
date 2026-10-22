@@ -290,7 +290,7 @@ export function VideoTile({
 
   return (
     <div className={clsx(
-      "group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950 shadow-sm transition-all duration-200 flex items-center justify-center select-none",
+      "group relative overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-xs transition-all duration-200 flex items-center justify-center select-none",
       className || "aspect-video"
     )}>
       <StreamVideo
@@ -299,21 +299,22 @@ export function VideoTile({
         cameraOff={cameraOff}
         isRemote={isRemote}
         onUnlockAudio={onUnlockAudio}
-        className="h-full w-full bg-slate-950 object-cover"
+        className="h-full w-full bg-surface-2 object-cover"
       />
 
       {isSimulated && (
-        <div className="absolute top-2 right-2 bg-amber-500/95 text-slate-950 font-black px-2 py-0.5 rounded-md text-[9px] uppercase tracking-wider shadow-md backdrop-blur-md z-30 flex items-center gap-1 border border-amber-300">
-          <span className="material-symbols-outlined text-[12px]">smart_display</span>
-          <span>Simulated Playback (Demo)</span>
+        <div className="absolute top-2 right-2 bg-accent text-on-primary font-black px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider shadow-xs backdrop-blur-md z-30 flex items-center gap-1 border border-accent-text/20">
+          <span className="material-symbols-outlined text-xs">smart_display</span>
+          <span>Simulated</span>
         </div>
       )}
 
       {hasMultipleCameras && onSwitchCamera && (
         <button
           onClick={onSwitchCamera}
-          className="absolute top-2 left-2 bg-slate-900/85 hover:bg-primary text-white p-1 rounded-lg backdrop-blur-md transition-all border border-white/20 shadow-md flex items-center gap-1 px-2 text-[10px] font-bold z-20 active:scale-95"
+          className="absolute top-2 left-2 bg-surface/85 hover:bg-primary text-text hover:text-on-primary p-1 rounded-lg backdrop-blur-md transition-all border border-border shadow-xs flex items-center gap-1 px-2 text-xs font-bold z-20 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
           title="Switch Camera"
+          aria-label="Switch Camera"
         >
           <span className="material-symbols-outlined text-xs">flip_camera_ios</span>
           <span>Flip</span>
@@ -321,38 +322,39 @@ export function VideoTile({
       )}
 
       {showPlaceholder && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-container-high p-2 text-center z-10">
-          <div className={clsx('grid h-12 w-12 place-items-center rounded-2xl text-base font-bold text-white shadow-md', accent)}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-2 p-2 text-center z-10">
+          <div className={clsx('grid h-11 w-11 place-items-center rounded-2xl text-base font-bold text-white shadow-xs', accent || 'bg-primary')}>
             {waiting ? <span className="material-symbols-outlined animate-pulse text-lg">person_search</span> : cleanDisplayName.slice(0, 1).toUpperCase()}
           </div>
-          <p className="text-[10px] font-medium text-on-surface-variant mt-1.5">
-            {waiting ? 'Connecting…' : (cameraOff ? 'Camera Off' : 'Waiting for video stream…')}
+          <p className="text-xs font-semibold text-muted mt-1.5">
+            {waiting ? 'Connecting…' : (cameraOff ? 'Camera Off' : 'Waiting for video…')}
           </p>
         </div>
       )}
 
       {/* Role Pill & Name Badge on bottom left */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-white/20 bg-slate-900/90 text-white px-2 py-0.5 text-[11px] font-bold shadow-md backdrop-blur-md z-20 max-w-[88%]">
-        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-learning-amber" : "bg-teaching-emerald animate-pulse")} />
+      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface/90 text-text px-2 py-0.5 text-xs font-bold shadow-xs backdrop-blur-md z-20 max-w-[88%]">
+        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-accent" : "bg-primary animate-pulse")} />
         <span className="truncate">{cleanDisplayName}</span>
-        <span className={`text-[9px] uppercase px-1.5 py-0.2 rounded font-black tracking-wider shrink-0 ${
-          isTeacher ? 'bg-teaching-emerald text-on-teaching-emerald' : 'bg-learning-amber text-on-learning-amber'
-        }`}>
+        <span className={clsx(
+          "text-[10px] uppercase px-1.5 py-0.5 rounded font-black tracking-wider shrink-0",
+          isTeacher ? 'bg-primary text-on-primary' : 'bg-accent text-on-primary'
+        )}>
           {isTeacher ? 'Teacher' : 'Student'}
         </span>
       </div>
 
       {/* Mic Status Badge on bottom right */}
       {micOff && (
-        <div className="absolute bottom-2 right-2 bg-rose-500/90 text-white p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Muted">
-          <span className="material-symbols-outlined text-[13px]">mic_off</span>
+        <div className="absolute bottom-2 right-2 bg-danger text-white p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Muted" aria-label="Microphone muted">
+          <span className="material-symbols-outlined text-sm">mic_off</span>
         </div>
       )}
 
       {/* Hand Raise Badge on top right */}
       {raised && (
-        <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-amber-300 text-amber-950 shadow-md animate-bounce z-20">
-          <span className="material-symbols-outlined text-[15px]">pan_tool</span>
+        <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-accent text-on-primary shadow-xs animate-bounce z-20" aria-label="Hand raised">
+          <span className="material-symbols-outlined text-sm">pan_tool</span>
         </div>
       )}
     </div>

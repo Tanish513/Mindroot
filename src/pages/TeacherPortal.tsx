@@ -5,6 +5,7 @@ import { api, getSessionApproverId, onSessionsUpdated, onSessionRequestCreated }
 import { useAppStore } from '../store/useAppStore';
 import { isValidPrice, calculateBatchPricing } from '../lib/pricing';
 import { showAppToast } from '../components/NotificationManager';
+import { getUserTimezone, getTimezoneAbbreviation } from '../lib/timezone';
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
 const HOURS = ['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '02:00 PM', '03:00 PM'];
@@ -24,6 +25,8 @@ const avatars = [
 ];
 
 export function TeacherPortal() {
+  const userTz = getUserTimezone();
+  const tzAbbr = getTimezoneAbbreviation(userTz);
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -249,6 +252,33 @@ export function TeacherPortal() {
         </Button>
       </div>
 
+      {/* Blank-UPI Payments Not Set Up State */}
+      {!currentUser?.upiId && (
+        <div className="bg-accent-tint border border-accent/40 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-surface border border-accent/30 text-accent flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-2xl">payment</span>
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-text flex items-center gap-2">
+                <span>Payments Not Set Up</span>
+                <span className="px-2 py-0.5 rounded-full bg-accent text-on-accent text-[10px] font-extrabold uppercase">Action Required</span>
+              </h4>
+              <p className="text-xs text-muted font-medium mt-0.5">
+                You haven't configured a UPI payout address (VPA). Direct peer bookings are disabled for your profile until your payment address is configured.
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => navigate('/profile')}
+            className="px-4 py-2 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold transition-all shrink-0 shadow-sm flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            <span>Configure UPI in Profile</span>
+            <span className="material-symbols-outlined text-sm">arrow_forward</span>
+          </button>
+        </div>
+      )}
+
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
@@ -400,6 +430,9 @@ export function TeacherPortal() {
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-on-surface">Weekly Availability Schedule</h3>
+                <span className="px-2 py-0.5 rounded-full bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20 font-bold text-[10px]" title={userTz}>
+                  {tzAbbr} ({userTz})
+                </span>
                 {savedNotice && (
                   <span className="text-[11px] font-extrabold text-teaching-emerald flex items-center gap-0.5">
                     <span className="material-symbols-outlined text-xs">check_circle</span>

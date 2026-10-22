@@ -11,6 +11,7 @@ import {
   io,
   inMemoryUsers,
   inMemoryNotes,
+  inMemorySessions,
   syncWithDatabasePromise
 } from '../src/index';
 
@@ -221,6 +222,81 @@ async function runNotesApiTests() {
     socketA.close();
     socketB.close();
     console.log('✅ Test 7 Passed: Private note websocket events are strictly scoped; unrelated socket never receives private note events.');
+
+    // TEST 8: 2-Seat Cohort Session Shared Note Save, Update & Access
+    console.log('\n--- TEST 8: 2-Seat Cohort Session Shared Note Save & Access ---');
+    const cohortSession = {
+      id: `session-cohort-2seat-${timestamp}`,
+      title: '2-Seat Advanced System Design',
+      teacherId: userA.id,
+      maxCapacity: 2,
+      status: 'confirmed',
+      scheduledAt: new Date(Date.now() + 3600000).toISOString(),
+      students: [
+        { id: userB.id, name: userB.name }
+      ]
+    };
+    inMemorySessions.push(cohortSession as any);
+
+    // Mentor creates note on 2-seat cohort session with visibility: shared
+    const sharedNoteRes = await fetch(`${baseUrl}/api/notes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer dev-token-${userA.id}`
+      },
+      body: JSON.stringify({
+        title: 'System Design Lecture Takeaways',
+        content: '<p>Distributed consensus, Raft, Paxos</p>',
+        tags: ['Architecture', 'Distributed'],
+        type: 'regular',
+        sessionId: cohortSession.id,
+        visibility: 'shared'
+      })
+    });
+    assert.strictEqual(sharedNoteRes.status, 201, 'Mentor must be able to create shared note for 2-seat session');
+    const sharedNote = await sharedNoteRes.json();
+    assert.strictEqual(sharedNote.visibility, 'shared');
+    assert.strictEqual(sharedNote.sharedWithUserId, userB.id);
+
+    // Mentor saves / updates the note again (simulating subsequent Save)
+    const updateSharedRes = await fetch(`${baseUrl}/api/notes/${sharedNote.id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer dev-token-${userA.id}`
+      },
+      body: JSON.stringify({
+        title: 'System Design Lecture Takeaways - Saved',
+        content: '<p>Distributed consensus, Raft, Paxos, and 2PC</p>',
+        tags: ['Architecture', 'Distributed'],
+        sessionId: cohortSession.id,
+        visibility: 'shared'
+      })
+    });
+    assert.strictEqual(updateSharedRes.status, 200, 'Mentor update of shared note must return 200');
+    const updatedSharedNote = await updateSharedRes.json();
+    assert.strictEqual(updatedSharedNote.visibility, 'shared');
+    assert.strictEqual(updatedSharedNote.sharedWithUserId, userB.id);
+
+    // Student userB fetches shared notes
+    const studentSharedListRes = await fetch(`${baseUrl}/api/notes?filter=shared`, {
+      headers: { 'Authorization': `Bearer dev-token-${userB.id}` }
+    });
+    assert.strictEqual(studentSharedListRes.status, 200);
+    const studentSharedList = await studentSharedListRes.json();
+    assert.ok(studentSharedList.some((n: any) => n.id === sharedNote.id), 'Student of 2-seat session must see the shared note');
+
+    // Student userB can save a copy of the shared note
+    const copyRes = await fetch(`${baseUrl}/api/notes/${sharedNote.id}/save-copy`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer dev-token-${userB.id}` }
+    });
+    assert.strictEqual(copyRes.status, 201);
+    const copyNote = await copyRes.json();
+    assert.strictEqual(copyNote.authorId, userB.id);
+    assert.ok(copyNote.title.includes('Copy'));
+    console.log('✅ Test 8 Passed: 2-seat cohort session shared note saved, preserved shared status, and accessible to cohort student.');
 
     console.log('\n====================================================');
     console.log('🎉 All Notes API & Model Verification Tests Passed!');

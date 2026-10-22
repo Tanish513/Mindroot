@@ -490,7 +490,7 @@ export function NotificationManager() {
 
   return (
     <div 
-      className="fixed z-50 flex flex-col gap-3 pointer-events-none w-full max-w-sm px-4 sm:px-0 bottom-4 left-1/2 -translate-x-1/2 sm:bottom-auto sm:top-20 sm:right-8 sm:left-auto sm:translate-x-0"
+      className="fixed z-40 flex flex-col-reverse gap-2.5 pointer-events-none w-full max-w-sm px-4 sm:px-0 bottom-4 right-4 sm:bottom-6 sm:right-6 left-auto translate-x-0"
       aria-label="Notifications"
     >
       <AnimatePresence mode="popLayout">
@@ -525,7 +525,7 @@ function ToastCard({
   shouldReduceMotion
 }: ToastCardProps) {
   const navigate = useNavigate();
-  const defaultDuration = toast.duration || (toast.type === 'request' ? 12000 : 4000);
+  const defaultDuration = toast.duration || (toast.type === 'request' ? 8000 : 4000);
   const remainingTimeRef = useRef(defaultDuration);
   const timerStartRef = useRef(Date.now());
   const timerIdRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -675,7 +675,11 @@ function ToastCard({
                 <button
                   type="button"
                   disabled={toast.inFlight}
-                  onClick={(e) => onAccept(toast, e)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onAccept(toast, e);
+                  }}
                   className="flex-1 py-1.5 px-3 rounded-xl bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs shadow transition-all flex items-center justify-center gap-1 active:scale-95 disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-sm">check_circle</span>
@@ -684,7 +688,11 @@ function ToastCard({
                 <button
                   type="button"
                   disabled={toast.inFlight}
-                  onClick={(e) => onDecline(toast, e)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onDecline(toast, e);
+                  }}
                   className="flex-1 py-1.5 px-3 rounded-xl bg-surface-2 hover:bg-danger/10 text-danger font-bold text-xs border border-border transition-all flex items-center justify-center gap-1 active:scale-95 disabled:opacity-50"
                 >
                   <span className="material-symbols-outlined text-sm">cancel</span>
@@ -699,6 +707,7 @@ function ToastCard({
                 <button
                   type="button"
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     if (toast.link) navigate(toast.link);
                     onDismiss();
@@ -717,6 +726,7 @@ function ToastCard({
                 <button
                   type="button"
                   onClick={(e) => {
+                    e.preventDefault();
                     e.stopPropagation();
                     if (toast.link) navigate(toast.link);
                     onDismiss();
@@ -735,10 +745,11 @@ function ToastCard({
         <button
           type="button"
           onClick={(e) => {
+            e.preventDefault();
             e.stopPropagation();
             onDismiss();
           }}
-          className="text-muted hover:text-text p-1 rounded-lg hover:bg-surface-2 transition-colors shrink-0 -mr-1 -mt-1"
+          className="text-muted hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors shrink-0 -mr-1 -mt-1 cursor-pointer pointer-events-auto"
           aria-label="Close notification"
           title="Dismiss"
         >

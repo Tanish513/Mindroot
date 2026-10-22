@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import path from 'path';
+import fs from 'fs';
 
 const userFixture = {
   id: 'e2e-user-1',
@@ -111,7 +112,10 @@ test.describe('Live Room & Sidebar Suite', () => {
   });
 
   test('Capture before/after screenshots of the sidebar in light and dark mode', async ({ page }) => {
-    const artifactDir = 'C:\\Users\\tanis\\.gemini\\antigravity\\brain\\c54ac250-6665-4660-b3f0-8113f961052e';
+    const artifactDir = path.join(process.cwd(), 'test-results');
+    if (!fs.existsSync(artifactDir)) {
+      fs.mkdirSync(artifactDir, { recursive: true });
+    }
 
     await page.goto('/dashboard');
     const sidebar = page.locator('aside').first();

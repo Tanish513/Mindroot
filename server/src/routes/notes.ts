@@ -171,7 +171,15 @@ export function createNotesRouter(options: {
       let notes = inMemoryNotes.filter(n => {
         // Permission rule: user can read their own notes OR notes shared with them
         const isAuthor = n.authorId === userId;
-        const isSharedWithMe = n.visibility === 'shared' && n.sharedWithUserId === userId;
+        const isSharedWithMe = n.visibility === 'shared' && (
+          n.sharedWithUserId === userId ||
+          (n.sessionId && (() => {
+            const sess = findSession(n.sessionId);
+            if (!sess) return false;
+            return sess.studentId === userId || sess.student?.id === userId ||
+              (Array.isArray(sess.students) && sess.students.some((st: any) => (st.id || st) === userId));
+          })())
+        );
         return isAuthor || isSharedWithMe;
       });
 
@@ -189,7 +197,15 @@ export function createNotesRouter(options: {
       if (filter === 'my') {
         notes = notes.filter(n => n.authorId === userId);
       } else if (filter === 'shared') {
-        notes = notes.filter(n => n.visibility === 'shared' && n.sharedWithUserId === userId);
+        notes = notes.filter(n => n.visibility === 'shared' && (
+          n.sharedWithUserId === userId ||
+          (n.sessionId && (() => {
+            const sess = findSession(n.sessionId);
+            if (!sess) return false;
+            return sess.studentId === userId || sess.student?.id === userId ||
+              (Array.isArray(sess.students) && sess.students.some((st: any) => (st.id || st) === userId));
+          })())
+        ));
       } else if (filter === 'by_session') {
         notes = notes.filter(n => Boolean(n.sessionId));
       }
@@ -499,7 +515,7 @@ export function createNotesRouter(options: {
         const session = findSession(sessionId);
         if (session) {
           resolvedSessionId = session.id;
-          const isMentor = session.teacherId === userId || session.teacher?.id === userId;
+          const isMentor = session.teacherId === userId || session.teacher?.id === userId || session.mentorId === userId;
           const isStudent = session.studentId === userId || session.student?.id === userId ||
             (Array.isArray(session.students) && session.students.some((st: any) => (st.id || st) === userId));
 
@@ -513,7 +529,7 @@ export function createNotesRouter(options: {
               return res.status(403).json({ error: 'Only the session mentor can share notes with the student.' });
             }
             resolvedVisibility = 'shared';
-            resolvedSharedWithUserId = session.studentId || session.student?.id || (Array.isArray(session.students) && session.students[0]?.id) || null;
+            resolvedSharedWithUserId = session.studentId || session.student?.id || (Array.isArray(session.students) && (session.students[0]?.id || session.students[0])) || null;
           }
         }
       }
@@ -679,15 +695,16 @@ export function createNotesRouter(options: {
           const session = findSession(targetSessionId);
           if (session) {
             note.sessionId = session.id;
-            const isMentor = session.teacherId === userId || session.teacher?.id === userId;
-            const isStudent = session.studentId === userId || session.student?.id === userId;
+            const isMentor = session.teacherId === userId || session.teacher?.id === userId || session.mentorId === userId;
+            const isStudent = session.studentId === userId || session.student?.id === userId ||
+              (Array.isArray(session.students) && session.students.some((st: any) => (st.id || st) === userId));
 
             if (visibility === 'shared') {
               if (!isMentor) {
                 return res.status(403).json({ error: 'Only the session mentor can share notes with the student.' });
               }
               note.visibility = 'shared';
-              note.sharedWithUserId = session.studentId || session.student?.id || null;
+              note.sharedWithUserId = session.studentId || session.student?.id || (Array.isArray(session.students) && (session.students[0]?.id || session.students[0])) || null;
             } else if (visibility === 'private') {
               note.visibility = 'private';
               note.sharedWithUserId = null;
@@ -769,7 +786,15 @@ export function createNotesRouter(options: {
       }
 
       // Check that this note is indeed shared with this user or authored by them
-      const isSharedWithMe = original.visibility === 'shared' && original.sharedWithUserId === userId;
+      const isSharedWithMe = original.visibility === 'shared' && (
+        original.sharedWithUserId === userId ||
+        (original.sessionId && (() => {
+          const sess = findSession(original.sessionId);
+          if (!sess) return false;
+          return sess.studentId === userId || sess.student?.id === userId ||
+            (Array.isArray(sess.students) && sess.students.some((st: any) => (st.id || st) === userId));
+        })())
+      );
       if (!isSharedWithMe && original.authorId !== userId) {
         return res.status(403).json({ error: 'Forbidden: You cannot copy an unshared private note.' });
       }

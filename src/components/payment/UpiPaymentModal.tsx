@@ -162,11 +162,11 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-3xl w-full max-w-lg shadow-lg overflow-hidden transition-all duration-200">
+      <div className="bg-surface border border-border rounded-3xl w-full max-w-lg max-h-[min(90vh,720px)] flex flex-col shadow-lg overflow-hidden transition-all duration-200">
         
         {/* Success / Receipt Screen */}
         {successDetails ? (
-          <div className="p-6 md:p-8 text-center space-y-5">
+          <div className="p-6 md:p-8 text-center space-y-5 overflow-y-auto flex-1">
             <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-primary-tint text-primary-text border border-primary/20 ring-8 ring-primary/5 animate-bounce">
               <span className="material-symbols-outlined text-4xl">verified</span>
             </div>
@@ -232,9 +232,9 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             </button>
           </div>
         ) : (
-          <div>
+          <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Header */}
-            <div className="p-6 border-b border-border flex items-start justify-between">
+            <div className="p-6 border-b border-border flex items-start justify-between shrink-0">
               <div>
                 <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-[11px] font-bold mb-2">
                   <span className="material-symbols-outlined text-xs">lock</span>
@@ -254,7 +254,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             </div>
 
             {/* Price Banner */}
-            <div className="bg-surface-2 px-6 py-3.5 border-b border-border flex items-center justify-between">
+            <div className="bg-surface-2 px-6 py-3.5 border-b border-border flex items-center justify-between shrink-0">
               <span className="text-xs font-bold text-muted">Total Amount Due</span>
               <div className="flex items-baseline gap-1">
                 <span className="text-xs text-muted font-bold">INR</span>
@@ -264,7 +264,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
             {/* Mode Switcher Tabs — Only rendered if server has demoMode enabled */}
             {demoModeEnabled && (
-              <div className="grid grid-cols-2 p-3 gap-2 bg-surface-2 border-b border-border">
+              <div className="grid grid-cols-2 p-3 gap-2 bg-surface-2 border-b border-border shrink-0">
                 <button
                   onClick={() => setActiveTab('qr')}
                   className={`py-2 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-all ${
@@ -291,7 +291,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             )}
 
             {/* Content Body */}
-            <div className="p-6">
+            <div className="p-6 overflow-y-auto flex-1 min-h-0">
               {activeTab === 'qr' ? (
                 <div className="space-y-4">
                   {/* Error Alert if any */}
@@ -481,25 +481,6 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                           </p>
                         )}
                       </div>
-
-                      {/* Submit Real Payment */}
-                      <button
-                        onClick={() => handleConfirmPayment(false)}
-                        disabled={isSubmitting || !mentorUpi || utrInput.length !== 12}
-                        className="w-full py-3.5 px-4 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center justify-center gap-2"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
-                            <span>Confirming via Live Handshake...</span>
-                          </>
-                        ) : (
-                          <>
-                            <span className="material-symbols-outlined text-base">send_to_mobile</span>
-                            <span>I Have Transferred ₹{amount} (Confirm)</span>
-                          </>
-                        )}
-                      </button>
                     </>
                   )}
                 </div>
@@ -534,27 +515,55 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                       <span>Unlocks Whiteboard, LiveKit Room & AI Notes</span>
                     </div>
                   </div>
-
-                  <button
-                    onClick={() => handleConfirmPayment(true)}
-                    disabled={isSubmitting}
-                    className="w-full py-4 px-4 bg-primary hover:bg-primary-hover disabled:opacity-60 text-on-primary rounded-xl text-xs font-extrabold shadow-md transition-all flex items-center justify-center gap-2"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
-                        <span>Unlocking Classroom...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="material-symbols-outlined text-base">flash_on</span>
-                        <span>Complete Demo Payment (1-Click Instant Success)</span>
-                      </>
-                    )}
-                  </button>
                 </div>
               )}
             </div>
+
+            {/* Sticky Modal Footer */}
+            {activeTab === 'qr' && mentorUpi && (
+              <div className="p-4 border-t border-border bg-surface shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleConfirmPayment(false)}
+                  disabled={isSubmitting || !mentorUpi || utrInput.length !== 12}
+                  className="w-full py-3.5 px-4 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-xl text-xs font-extrabold shadow-sm transition-all flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                      <span>Confirming via Live Handshake...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base">send_to_mobile</span>
+                      <span>I Have Transferred ₹{amount} (Confirm)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
+            {activeTab === 'demo' && (
+              <div className="p-4 border-t border-border bg-surface shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleConfirmPayment(true)}
+                  disabled={isSubmitting}
+                  className="w-full py-4 px-4 bg-primary hover:bg-primary-hover disabled:opacity-60 text-on-primary rounded-xl text-xs font-extrabold shadow-md transition-all flex items-center justify-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="material-symbols-outlined text-base animate-spin">progress_activity</span>
+                      <span>Unlocking Classroom...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="material-symbols-outlined text-base">flash_on</span>
+                      <span>Complete Demo Payment (1-Click Instant Success)</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

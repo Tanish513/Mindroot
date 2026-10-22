@@ -4,10 +4,13 @@ import { Button } from '../components/ui/Button';
 import { api, onPeersUpdated, onSessionsUpdated, calculateSeatPrice, getCapacityDetails } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { motion, AnimatePresence } from 'framer-motion';
+import { getUserTimezone, getTimezoneAbbreviation } from '../lib/timezone';
 
 const categories = ['All Skills', 'Software & AI', 'Design & 3D', 'Languages', 'Business', 'Music & Audio', 'Academics'];
 
 export function Marketplace() {
+  const userTz = getUserTimezone();
+  const tzAbbr = getTimezoneAbbreviation(userTz);
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('All Skills');
   const [activeTab, setActiveTab] = useState<'mentors' | 'group_batches'>('mentors');
@@ -226,6 +229,10 @@ const convert12to24 = (time12: string) => {
       alert('Cannot book a session with a student profile. Mentoring sessions are only offered by mentors registered as teacher or both.');
       return;
     }
+    if (!peer.upiId && !peer.hasUpiConfigured) {
+      alert('This mentor has not set up payments yet. Booking is currently unavailable for this mentor.');
+      return;
+    }
     setBookingPeer(peer);
     const peerSkills = Array.isArray(peer.userSkills) && peer.userSkills.length > 0
       ? peer.userSkills 
@@ -325,7 +332,9 @@ const convert12to24 = (time12: string) => {
       setBookingSuccess(true);
     } catch (err: any) {
       console.error('Booking error:', err);
-      if (err.conflict) {
+      if (err.code === 'MENTOR_PAYOUT_NOT_CONFIGURED' || err.message?.includes('MENTOR_PAYOUT_NOT_CONFIGURED') || err.message?.includes('payout address (VPA)')) {
+        setBookingError('This mentor has not set up payments yet. Booking is currently unavailable for this mentor.');
+      } else if (err.conflict) {
         setIsSlotAvailable(false);
         setConflictData({
           nearestSlot: err.nearestSlot || null,
@@ -334,7 +343,7 @@ const convert12to24 = (time12: string) => {
           message: err.message
         });
         setBookingError(err.message || `This time slot is already booked for ${bookingPeer.name}.`);
-      } else if (err.message && (err.message.includes('Unauthorized') || err.message.includes('authentication token') || err.message.includes('token'))) {
+      } else if (err.status === 401 || (err.message && (err.message.includes('Unauthorized') || err.message.includes('authentication token') || err.message.includes('auth token') || err.message.includes('session has expired')))) {
         setBookingError('Your session has expired or requires sign-in. Please sign in to reserve this lecture.');
       } else {
         setBookingError(err.message || 'Booking initiation failed. Please try again.');
@@ -567,10 +576,22 @@ const convert12to24 = (time12: string) => {
                   >
                     Chat
                   </Button>
-                  <Button variant="primary" className="flex-1 font-semibold text-xs py-1.5 flex items-center justify-center gap-1" onClick={() => handleOpenBooking(peer)}>
-                    <span className="material-symbols-outlined text-sm">calendar_month</span>
-                    Book Lecture
-                  </Button>
+                  {(!peer.upiId && !peer.hasUpiConfigured) ? (
+                    <Button
+                      variant="secondary"
+                      disabled
+                      title="This mentor has not set up payments yet. Booking is currently unavailable."
+                      className="flex-1 font-semibold text-xs py-1.5 flex items-center justify-center gap-1 opacity-60 cursor-not-allowed"
+                    >
+                      <span className="material-symbols-outlined text-sm">payment</span>
+                      Payments Not Set Up
+                    </Button>
+                  ) : (
+                    <Button variant="primary" className="flex-1 font-semibold text-xs py-1.5 flex items-center justify-center gap-1" onClick={() => handleOpenBooking(peer)}>
+                      <span className="material-symbols-outlined text-sm">calendar_month</span>
+                      Book Lecture
+                    </Button>
+                  )}
                 </div>
               </div>
             ))}
@@ -748,6 +769,13 @@ const convert12to24 = (time12: string) => {
                   <p className="text-xs text-muted">Mentor: <strong className="text-text">{bookingPeer.name}</strong> {bookingPeer.email ? <span className="text-muted/80">({bookingPeer.email})</span> : null} · Pay After Class</p>
                 </div>
               </div>
+
+              {!bookingPeer.upiId && !bookingPeer.hasUpiConfigured && (
+                <div className="mt-4 p-3.5 rounded-2xl bg-accent-tint border border-accent/40 text-accent-text text-xs flex items-center gap-2.5">
+                  <span className="material-symbols-outlined text-xl shrink-0">error</span>
+                  <span>This mentor has not set up payments yet. Booking is currently unavailable for this mentor.</span>
+                </div>
+              )}
 
               {bookingSuccess ? (
                 <div className="space-y-4 pt-4">
@@ -938,9 +966,14 @@ const convert12to24 = (time12: string) => {
 
                     return (
                       <div className="space-y-1.5">
-                        <label className="block text-xs font-bold text-text">
-                          ⚡ Quick Availability Slots (Click to Select)
-                        </label>
+                        <div className="flex items-center justify-between">
+                          <label className="block text-xs font-bold text-text">
+                            ⚡ Quick Availability Slots (Click to Select)
+                          </label>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20">
+                            {tzAbbr} ({userTz})
+                          </span>
+                        </div>
                         <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar p-1">
                           {openSlots.slice(0, 8).map(slot => {
                             const [day, time12] = slot.split('-');
@@ -956,6 +989,7 @@ const convert12to24 = (time12: string) => {
                               >
                                 <span className="material-symbols-outlined text-xs">schedule</span>
                                 <span>{day} {time12}</span>
+                                <span className="text-[10px] opacity-75 font-semibold">({tzAbbr})</span>
                               </button>
                             );
                           })}
@@ -980,7 +1014,10 @@ const convert12to24 = (time12: string) => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-bold text-text mb-1.5">Time</label>
+                      <label className="block text-xs font-bold text-text mb-1.5 flex items-center justify-between">
+                        <span>Time</span>
+                        <span className="text-[10px] font-bold text-muted px-1.5 py-0.5 rounded bg-surface-2 border border-border">{tzAbbr}</span>
+                      </label>
                       <input 
                         type="time" 
                         className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-sm"
@@ -1083,7 +1120,7 @@ const convert12to24 = (time12: string) => {
                       variant="primary" 
                       className="flex items-center gap-1.5 px-5 font-bold"
                       onClick={() => handleReserveBooking()}
-                      disabled={isProcessingPayment || isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict)}
+                      disabled={isProcessingPayment || isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict) || (!bookingPeer.upiId && !bookingPeer.hasUpiConfigured)}
                     >
                       {isProcessingPayment ? (
                         <>

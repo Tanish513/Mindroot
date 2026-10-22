@@ -108,7 +108,7 @@ export function LiveRoom() {
   const [workspace, setWorkspace] = useState<Workspace>('whiteboard');
   const [viewMode, setViewMode] = useState<'studio' | 'gallery'>('studio');
   const [isFullscreenWorkspace, setIsFullscreenWorkspace] = useState(false);
-  const [isHalfscreenWorkspace, setIsHalfscreenWorkspace] = useState(false);
+  const [showDevOverflow, setShowDevOverflow] = useState(false);
   const [showPipVideos, setShowPipVideos] = useState(true);
   const [showFullscreenChat, setShowFullscreenChat] = useState(false);
 
@@ -1781,10 +1781,6 @@ export function LiveRoom() {
 
   const clearBoard = () => { canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height); emitRoomEvent({ type: 'canvas-clear' }); };
 
-  const toggleHalfscreenMode = () => {
-    setIsHalfscreenWorkspace(prev => !prev);
-  };
-
   if (sessionState === 'loading') {
     return (
       <div className="flex flex-col items-center justify-center min-h-[calc(100vh-120px)] p-6 select-none">
@@ -1920,8 +1916,10 @@ export function LiveRoom() {
   const videoRemoteParticipants = remoteParticipants.slice(0, maxVideoPeers);
   const overflowAudioParticipants = remoteParticipants.slice(maxVideoPeers);
 
+  const isDevOrDemo = Boolean(demoMode || currentUser?.role === 'admin');
+
   return (
-    <div className="flex flex-col h-[calc(100vh-105px)] min-h-[620px] w-full max-w-[1600px] mx-auto overflow-hidden rounded-3xl bg-background border border-outline-variant shadow-elevation-2 text-on-surface p-2.5 sm:p-3.5 relative transition-all duration-300 select-none">
+    <div className="flex flex-col h-[calc(100dvh-5.5rem)] md:h-[calc(100dvh-8rem)] max-h-full w-full max-w-[1600px] mx-auto overflow-hidden rounded-2xl sm:rounded-3xl bg-background border border-border shadow-elevation-2 text-text p-2 sm:p-3 relative transition-all duration-300 select-none min-h-0">
       {/* Remote Audio Track Elements for all connected mesh peers */}
       {remoteParticipants.map(participant => (
         <RemoteAudioElement key={participant.id} stream={participant.stream} onUnlockAudio={unlockAudio} />
@@ -1930,136 +1928,193 @@ export function LiveRoom() {
       {autoplayBlocked && (
         <div 
           onClick={unlockAudio}
-          className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-surface-container-high text-on-surface px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 cursor-pointer animate-pulse border border-outline-variant"
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-surface-2 text-text px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 cursor-pointer animate-pulse border border-border"
         >
-          <span className="material-symbols-outlined text-base text-learning-amber">volume_up</span>
+          <span className="material-symbols-outlined text-base text-accent">volume_up</span>
           <span>Click anywhere to enable live cohort audio</span>
         </div>
       )}
 
       {isReconnecting && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-learning-amber-container text-on-learning-amber-container px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 border border-learning-amber/20 animate-pulse">
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-accent-tint text-accent-text px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 border border-accent/20 animate-pulse">
           <span className="material-symbols-outlined text-base animate-spin">sync</span>
           <span>Connection lost — reconnecting...</span>
         </div>
       )}
 
-      <div className="relative flex h-full flex-col gap-2">
+      <div className="relative flex h-full flex-col gap-2 min-h-0">
         {/* Top Header Bar */}
-        <header className="flex items-center justify-between gap-2 rounded-2xl border border-outline-variant bg-surface px-3.5 py-2 shadow-elevation-1 shrink-0 text-on-surface">
+        <header className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-xs shrink-0 text-text">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary shadow-elevation-1 shrink-0">
-              <span className="material-symbols-outlined text-[17px]">groups</span>
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary shadow-xs shrink-0">
+              <span className="material-symbols-outlined text-lg">groups</span>
             </span>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-xs sm:text-sm font-black text-on-surface truncate">
+                <h1 className="text-xs sm:text-sm font-black text-text truncate">
                   {roomId === 'practice' ? 'Practice Room (Device Check)' : (currentSession?.title || (batchCapacity > 1 ? `${batchCapacity}-Student Batch Studio` : 'Live Mentoring Studio'))}
                 </h1>
                 {roomId === 'practice' ? (
-                  <span className="px-2 py-0.5 bg-amber-500/10 text-amber-500 border border-amber-500/30 rounded-full text-[10px] font-black uppercase shrink-0">
+                  <span className="px-2 py-0.5 bg-accent-tint text-accent-text border border-accent/30 rounded-full text-[10px] font-black uppercase shrink-0">
                     Practice Room
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 bg-primary-container text-on-primary-container border border-primary/20 rounded-full text-[10px] font-black uppercase shrink-0">
+                  <span className="px-2 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-full text-[10px] font-black uppercase shrink-0">
                     {batchCapacity > 1 ? `${batchCapacity}-Student Batch` : '1-on-1'}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-[11px] text-on-surface-variant font-bold truncate">
-                  Room: <span className="text-on-surface font-extrabold">{roomId.slice(0, 16)}</span> · <span className="text-teaching-emerald font-black">● {totalParticipantsCount} Live</span>
+                <p className="text-xs text-muted font-medium truncate">
+                  Room: <span className="text-text font-bold">{roomId.slice(0, 16)}</span> · <span className="text-primary font-bold">● {totalParticipantsCount} Live</span>
                 </p>
-                <div 
-                  title="WebRTC ICE Connection Status"
-                  className={clsx(
-                    "flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider border shadow-xs transition-all shrink-0",
-                    iceDiagnostic === 'Direct P2P' && "bg-teaching-emerald/10 text-teaching-emerald border-teaching-emerald/30",
-                    iceDiagnostic === 'TURNS Relay 443' && "bg-sky-500/10 text-sky-400 border-sky-500/30",
-                    iceDiagnostic === 'Connecting...' && "bg-learning-amber/10 text-learning-amber border-learning-amber/30 animate-pulse",
-                    iceDiagnostic === 'Connection Failed' && "bg-alert-rose/10 text-alert-rose border-alert-rose/30",
-                    iceDiagnostic === 'SIMULATED PLAYBACK (DEMO)' && "bg-amber-500/10 text-amber-400 border-amber-500/30"
-                  )}
-                >
-                  <span className="h-1.5 w-1.5 rounded-full shrink-0 bg-current animate-pulse" />
-                  <span>ICE: {iceDiagnostic}</span>
-                </div>
               </div>
             </div>
           </div>
 
-          {/* Center View Mode Switcher */}
-          <div className="hidden md:flex items-center bg-surface-container p-1 rounded-xl border border-outline-variant">
+          {/* Center View Switcher Segmented Control */}
+          <div className="flex items-center bg-surface-2 p-1 rounded-xl border border-border" role="group" aria-label="Room view mode">
             <button
-              onClick={() => setViewMode('studio')}
+              onClick={() => {
+                if (isFullscreenWorkspace) toggleFullscreenMode(false);
+                setViewMode('studio');
+              }}
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-extrabold transition-all",
-                viewMode === 'studio'
-                  ? "bg-surface text-primary shadow-elevation-1 border border-outline-variant"
-                  : "text-on-surface-variant hover:text-on-surface"
+                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                viewMode === 'studio' && !isFullscreenWorkspace
+                  ? "bg-surface text-primary shadow-xs border border-border"
+                  : "text-muted hover:text-text"
               )}
+              aria-label="Studio View"
+              title="Studio View (Whiteboard + Video Strip)"
             >
               <span className="material-symbols-outlined text-[15px]">draw</span>
-              <span>Studio View</span>
+              <span className="hidden sm:inline">Studio</span>
             </button>
 
             <button
-              onClick={() => setViewMode('gallery')}
+              onClick={() => {
+                if (isFullscreenWorkspace) toggleFullscreenMode(false);
+                setViewMode('gallery');
+              }}
               className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-lg text-xs font-extrabold transition-all",
-                viewMode === 'gallery'
-                  ? "bg-surface text-primary shadow-elevation-1 border border-outline-variant"
-                  : "text-on-surface-variant hover:text-on-surface"
+                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                viewMode === 'gallery' && !isFullscreenWorkspace
+                  ? "bg-surface text-primary shadow-xs border border-border"
+                  : "text-muted hover:text-text"
               )}
+              aria-label="Gallery View"
+              title="Gallery Grid View (2x2 All Cameras)"
             >
               <span className="material-symbols-outlined text-[15px]">grid_view</span>
-              <span>Gallery Grid (2x2)</span>
+              <span className="hidden sm:inline">Gallery</span>
             </button>
 
             <button
-              onClick={() => toggleFullscreenMode(true)}
-              className="flex items-center gap-1 px-2.5 py-1 text-xs font-extrabold text-on-surface-variant hover:text-on-surface transition-all"
-              title="Fullscreen Mode"
+              onClick={() => toggleFullscreenMode(!isFullscreenWorkspace)}
+              className={clsx(
+                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                isFullscreenWorkspace
+                  ? "bg-surface text-primary shadow-xs border border-border"
+                  : "text-muted hover:text-text"
+              )}
+              aria-label={isFullscreenWorkspace ? "Exit Fullscreen" : "Fullscreen View"}
+              title={isFullscreenWorkspace ? "Exit Fullscreen" : "Fullscreen Focus Mode"}
             >
-              <span className="material-symbols-outlined text-[15px]">open_in_full</span>
-              <span>Fullscreen</span>
+              <span className="material-symbols-outlined text-[15px]">{isFullscreenWorkspace ? 'fullscreen_exit' : 'open_in_full'}</span>
+              <span className="hidden sm:inline">Fullscreen</span>
             </button>
           </div>
 
           {/* Right Header Actions */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {remoteParticipants.length < 3 ? (
-              <button
-                onClick={() => addSimulatedBatchStudents(remoteParticipants.length === 0 ? 3 : 3 - remoteParticipants.length)}
-                className="hidden sm:flex items-center gap-1 rounded-xl px-2.5 py-1 text-[11px] font-extrabold bg-primary-container text-on-primary-container border border-primary/20 active:scale-95 transition-all shadow-elevation-1"
-                title="Simulate all 3 students joining the batch room for testing"
-              >
-                <span className="material-symbols-outlined text-[14px]">group_add</span>
-                <span>Simulate 3 Students</span>
-              </button>
-            ) : (
-              <button
-                onClick={clearSimulatedStudents}
-                className="hidden sm:flex items-center gap-1 rounded-xl px-2.5 py-1 text-[11px] font-extrabold bg-surface hover:bg-surface-container text-on-surface-variant border border-outline-variant active:scale-95 transition-all"
-              >
-                <span className="material-symbols-outlined text-[14px]">close</span>
-                <span>Clear Sims</span>
-              </button>
+            {/* Dev / Demo Overflow Menu */}
+            {isDevOrDemo && (
+              <div className="relative">
+                <button
+                  onClick={() => setShowDevOverflow(v => !v)}
+                  className={clsx(
+                    "grid h-8 w-8 place-items-center rounded-xl border border-border transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                    showDevOverflow ? "bg-surface-2 text-primary" : "bg-surface text-muted hover:text-text hover:bg-surface-2"
+                  )}
+                  title="Developer & Demo Controls"
+                  aria-label="Developer and Demo controls"
+                >
+                  <span className="material-symbols-outlined text-[17px]">more_vert</span>
+                </button>
+
+                {showDevOverflow && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowDevOverflow(false)} />
+                    <div className="absolute right-0 top-10 z-50 w-64 rounded-2xl border border-border bg-surface p-2.5 text-text shadow-elevation-3 animate-in fade-in slide-in-from-top-2 duration-150 space-y-2">
+                      <div className="text-[11px] font-bold text-muted px-1 uppercase tracking-wider">
+                        Dev & Demo Controls
+                      </div>
+
+                      {/* WebRTC ICE Diagnostic */}
+                      <div 
+                        title="WebRTC ICE Connection Status"
+                        className={clsx(
+                          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border shadow-2xs transition-all",
+                          iceDiagnostic === 'Direct P2P' && "bg-primary-tint text-primary-text border-primary/30",
+                          iceDiagnostic === 'TURNS Relay 443' && "bg-sky-500/10 text-sky-400 border-sky-500/30",
+                          iceDiagnostic === 'Connecting...' && "bg-accent-tint text-accent-text border-accent/30 animate-pulse",
+                          iceDiagnostic === 'Connection Failed' && "bg-danger/10 text-danger border-danger/30",
+                          iceDiagnostic === 'SIMULATED PLAYBACK (DEMO)' && "bg-accent-tint text-accent-text border-accent/30"
+                        )}
+                      >
+                        <span className="h-2 w-2 rounded-full shrink-0 bg-current animate-pulse" />
+                        <span>ICE: {iceDiagnostic}</span>
+                      </div>
+
+                      {/* Simulated Students */}
+                      {remoteParticipants.length < 3 ? (
+                        <button
+                          onClick={() => {
+                            addSimulatedBatchStudents(remoteParticipants.length === 0 ? 3 : 3 - remoteParticipants.length);
+                            setShowDevOverflow(false);
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold bg-primary-tint text-primary-text border border-primary/20 hover:bg-primary-tint/80 transition-all cursor-pointer"
+                          title="Simulate 3 students joining for testing"
+                        >
+                          <span className="material-symbols-outlined text-sm">group_add</span>
+                          <span>Simulate 3 Students</span>
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            clearSimulatedStudents();
+                            setShowDevOverflow(false);
+                          }}
+                          className="w-full flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold bg-surface-2 text-text hover:bg-surface-2/80 border border-border transition-all cursor-pointer"
+                        >
+                          <span className="material-symbols-outlined text-sm">close</span>
+                          <span>Clear Sims</span>
+                        </button>
+                      )}
+                    </div>
+                  </>
+                )}
+              </div>
             )}
 
             <button
               onClick={handleCopyLink}
-              className="flex items-center gap-1 rounded-xl bg-surface-container hover:bg-surface-container-high text-on-surface px-2.5 py-1 text-xs font-extrabold border border-outline-variant transition-all active:scale-95"
+              className="flex items-center gap-1 rounded-xl bg-surface-2 hover:bg-surface-2/80 text-text px-2.5 py-1.5 text-xs font-bold border border-border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+              aria-label="Invite link"
+              title="Copy Room Invitation Link"
             >
-              <span className="material-symbols-outlined text-[14px]">{copiedLink ? 'check' : 'content_copy'}</span>
+              <span className="material-symbols-outlined text-sm">{copiedLink ? 'check' : 'content_copy'}</span>
               <span>{copiedLink ? 'Copied' : 'Invite'}</span>
             </button>
 
             <button
               onClick={handleEndCall}
-              className="flex items-center gap-1 rounded-xl bg-alert-rose hover:bg-alert-rose-hover text-on-alert-rose px-3 py-1 text-xs font-extrabold transition-all active:scale-95 shadow-elevation-1"
+              className="flex items-center gap-1 rounded-xl bg-danger hover:opacity-90 text-white px-3 py-1.5 text-xs font-bold transition-all active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none"
+              aria-label="Leave lecture call"
+              title="Leave Room"
             >
-              <span className="material-symbols-outlined text-[14px]">call_end</span>
+              <span className="material-symbols-outlined text-sm">call_end</span>
               <span className="hidden sm:inline">Leave</span>
             </button>
           </div>
@@ -2087,23 +2142,18 @@ export function LiveRoom() {
             isTeacher={isTeacher}
           />
         ) : (
-          /* STUDIO VIEW: Dynamic Top Video Grid + Main Whiteboard/Code Workspace */
-          <section className="grid min-h-0 flex-1 gap-2.5 lg:grid-cols-[minmax(0,1fr)_300px] overflow-hidden">
-            <div className={`flex min-h-0 flex-1 overflow-hidden gap-2.5 transition-all duration-300 ${isHalfscreenWorkspace ? 'flex-col md:flex-row' : 'flex-col'}`}>
-              {/* Dynamic Video Grid: Adjusts to 50% left column in Halfscreen mode */}
-              <div className={`grid gap-2.5 w-full shrink-0 transition-all duration-300 ${
-                isHalfscreenWorkspace
-                  ? 'h-full md:w-1/2 overflow-y-auto custom-scrollbar border-r border-slate-800 pr-1 grid-cols-1 sm:grid-cols-2'
-                  : (totalParticipantsCount === 1
-                    ? 'h-32 sm:h-36 grid-cols-1 sm:grid-cols-2'
-                    : totalParticipantsCount === 2
-                    ? 'h-32 sm:h-36 grid-cols-2'
-                    : totalParticipantsCount === 3
-                    ? 'h-32 sm:h-36 grid-cols-1 sm:grid-cols-3'
-                    : totalParticipantsCount === 4
-                    ? 'h-32 sm:h-36 grid-cols-2 sm:grid-cols-4'
-                    : 'h-32 sm:h-36 grid-cols-2 sm:grid-cols-3 md:grid-cols-6')
-              }`}>
+          /* STUDIO VIEW: Compact Video Strip (~120-140px) + Main Workspace + Responsive Sidebar */
+          <section className="grid min-h-0 flex-1 gap-2 sm:gap-2.5 lg:grid-cols-[minmax(0,1fr)_320px] overflow-hidden min-w-0">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden gap-2 sm:gap-2.5 transition-all duration-300">
+              {/* Compact Video Strip: ~120-140px high */}
+              <div className={clsx(
+                "grid gap-2 sm:gap-2.5 w-full shrink-0 h-32 sm:h-36 transition-all duration-300",
+                totalParticipantsCount === 1 ? 'grid-cols-1 sm:grid-cols-2' :
+                totalParticipantsCount === 2 ? 'grid-cols-2' :
+                totalParticipantsCount === 3 ? 'grid-cols-1 sm:grid-cols-3' :
+                totalParticipantsCount === 4 ? 'grid-cols-2 sm:grid-cols-4' :
+                'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'
+              )}>
                 {/* Local Participant Card */}
                 <VideoTile 
                   stream={localStream} 
@@ -2114,7 +2164,7 @@ export function LiveRoom() {
                   raised={raisedHand} 
                   cameraOff={!cameraOn} 
                   micOff={!micOn}
-                  accent={isTeacher ? "bg-teaching-emerald" : "bg-learning-amber"}
+                  accent={isTeacher ? "bg-primary" : "bg-accent"}
                   onSwitchCamera={cycleNextCamera}
                   hasMultipleCameras={videoDevices.length > 1}
                   isHardware={hardwareInfo.cam}
@@ -2132,7 +2182,7 @@ export function LiveRoom() {
                     waiting={false} 
                     raised={participant.handRaised} 
                     isSimulated={participant.isSimulated}
-                    accent={participant.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
+                    accent={participant.role === 'teacher' ? "bg-primary" : "bg-accent"} 
                     isRemote
                     onUnlockAudio={unlockAudio}
                     className="h-full w-full"
@@ -2143,47 +2193,61 @@ export function LiveRoom() {
                 {overflowAudioParticipants.map(participant => (
                   <div 
                     key={participant.id} 
-                    className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-2.5 flex flex-col items-center justify-center text-center shadow-sm h-full w-full"
+                    className="relative overflow-hidden rounded-2xl border border-border bg-surface-2 p-2.5 flex flex-col items-center justify-center text-center shadow-2xs h-full w-full select-none"
                     title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
                   >
-                    <div className="h-9 w-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs mb-1">
+                    <div className="h-9 w-9 rounded-xl bg-surface border border-border flex items-center justify-center text-text font-bold text-xs mb-1">
                       {participant.name.slice(0, 1).toUpperCase()}
                     </div>
-                    <div className="text-[11px] font-bold text-white truncate max-w-[120px]">{participant.name}</div>
-                    <span className="text-[9px] text-amber-400 font-bold mt-0.5 flex items-center gap-1 bg-amber-400/10 px-1.5 py-0.5 rounded-full border border-amber-400/20">
-                      <span className="material-symbols-outlined text-[11px]">volume_up</span> Audio-Only
+                    <div className="text-xs font-bold text-text truncate max-w-[120px]">{participant.name}</div>
+                    <span className="text-[10px] text-accent-text font-bold mt-0.5 flex items-center gap-1 bg-accent-tint px-2 py-0.5 rounded-full border border-accent/20">
+                      <span className="material-symbols-outlined text-xs">volume_up</span> Audio-Only
                     </span>
                   </div>
                 ))}
 
                 {/* Companion Placeholder Card when alone */}
                 {remoteParticipants.length === 0 && (
-                  <div 
-                    onClick={() => addSimulatedBatchStudents(3)}
-                    className="h-full w-full rounded-2xl border-2 border-dashed border-slate-700 bg-slate-900/90 hover:bg-slate-900 flex flex-col items-center justify-center p-3 text-center cursor-pointer transition-all group select-none shadow-sm"
-                    title="Click to simulate 3 classmates joining"
-                  >
-                    <div className="w-9 h-9 rounded-full bg-primary-container/30 text-primary group-hover:scale-110 flex items-center justify-center mb-1.5 transition-transform">
-                      <span className="material-symbols-outlined text-lg">group_add</span>
+                  isDevOrDemo ? (
+                    <div 
+                      onClick={() => addSimulatedBatchStudents(3)}
+                      className="h-full w-full rounded-2xl border-2 border-dashed border-border bg-surface-2/60 hover:bg-surface-2 flex flex-col items-center justify-center p-2.5 text-center cursor-pointer transition-all group select-none shadow-2xs"
+                      title="Click to simulate 3 classmates joining"
+                      role="button"
+                      tabIndex={0}
+                      aria-label="Simulate 3 classmates joining"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-primary-tint text-primary-text group-hover:scale-105 flex items-center justify-center mb-1 transition-transform">
+                        <span className="material-symbols-outlined text-base">group_add</span>
+                      </div>
+                      <span className="text-xs font-bold text-text">Waiting for Classmates</span>
+                      <span className="text-[11px] text-primary font-bold mt-0.5 group-hover:underline">
+                        + Click to Simulate 3 Students
+                      </span>
                     </div>
-                    <span className="text-xs font-bold text-white">Waiting for Classmates</span>
-                    <span className="text-[10px] text-primary font-extrabold mt-0.5 group-hover:underline">
-                      + Click to Simulate 3 Students
-                    </span>
-                  </div>
+                  ) : (
+                    <div 
+                      className="h-full w-full rounded-2xl border border-dashed border-border bg-surface-2/40 flex flex-col items-center justify-center p-2.5 text-center select-none shadow-2xs"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-surface-2 text-muted flex items-center justify-center mb-1">
+                        <span className="material-symbols-outlined text-base">schedule</span>
+                      </div>
+                      <span className="text-xs font-bold text-text">Waiting for Classmates</span>
+                      <span className="text-[11px] text-muted font-medium mt-0.5">
+                        Students will appear here once connected
+                      </span>
+                    </div>
+                  )
                 )}
               </div>
 
-              {/* Main Workspace (Whiteboard / Notes / Code Pad): Adjusts to 50% right column in Halfscreen mode */}
+              {/* Main Workspace (Whiteboard / Notes / Code Pad) */}
               {workspace !== 'none' && (
-                <div className={`min-h-0 overflow-hidden transition-all duration-300 ${isHalfscreenWorkspace ? 'h-full md:w-1/2 flex-1' : 'flex-1 h-full w-full'}`}>
+                <div className="min-h-0 min-w-0 flex-1 h-full w-full overflow-hidden transition-all duration-300">
                   <WorkspaceContent
                     workspace={workspace}
                     chooseWorkspace={chooseWorkspace}
                     isFullscreen={false}
-                    onToggleFullscreen={() => toggleFullscreenMode(true)}
-                    isHalfscreen={isHalfscreenWorkspace}
-                    onToggleHalfscreen={toggleHalfscreenMode}
                     drawColor={drawColor}
                     setDrawColor={setDrawColor}
                     drawWidth={drawWidth}
@@ -2221,37 +2285,44 @@ export function LiveRoom() {
             </div>
             
             {/* Right Sidebar: Chat & Session Notes Tabs */}
-            <aside className={clsx(
-              'min-h-0 shrink-0 overflow-hidden rounded-2xl border border-outline-variant bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-on-surface w-full lg:w-80',
-              chatOpen ? 'flex' : 'hidden lg:flex'
-            )}>
+            <aside 
+              aria-label="Live room sidebar"
+              className={clsx(
+                'min-h-0 min-w-0 shrink-0 overflow-hidden rounded-2xl border border-border bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-text w-full lg:w-80 box-border',
+                chatOpen ? 'flex' : 'hidden lg:flex'
+              )}
+            >
               {/* Tab Header */}
-              <div className="flex items-center border-b border-outline-variant bg-surface-2 p-1.5 shrink-0 gap-1">
+              <div className="flex items-center border-b border-border bg-surface-2 p-1.5 shrink-0 gap-1.5 min-w-0 box-border" role="tablist">
                 <button
+                  role="tab"
+                  aria-selected={sidebarTab === 'chat'}
                   onClick={() => setSidebarTab('chat')}
                   className={clsx(
-                    "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
                     sidebarTab === 'chat'
-                      ? "bg-surface text-primary shadow-xs border border-outline-variant/50"
+                      ? "bg-surface text-primary shadow-xs border border-border"
                       : "text-muted hover:text-text"
                   )}
                 >
-                  <span className="material-symbols-outlined text-[15px]">forum</span>
-                  <span>Live Chat</span>
+                  <span className="material-symbols-outlined text-[15px] shrink-0">forum</span>
+                  <span className="truncate">Live Chat</span>
                 </button>
                 <button
+                  role="tab"
+                  aria-selected={sidebarTab === 'notes'}
                   onClick={() => setSidebarTab('notes')}
                   className={clsx(
-                    "flex-1 py-1.5 px-3 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer",
+                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
                     sidebarTab === 'notes'
-                      ? "bg-surface text-primary shadow-xs border border-outline-variant/50"
+                      ? "bg-surface text-primary shadow-xs border border-border"
                       : "text-muted hover:text-text"
                   )}
                 >
-                  <span className="material-symbols-outlined text-[15px]">edit_note</span>
-                  <span>Session Notes</span>
+                  <span className="material-symbols-outlined text-[15px] shrink-0">edit_note</span>
+                  <span className="truncate">Quick Notes</span>
                   {sessionNotesList.length > 0 && (
-                    <span className="px-1.5 py-0.2 rounded-full bg-primary-tint text-primary-text text-[9px] font-black">
+                    <span className="px-1.5 py-0.5 rounded-full bg-primary-tint text-primary-text text-xs font-black shrink-0 leading-none">
                       {sessionNotesList.length}
                     </span>
                   )}
@@ -2260,7 +2331,7 @@ export function LiveRoom() {
 
               {/* Tab Body */}
               {sidebarTab === 'chat' ? (
-                <div className="flex-1 min-h-0 flex flex-col">
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col">
                   <RoomChat
                     messages={messages}
                     chatText={chatText}
@@ -2270,18 +2341,19 @@ export function LiveRoom() {
                   />
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 flex flex-col bg-surface p-3 overflow-y-auto custom-scrollbar space-y-3">
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-surface p-3 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-3 box-border">
                   {/* Inline Add Note Section */}
-                  <div className="p-3 bg-surface-2 rounded-xl border border-border space-y-2 shrink-0">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-text flex items-center gap-1">
-                        <span className="material-symbols-outlined text-sm text-primary">add_circle</span>
-                        Quick Inline Note
+                  <div className="p-3 bg-surface-2 rounded-xl border border-border space-y-2 shrink-0 min-w-0 box-border">
+                    <div className="flex items-center justify-between gap-1.5 min-w-0">
+                      <span className="text-xs font-bold text-text flex items-center gap-1 min-w-0 truncate">
+                        <span className="material-symbols-outlined text-sm text-primary shrink-0">add_circle</span>
+                        <span className="truncate">Quick Inline Note</span>
                       </span>
                       <button
                         onClick={() => setIsSessionNotesPanelOpen(true)}
-                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
-                        title="Open rich text editor & attachments"
+                        className="text-xs font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer shrink-0 focus-visible:ring-1 focus-visible:ring-primary focus-visible:outline-none rounded"
+                        title="Open full-page rich text editor & attachments"
+                        aria-label="Open full-page rich text editor"
                       >
                         <span>Full Editor</span>
                         <span className="material-symbols-outlined text-xs">open_in_new</span>
@@ -2292,19 +2364,19 @@ export function LiveRoom() {
                       value={inlineNoteTitle}
                       onChange={e => setInlineNoteTitle(e.target.value)}
                       placeholder="Note title (e.g. Key formula)..."
-                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden"
+                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden box-border"
                     />
                     <textarea
                       value={inlineNoteContent}
                       onChange={e => setInlineNoteContent(e.target.value)}
                       placeholder="Key takeaway, question, action item..."
                       rows={2}
-                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden resize-none"
+                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden resize-none box-border"
                     />
                     <button
                       disabled={isSavingInlineNote || (!inlineNoteTitle.trim() && !inlineNoteContent.trim())}
                       onClick={handleSaveInlineNote}
-                      className="w-full py-1.5 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+                      className="w-full py-1.5 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer box-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                     >
                       <span className="material-symbols-outlined text-sm">save</span>
                       <span>{isSavingInlineNote ? 'Saving...' : 'Save to Session'}</span>
@@ -2312,15 +2384,16 @@ export function LiveRoom() {
                   </div>
 
                   {/* Notes List for this session */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-[11px] font-bold text-muted px-1">
-                      <span>Notes in this Lecture ({sessionNotesList.length})</span>
+                  <div className="space-y-2 min-w-0">
+                    <div className="flex items-center justify-between text-xs font-bold text-muted px-1 min-w-0">
+                      <span className="truncate min-w-0 flex-1">Notes in this Lecture ({sessionNotesList.length})</span>
                       <button
                         onClick={loadSessionNotesList}
-                        className="hover:text-primary transition-colors cursor-pointer"
-                        title="Refresh"
+                        className="hover:text-primary transition-colors cursor-pointer p-1 rounded-md shrink-0 flex items-center justify-center text-muted hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                        title="Refresh session notes"
+                        aria-label="Refresh session notes"
                       >
-                        <span className="material-symbols-outlined text-xs">refresh</span>
+                        <span className="material-symbols-outlined text-sm">refresh</span>
                       </button>
                     </div>
 
@@ -2329,10 +2402,12 @@ export function LiveRoom() {
                         Loading session notes...
                       </div>
                     ) : sessionNotesList.length === 0 ? (
-                      <div className="p-4 text-center bg-surface-2/60 border border-dashed border-border rounded-xl space-y-1">
+                      <div className="p-4 text-center bg-surface-2/60 border border-dashed border-border rounded-xl space-y-1.5 min-w-0">
                         <span className="material-symbols-outlined text-xl text-muted">description</span>
                         <p className="text-xs font-bold text-text">No notes yet</p>
-                        <p className="text-[10px] text-muted">Write quick takeaways above or launch the rich editor.</p>
+                        <p className="text-xs text-muted leading-relaxed">
+                          Write quick notes in the sidebar or launch the full editor for markdown and rich attachments.
+                        </p>
                       </div>
                     ) : (
                       sessionNotesList.map(n => {
@@ -2343,23 +2418,23 @@ export function LiveRoom() {
                           <div
                             key={n.id}
                             onClick={() => setIsSessionNotesPanelOpen(true)}
-                            className="p-2.5 rounded-xl border border-border bg-surface-2 hover:border-primary/50 transition-all cursor-pointer space-y-1 shadow-2xs group"
+                            className="p-2.5 rounded-xl border border-border bg-surface-2 hover:border-primary/50 transition-all cursor-pointer space-y-1.5 shadow-2xs group min-w-0 box-border"
                           >
-                            <div className="flex items-center justify-between gap-1">
-                              <span className="text-xs font-bold text-text group-hover:text-primary truncate">
+                            <div className="flex items-center justify-between gap-2 min-w-0">
+                              <span className="text-xs font-bold text-text group-hover:text-primary truncate min-w-0 flex-1">
                                 {n.title || 'Untitled Note'}
                               </span>
                               {isShared ? (
-                                <span className="px-1.5 py-0.2 rounded-full bg-accent-tint text-accent-text text-[9px] font-bold shrink-0">
+                                <span className="px-2 py-0.5 rounded-md bg-accent-tint text-accent-text text-xs font-extrabold shrink-0 border border-accent/30">
                                   {isAuthor ? 'Shared' : 'Shared by Mentor'}
                                 </span>
                               ) : (
-                                <span className="px-1.5 py-0.2 rounded-full bg-surface text-muted text-[9px] font-bold shrink-0">
+                                <span className="px-2 py-0.5 rounded-md bg-surface text-muted text-xs font-bold shrink-0 border border-border">
                                   Private
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] text-muted line-clamp-2 leading-relaxed">
+                            <p className="text-xs text-muted line-clamp-2 leading-relaxed">
                               {preview || 'No content...'}
                             </p>
                           </div>
@@ -2374,28 +2449,30 @@ export function LiveRoom() {
         )}
 
         {/* Bottom Control Bar in Standard View */}
-        <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-outline-variant bg-surface px-3 py-2 shadow-elevation-2 sm:px-4 shrink-0 z-30 relative text-on-surface">
-          <p className="hidden max-w-[260px] text-xs text-on-surface-variant xl:block font-medium truncate">{notice}</p>
+        <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-xs sm:px-4 shrink-0 z-30 relative text-text">
+          <p className="hidden max-w-[260px] text-xs text-muted xl:block font-medium truncate">{notice}</p>
           
-          <div className="flex flex-1 items-center justify-center gap-2.5">
+          <div className="flex flex-1 items-center justify-center gap-2 sm:gap-2.5">
             {/* Microphone Pill Control */}
-            <div className="relative flex items-center bg-surface border border-outline-variant rounded-full shadow-elevation-1 hover:border-primary/40 transition duration-200">
+            <div className="relative flex items-center bg-surface border border-border rounded-full shadow-xs hover:border-primary/40 transition duration-200">
               <button
                 onClick={toggleMicWithPermission}
                 title={micOn ? 'Mute microphone' : 'Unmute microphone'}
+                aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}
                 className={clsx(
-                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95',
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                   !micOn
-                    ? 'bg-alert-rose text-on-alert-rose shadow-elevation-1'
-                    : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                    ? 'bg-danger text-white shadow-xs'
+                    : 'text-muted hover:bg-surface-2 hover:text-text'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{micOn ? 'mic' : 'mic_off'}</span>
               </button>
               <button
                 onClick={() => setShowAudioMenu(v => !v)}
-                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors border-l border-outline-variant/50"
+                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-muted hover:text-text transition-colors border-l border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-r-full"
                 title="Select microphone device"
+                aria-label="Select microphone device"
               >
                 <span className="material-symbols-outlined text-[16px] hover:scale-110 transition-transform">keyboard_arrow_up</span>
               </button>
@@ -2403,21 +2480,21 @@ export function LiveRoom() {
               {showAudioMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowAudioMenu(false)} />
-                  <div className="absolute bottom-12 left-0 w-64 rounded-xl border border-outline-variant bg-surface text-on-surface p-2 shadow-elevation-3 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="text-[10px] font-extrabold text-on-surface-variant px-2.5 py-1.5 border-b border-outline-variant uppercase tracking-wider flex items-center gap-1.5">
+                  <div className="absolute bottom-12 left-0 w-64 rounded-2xl border border-border bg-surface text-text p-2 shadow-elevation-3 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="text-xs font-bold text-muted px-2.5 py-1.5 border-b border-border uppercase tracking-wider flex items-center gap-1.5">
                       <span className="material-symbols-outlined text-sm text-primary">mic</span> Select Microphone
                     </div>
                     <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1.5 custom-scrollbar">
                       {audioDevices.length === 0 ? (
-                        <div className="text-xs text-on-surface-variant p-2.5 italic">No physical microphones detected</div>
+                        <div className="text-xs text-muted p-2.5 italic">No physical microphones detected</div>
                       ) : (
                         audioDevices.map(d => (
                           <button
                             key={d.deviceId}
                             onClick={() => changeAudioDevice(d.deviceId)}
                             className={clsx(
-                              "w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
-                              selectedAudioId === d.deviceId ? "bg-primary text-on-primary font-bold" : "hover:bg-surface-container text-on-surface"
+                              "w-full text-left px-2.5 py-1.5 text-xs rounded-xl transition-colors flex items-center justify-between",
+                              selectedAudioId === d.deviceId ? "bg-primary text-on-primary font-bold" : "hover:bg-surface-2 text-text"
                             )}
                           >
                             <span className="truncate">{d.label || `Microphone ${d.deviceId.slice(0, 5)}`}</span>
@@ -2432,23 +2509,25 @@ export function LiveRoom() {
             </div>
 
             {/* Camera Pill Control */}
-            <div className="relative flex items-center bg-surface border border-outline-variant rounded-full shadow-elevation-1 hover:border-primary/40 transition duration-200">
+            <div className="relative flex items-center bg-surface border border-border rounded-full shadow-xs hover:border-primary/40 transition duration-200">
               <button
                 onClick={toggleCameraWithPermission}
                 title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                aria-label={cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 className={clsx(
-                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95',
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                   !cameraOn
-                    ? 'bg-alert-rose text-on-alert-rose shadow-elevation-1'
-                    : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                    ? 'bg-danger text-white shadow-xs'
+                    : 'text-muted hover:bg-surface-2 hover:text-text'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{cameraOn ? 'videocam' : 'videocam_off'}</span>
               </button>
               <button
                 onClick={() => setShowVideoMenu(v => !v)}
-                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-on-surface-variant hover:text-on-surface transition-colors border-l border-outline-variant/50"
+                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-muted hover:text-text transition-colors border-l border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-r-full"
                 title="Select camera device"
+                aria-label="Select camera device"
               >
                 <span className="material-symbols-outlined text-[16px] hover:scale-110 transition-transform">keyboard_arrow_up</span>
               </button>
@@ -2456,8 +2535,8 @@ export function LiveRoom() {
               {showVideoMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowVideoMenu(false)} />
-                  <div className="absolute bottom-12 left-0 w-64 rounded-xl border border-outline-variant bg-surface text-on-surface p-2 shadow-elevation-3 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="text-[10px] font-extrabold text-on-surface-variant px-2.5 py-1.5 border-b border-outline-variant uppercase tracking-wider flex items-center justify-between">
+                  <div className="absolute bottom-12 left-0 w-64 rounded-2xl border border-border bg-surface text-text p-2 shadow-elevation-3 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="text-xs font-bold text-muted px-2.5 py-1.5 border-b border-border uppercase tracking-wider flex items-center justify-between">
                       <span className="flex items-center gap-1.5"><span className="material-symbols-outlined text-sm text-primary">videocam</span> Select Camera</span>
                       <button
                         onClick={async (e) => {
@@ -2468,7 +2547,7 @@ export function LiveRoom() {
                           } catch {}
                           await loadDevices();
                         }}
-                        className="text-[10px] font-bold text-primary hover:underline flex items-center gap-0.5"
+                        className="text-xs font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
                         title="Re-scan connected camera hardware"
                       >
                         <span className="material-symbols-outlined text-xs">sync</span> Rescan
@@ -2477,7 +2556,7 @@ export function LiveRoom() {
                     <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1.5 custom-scrollbar">
                       {videoDevices.length === 0 ? (
                         <div className="p-2 space-y-1.5 text-center">
-                          <p className="text-xs text-on-surface-variant italic font-medium">No physical camera detected or permission blocked.</p>
+                          <p className="text-xs text-muted italic font-medium">No physical camera detected or permission blocked.</p>
                           <button
                             onClick={async () => {
                               try {
@@ -2485,7 +2564,7 @@ export function LiveRoom() {
                               } catch {}
                               await loadDevices();
                             }}
-                            className="w-full py-1.5 px-2 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-bold transition-all shadow-elevation-1"
+                            className="w-full py-1.5 px-2 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold transition-all shadow-xs"
                           >
                             Grant Camera Access
                           </button>
@@ -2498,8 +2577,8 @@ export function LiveRoom() {
                               key={d.deviceId}
                               onClick={() => changeVideoDevice(d.deviceId)}
                               className={clsx(
-                                "w-full text-left px-2.5 py-1.5 text-xs rounded-lg transition-colors flex items-center justify-between",
-                                selectedVideoId === d.deviceId ? "bg-primary text-on-primary font-bold" : "hover:bg-surface-container text-on-surface"
+                                "w-full text-left px-2.5 py-1.5 text-xs rounded-xl transition-colors flex items-center justify-between",
+                                selectedVideoId === d.deviceId ? "bg-primary text-on-primary font-bold" : "hover:bg-surface-2 text-text"
                               )}
                             >
                               <div className="flex items-center gap-1.5 truncate">
@@ -2515,31 +2594,6 @@ export function LiveRoom() {
                   </div>
                 </>
               )}
-            </div>
-
-            {/* Studio / Gallery View Mode Toggles */}
-            <div className="flex items-center bg-surface-container p-0.5 rounded-full border border-outline-variant">
-              <button
-                onClick={() => setViewMode('studio')}
-                className={clsx(
-                  "grid h-9 w-9 place-items-center rounded-full transition-all text-xs",
-                  viewMode === 'studio' ? "bg-surface text-primary shadow-elevation-1 font-bold" : "text-on-surface-variant hover:text-on-surface"
-                )}
-                title="Studio View (Whiteboard + Video Strip)"
-              >
-                <span className="material-symbols-outlined text-[18px]">draw</span>
-              </button>
-
-              <button
-                onClick={() => setViewMode('gallery')}
-                className={clsx(
-                  "grid h-9 w-9 place-items-center rounded-full transition-all text-xs",
-                  viewMode === 'gallery' ? "bg-surface text-primary shadow-elevation-1 font-bold" : "text-on-surface-variant hover:text-on-surface"
-                )}
-                title="Gallery Grid View (2x2 All Cameras)"
-              >
-                <span className="material-symbols-outlined text-[18px]">grid_view</span>
-              </button>
             </div>
 
             {/* Hand Raise Control (Students Only) */}
@@ -2562,23 +2616,15 @@ export function LiveRoom() {
               onClick={toggleShare}
             />
 
-            {/* Fullscreen Workspace Action */}
-            <button
-              onClick={() => toggleFullscreenMode(true)}
-              className="grid h-10 w-10 place-items-center rounded-full border border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container hover:text-on-surface shadow-elevation-1 transition-all active:scale-95"
-              title="Fullscreen explanation mode"
-            >
-              <span className="material-symbols-outlined text-[19px]">open_in_full</span>
-            </button>
-
             {/* Chat Toggle Button */}
             <button
               onClick={() => setChatOpen(value => !value)}
               className={clsx(
-                "grid h-10 w-10 place-items-center rounded-full border transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-elevation-1",
-                chatOpen ? "bg-primary text-on-primary border-primary" : "border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container"
+                "grid h-10 w-10 place-items-center rounded-full border transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                chatOpen ? "bg-primary text-on-primary border-primary" : "border-border bg-surface text-muted hover:bg-surface-2 hover:text-text"
               )}
               title="Toggle Live Chat"
+              aria-label="Toggle live chat"
             >
               <span className="material-symbols-outlined text-[18px]">chat</span>
             </button>
@@ -2587,8 +2633,9 @@ export function LiveRoom() {
             {currentSession && (
               <button
                 onClick={() => setIsSessionNotesPanelOpen(true)}
-                className="grid h-10 w-10 place-items-center rounded-full border border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container hover:text-primary transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-elevation-1"
+                className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-muted hover:bg-surface-2 hover:text-primary transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                 title="View & Add Session Notes"
+                aria-label="Open session notes editor"
               >
                 <span className="material-symbols-outlined text-[18px]">edit_note</span>
               </button>
@@ -2598,8 +2645,9 @@ export function LiveRoom() {
           {/* Leave Call Button */}
           <button
             onClick={handleEndCall}
-            className="grid h-10 w-12 place-items-center rounded-full bg-alert-rose text-on-alert-rose shadow-elevation-1 transition hover:-translate-y-0.5 hover:bg-alert-rose-hover hover:scale-105 active:translate-y-0 active:scale-95 duration-200"
+            className="grid h-10 w-12 place-items-center rounded-full bg-danger text-white shadow-xs transition hover:-translate-y-0.5 hover:opacity-90 hover:scale-105 active:translate-y-0 active:scale-95 duration-200 focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none"
             title="Disconnect call & release devices"
+            aria-label="Leave call"
           >
             <span className="material-symbols-outlined text-[20px]">call_end</span>
           </button>
@@ -2608,21 +2656,21 @@ export function LiveRoom() {
 
       {/* FULLSCREEN EXPLANATION WORKSPACE OVERLAY */}
       {isFullscreenWorkspace && (
-        <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col p-2 sm:p-4 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-bg/95 backdrop-blur-md flex flex-col p-2 sm:p-3 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
           {/* Fullscreen Top Navigation */}
-          <header className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-surface border border-outline-variant px-4 py-2.5 text-on-surface shadow-elevation-2">
+          <header className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border px-4 py-2.5 text-text shadow-xs">
             <div className="flex items-center gap-3">
               <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary">
                 <span className="material-symbols-outlined text-[19px]">fit_screen</span>
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-black tracking-wide text-white uppercase">Fullscreen Explanation Mode</span>
-                  <span className="rounded-full bg-teaching-emerald-container border border-teaching-emerald/40 px-2 py-0.5 text-[10px] font-extrabold text-teaching-emerald animate-pulse">
+                  <span className="text-xs font-black tracking-wide text-text uppercase">Fullscreen Focus Mode</span>
+                  <span className="rounded-full bg-primary-tint border border-primary/30 px-2 py-0.5 text-xs font-extrabold text-primary-text animate-pulse">
                     ● Live Focus
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium">Room: {roomId.slice(0, 14)} · Press <kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-[10px] border border-slate-700 text-slate-300 font-mono">ESC</kbd> to exit</p>
+                <p className="text-xs text-muted font-medium">Room: {roomId.slice(0, 14)} · Press <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs border border-border text-text font-mono">ESC</kbd> to exit</p>
               </div>
             </div>
 
@@ -2631,10 +2679,11 @@ export function LiveRoom() {
               <button
                 onClick={() => setShowPipVideos(v => !v)}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95",
-                  showPipVideos ? "bg-slate-800 border-white/20 text-primary" : "bg-transparent border-white/10 text-slate-400 hover:bg-white/10"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                  showPipVideos ? "bg-surface-2 border-primary/30 text-primary" : "bg-transparent border-border text-muted hover:bg-surface-2"
                 )}
                 title="Toggle Floating Video Feeds"
+                aria-label="Toggle floating video feeds"
               >
                 <span className="material-symbols-outlined text-[16px]">{showPipVideos ? 'picture_in_picture_alt' : 'visibility_off'}</span>
                 <span className="hidden md:inline">{showPipVideos ? 'Hide Video PiP' : 'Show Video PiP'}</span>
@@ -2643,10 +2692,11 @@ export function LiveRoom() {
               <button
                 onClick={() => setShowFullscreenChat(v => !v)}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95",
-                  showFullscreenChat ? "bg-primary border-primary text-on-primary" : "bg-slate-800 border-white/20 text-white hover:bg-slate-700"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                  showFullscreenChat ? "bg-primary border-primary text-on-primary" : "bg-surface-2 border-border text-text hover:bg-surface-2/80"
                 )}
                 title="Open Chat Drawer"
+                aria-label="Open chat drawer"
               >
                 <span className="material-symbols-outlined text-[16px]">forum</span>
                 <span className="hidden md:inline">Chat</span>
@@ -2654,8 +2704,9 @@ export function LiveRoom() {
 
               <button
                 onClick={() => toggleFullscreenMode(false)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-extrabold border border-white/20 transition-all active:scale-95"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-surface-2 hover:bg-surface-2/80 text-text text-xs font-bold border border-border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
                 title="Exit Fullscreen Mode"
+                aria-label="Exit Fullscreen Mode"
               >
                 <span className="material-symbols-outlined text-[17px]">fullscreen_exit</span>
                 <span>Exit Fullscreen</span>
@@ -2671,7 +2722,6 @@ export function LiveRoom() {
                 workspace={workspace}
                 chooseWorkspace={chooseWorkspace}
                 isFullscreen={true}
-                onToggleFullscreen={() => toggleFullscreenMode(false)}
                 drawColor={drawColor}
                 setDrawColor={setDrawColor}
                 drawWidth={drawWidth}
@@ -3070,7 +3120,6 @@ function WorkspaceContent({
   workspace,
   chooseWorkspace,
   isFullscreen,
-  onToggleFullscreen,
   drawColor,
   setDrawColor,
   drawWidth,
@@ -3101,14 +3150,11 @@ function WorkspaceContent({
   sharerName,
   displayStream,
   remoteStream,
-  onUnlockAudio,
-  isHalfscreen = false,
-  onToggleHalfscreen
+  onUnlockAudio
 }: {
   workspace: Workspace;
   chooseWorkspace: (w: Workspace) => void;
   isFullscreen: boolean;
-  onToggleFullscreen: () => void;
   drawColor: string;
   setDrawColor: (c: string) => void;
   drawWidth: number;
@@ -3140,23 +3186,21 @@ function WorkspaceContent({
   displayStream?: MediaStream | null;
   remoteStream?: MediaStream | null;
   onUnlockAudio?: () => void;
-  isHalfscreen?: boolean;
-  onToggleHalfscreen?: () => void;
 }) {
   return (
-    <div className={clsx("flex flex-col h-full w-full min-h-0 overflow-hidden", isFullscreen ? "bg-surface" : "flex-1 rounded-2xl border border-outline-variant bg-surface shadow-elevation-1")}>
+    <div className={clsx("flex flex-col h-full w-full min-h-0 overflow-hidden", isFullscreen ? "bg-surface" : "flex-1 rounded-2xl border border-border bg-surface shadow-xs")}>
       {/* Workspace Subheader Navigation */}
-      <nav className="flex items-center justify-between gap-2 border-b border-outline-variant bg-surface-container-low p-2 overflow-x-auto text-on-surface">
+      <nav className="flex items-center justify-between gap-2 border-b border-border bg-surface-2 p-1.5 overflow-x-auto text-text">
         <div className="flex items-center gap-1.5">
           {toolTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => chooseWorkspace(tab.id)}
               className={clsx(
-                'flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-extrabold transition-all duration-200 active:scale-95',
+                'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all duration-200 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                 workspace === tab.id
-                  ? 'bg-primary text-on-primary shadow-elevation-1'
-                  : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                  ? 'bg-primary text-on-primary shadow-xs'
+                  : 'text-muted hover:bg-surface hover:text-text'
               )}
             >
               <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
@@ -3168,10 +3212,10 @@ function WorkspaceContent({
             <button
               onClick={() => chooseWorkspace('screenshare')}
               className={clsx(
-                'flex shrink-0 items-center gap-1.5 rounded-xl px-3.5 py-1.5 text-xs font-extrabold transition-all duration-200 active:scale-95 border',
+                'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all duration-200 active:scale-95 border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
                 workspace === 'screenshare'
-                  ? 'bg-primary text-on-primary border-primary shadow-elevation-1 animate-pulse'
-                  : 'bg-primary-container text-on-primary-container border-primary/20 hover:bg-primary-container/80'
+                  ? 'bg-primary text-on-primary border-primary shadow-xs animate-pulse'
+                  : 'bg-primary-tint text-primary-text border-primary/20 hover:bg-primary-tint/80'
               )}
             >
               <span className="material-symbols-outlined text-[16px]">screen_share</span>
@@ -3179,43 +3223,10 @@ function WorkspaceContent({
             </button>
           )}
         </div>
-
-        <div className="flex items-center gap-1.5 shrink-0">
-          {onToggleHalfscreen && !isFullscreen && (
-            <button
-              type="button"
-              onClick={onToggleHalfscreen}
-              className={clsx(
-                "flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-extrabold transition-all shadow-elevation-1 border active:scale-95",
-                isHalfscreen
-                  ? "bg-primary text-on-primary border-primary shadow-elevation-1"
-                  : "bg-surface hover:bg-surface-container text-on-surface border-outline-variant"
-              )}
-              title={isHalfscreen ? "Exit Split View (Return to Standard View)" : "Split View: Video Left, Whiteboard Right (50/50)"}
-            >
-              <span className="material-symbols-outlined text-[16px]">{isHalfscreen ? 'vertical_split' : 'splitscreen'}</span>
-              <span>{isHalfscreen ? 'Standard View' : 'Halfscreen Mode'}</span>
-            </button>
-          )}
-
-          <button
-            onClick={onToggleFullscreen}
-            className={clsx(
-              "flex items-center gap-1 px-3 py-1 rounded-xl text-xs font-extrabold transition-all shadow-elevation-1 border active:scale-95",
-              isFullscreen
-                ? "bg-surface-container-high text-on-surface border-outline-variant hover:bg-surface-container"
-                : "bg-primary-container hover:bg-primary-container/80 text-on-primary-container border-primary/20"
-            )}
-            title={isFullscreen ? "Exit Fullscreen" : "Expand to Fullscreen"}
-          >
-            <span className="material-symbols-outlined text-[16px]">{isFullscreen ? 'fullscreen_exit' : 'open_in_full'}</span>
-            <span>{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
-          </button>
-        </div>
       </nav>
 
       {/* Main Workspace Body */}
-      <div className="relative min-h-0 flex-1 bg-surface-container-low/30 overflow-hidden flex flex-col">
+      <div className="relative min-h-0 flex-1 bg-surface-2/20 overflow-hidden flex flex-col">
         {/* 1. Whiteboard Canvas */}
         {workspace === 'whiteboard' && (
           <WhiteboardCanvas

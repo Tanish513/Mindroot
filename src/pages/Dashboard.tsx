@@ -618,7 +618,10 @@ export function Dashboard() {
               <span className="material-symbols-outlined text-2xl">qr_code_2</span>
             </div>
             <div>
-              <h4 className="text-xs font-black text-text">Enable Direct UPI Student Payments</h4>
+              <h4 className="text-xs font-black text-text flex items-center gap-1.5">
+                <span>Payments Not Set Up</span>
+                <span className="px-1.5 py-0.5 rounded-full bg-accent text-on-accent text-[9px] font-extrabold uppercase">Action Required</span>
+              </h4>
               <p className="text-[11px] text-muted font-medium mt-0.5">
                 Add your UPI ID & official College ID in your profile to start accepting direct student payments.
               </p>
