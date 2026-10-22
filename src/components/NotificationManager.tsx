@@ -9,7 +9,8 @@ import {
   getSessionApproverId,
   shouldSendJoinReminder,
   onSessionRequestCreated,
-  onSessionStatusUpdated
+  onSessionStatusUpdated,
+  getAuthItem
 } from '../lib/api';
 import { triggerNativeNotification, registerServiceWorker, requestNotificationPermission } from '../lib/notifications';
 import { useNavigate } from 'react-router-dom';
@@ -354,7 +355,7 @@ export function NotificationManager() {
 
     const checkLectureReminders = async () => {
       try {
-        const token = localStorage.getItem('mindroot_auth_token');
+        const token = getAuthItem('mindroot_auth_token');
         if (!token) return;
         const sessions = await api.getSessions();
         if (!Array.isArray(sessions)) return;

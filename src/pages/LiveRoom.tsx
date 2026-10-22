@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { clsx } from 'clsx';
 import { io, type Socket } from 'socket.io-client';
 import { useAppStore } from '../store/useAppStore';
-import { api, resolveSessionRole } from '../lib/api';
+import { api, resolveSessionRole, getAuthItem } from '../lib/api';
 import { UpiPaymentModal } from '../components/payment/UpiPaymentModal';
 import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
 
@@ -1036,7 +1036,7 @@ export function LiveRoom() {
 
     // 2. Socket.io: backend URL resolved from shared env helper
     const socketUrl = getBackendUrl();
-    const token = localStorage.getItem('mindroot_auth_token');
+    const token = getAuthItem('mindroot_auth_token');
     const socket = io(socketUrl, { 
       transports: ['websocket', 'polling'],
       auth: { token }

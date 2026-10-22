@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { api, onPeersUpdated, safeSetStorage, updateSocketAuth } from '../lib/api';
+import { api, onPeersUpdated, safeSetStorage, updateSocketAuth, getAuthItem, setAuthItem, removeAuthItem } from '../lib/api';
 
 export type ThemeMode = 'light' | 'dark' | 'system';
 
@@ -76,10 +76,10 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Read initial state from localStorage to prevent loss of state on refresh
+// Read initial state from tab-scoped session storage with fallback to localStorage
 const getInitialUser = () => {
   try {
-    const stored = localStorage.getItem('mindroot_current_user');
+    const stored = getAuthItem('mindroot_current_user');
     return stored ? JSON.parse(stored) : null;
   } catch {
     return null;
@@ -88,15 +88,15 @@ const getInitialUser = () => {
 
 const initialUser = getInitialUser();
 if (initialUser && typeof window !== 'undefined') {
-  if (initialUser.id && !localStorage.getItem('mindroot_auth_token')) {
-    safeSetStorage('mindroot_auth_token', `dev-token-${initialUser.id}`);
+  if (initialUser.id && !getAuthItem('mindroot_auth_token')) {
+    setAuthItem('mindroot_auth_token', `dev-token-${initialUser.id}`);
   }
   updateSocketAuth();
   setTimeout(() => api.syncNetworkUser(initialUser), 500);
 }
 
-const initialRole = (localStorage.getItem('mindroot_current_role') as 'student' | 'teacher' | 'admin') || (initialUser?.role === 'teacher' ? 'teacher' : 'student');
-const initialLoginRole = (initialUser?.role as 'student' | 'teacher' | 'both' | 'admin') || (localStorage.getItem('mindroot_login_role') as 'student' | 'teacher' | 'both' | 'admin') || 'student';
+const initialRole = (getAuthItem('mindroot_current_role') as 'student' | 'teacher' | 'admin') || (initialUser?.role === 'teacher' ? 'teacher' : 'student');
+const initialLoginRole = (initialUser?.role as 'student' | 'teacher' | 'both' | 'admin') || (getAuthItem('mindroot_login_role') as 'student' | 'teacher' | 'both' | 'admin') || 'student';
 
 // Reactive multi-laptop listener: auto-update current user's token balance & trust score live
 onPeersUpdated((peers) => {
@@ -111,7 +111,7 @@ onPeersUpdated((peers) => {
         rewardPoints: typeof matchedPeer.rewardPoints === 'number' ? matchedPeer.rewardPoints : current.rewardPoints,
         badges: Array.isArray(matchedPeer.badges) ? matchedPeer.badges : current.badges
       };
-      safeSetStorage('mindroot_current_user', updatedUser);
+      setAuthItem('mindroot_current_user', updatedUser);
       useAppStore.setState({
         currentUser: updatedUser,
         tokenBalance: updatedUser.tokenBalance
@@ -169,14 +169,14 @@ export const useAppStore = create<AppState>((set) => ({
   toggleRole: () => set((state) => {
     if (state.loginRole !== 'both') return {};
     const nextRole = state.role === 'student' ? 'teacher' : 'student';
-    safeSetStorage('mindroot_current_role', nextRole);
+    setAuthItem('mindroot_current_role', nextRole);
     return { role: nextRole };
   }),
   tokenBalance: initialUser ? initialUser.tokenBalance : 50,
   setTokenBalance: (balance) => set((state) => {
     if (state.currentUser) {
       const updatedUser = { ...state.currentUser, tokenBalance: balance };
-      safeSetStorage('mindroot_current_user', updatedUser);
+      setAuthItem('mindroot_current_user', updatedUser);
       return { tokenBalance: balance, currentUser: updatedUser };
     }
     return { tokenBalance: balance };
@@ -186,9 +186,9 @@ export const useAppStore = create<AppState>((set) => ({
   currentUser: initialUser,
   setCurrentUser: (user) => set((state) => {
     if (user) {
-      safeSetStorage('mindroot_current_user', user);
-      if (user.id && typeof localStorage !== 'undefined' && !localStorage.getItem('mindroot_auth_token')) {
-        safeSetStorage('mindroot_auth_token', `dev-token-${user.id}`);
+      setAuthItem('mindroot_current_user', user);
+      if (user.id && typeof window !== 'undefined' && !getAuthItem('mindroot_auth_token')) {
+        setAuthItem('mindroot_auth_token', `dev-token-${user.id}`);
       }
       updateSocketAuth();
       api.syncNetworkUser(user);
@@ -200,7 +200,7 @@ export const useAppStore = create<AppState>((set) => ({
 
       if (userRole === 'student' || userRole === 'teacher' || userRole === 'both' || userRole === 'admin') {
         newLoginRole = userRole;
-        safeSetStorage('mindroot_login_role', newLoginRole);
+        setAuthItem('mindroot_login_role', newLoginRole);
 
         if (userRole === 'student') {
           newActiveRole = 'student';
@@ -209,7 +209,7 @@ export const useAppStore = create<AppState>((set) => ({
         } else if (userRole === 'admin') {
           newActiveRole = 'admin';
         }
-        safeSetStorage('mindroot_current_role', newActiveRole);
+        setAuthItem('mindroot_current_role', newActiveRole);
       }
 
       return { 
@@ -219,19 +219,20 @@ export const useAppStore = create<AppState>((set) => ({
         role: newActiveRole
       };
     } else {
-      localStorage.removeItem('mindroot_current_user');
+      removeAuthItem('mindroot_current_user');
+      removeAuthItem('mindroot_auth_token');
       updateSocketAuth('');
       return { currentUser: null, tokenBalance: 50 };
     }
   }),
   login: (user, role) => {
-    safeSetStorage('mindroot_current_user', user);
-    safeSetStorage('mindroot_login_role', role);
-    if (user && user.id && typeof localStorage !== 'undefined' && !localStorage.getItem('mindroot_auth_token')) {
-      safeSetStorage('mindroot_auth_token', `dev-token-${user.id}`);
+    setAuthItem('mindroot_current_user', user);
+    setAuthItem('mindroot_login_role', role);
+    if (user && user.id && typeof window !== 'undefined' && !getAuthItem('mindroot_auth_token')) {
+      setAuthItem('mindroot_auth_token', `dev-token-${user.id}`);
     }
     const calculatedRole = role === 'admin' ? 'admin' : (role === 'teacher' ? 'teacher' : 'student');
-    safeSetStorage('mindroot_current_role', calculatedRole);
+    setAuthItem('mindroot_current_role', calculatedRole);
     updateSocketAuth();
     api.syncNetworkUser(user);
     
@@ -244,10 +245,10 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
   logout: () => {
-    localStorage.removeItem('mindroot_current_user');
-    localStorage.removeItem('mindroot_login_role');
-    localStorage.removeItem('mindroot_current_role');
-    localStorage.removeItem('mindroot_auth_token');
+    removeAuthItem('mindroot_current_user');
+    removeAuthItem('mindroot_login_role');
+    removeAuthItem('mindroot_current_role');
+    removeAuthItem('mindroot_auth_token');
     updateSocketAuth('');
     set({
       isLoggedIn: false,

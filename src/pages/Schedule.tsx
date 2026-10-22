@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button } from '../components/ui/Button';
 import { useAppStore } from '../store/useAppStore';
-import { api, onSessionsUpdated, onPeersUpdated, calculateSeatPrice, getCapacityDetails } from '../lib/api';
+import { api, onSessionsUpdated, onPeersUpdated, calculateSeatPrice, getCapacityDetails, getAuthItem } from '../lib/api';
 import { clsx } from 'clsx';
 import { useNavigate } from 'react-router-dom';
 import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
@@ -172,7 +172,7 @@ export function Schedule() {
       loadData();
     });
     const interval = setInterval(() => {
-      if (typeof window !== 'undefined' && localStorage.getItem('mindroot_auth_token')) {
+      if (typeof window !== 'undefined' && getAuthItem('mindroot_auth_token')) {
         api.getSessions()
           .then(setSessions)
           .catch(() => {});

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { api, globalSocket } from '../../lib/api';
+import { api, globalSocket, getAuthItem } from '../../lib/api';
 
 export interface UpiPaymentSession {
   id?: string;
@@ -134,8 +134,8 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
         globalSocket.emit('payment-handshake-submitted', {
           sessionId: session?.id,
           teacherId: session.teacherId,
-          studentId: localStorage.getItem('mindroot_user_id') || 'student-current',
-          studentName: localStorage.getItem('mindroot_user_name') || 'Peer Learner',
+          studentId: getAuthItem('mindroot_user_id') || 'student-current',
+          studentName: getAuthItem('mindroot_user_name') || 'Peer Learner',
           amount,
           utrNumber: utr
         });

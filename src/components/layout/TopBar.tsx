@@ -1,6 +1,6 @@
 import { useAppStore } from '../../store/useAppStore';
 import { useEffect, useState, useRef } from 'react';
-import { api, globalSocket } from '../../lib/api';
+import { api, globalSocket, setAuthItem } from '../../lib/api';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { useDebounce } from '../../hooks/useDebounce';
@@ -152,9 +152,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         rewardPoints: 120
       };
       setCurrentUser(student);
-      localStorage.setItem('mindroot_user_id', student.id);
-      localStorage.setItem('mindroot_user_name', student.name);
-      localStorage.setItem('mindroot_user_role', 'student');
+      setAuthItem('mindroot_user_id', student.id);
+      setAuthItem('mindroot_user_name', student.name);
+      setAuthItem('mindroot_user_role', 'student');
       navigate('/dashboard');
     } else if (newRole === 'teacher') {
       const teacher = {
@@ -172,9 +172,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         upiId: 'priya.sharma@okaxis'
       };
       setCurrentUser(teacher);
-      localStorage.setItem('mindroot_user_id', teacher.id);
-      localStorage.setItem('mindroot_user_name', teacher.name);
-      localStorage.setItem('mindroot_user_role', 'teacher');
+      setAuthItem('mindroot_user_id', teacher.id);
+      setAuthItem('mindroot_user_name', teacher.name);
+      setAuthItem('mindroot_user_role', 'teacher');
       navigate('/dashboard');
     } else if (newRole === 'admin') {
       const admin = {
@@ -186,9 +186,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         tokenBalance: 9999
       };
       setCurrentUser(admin);
-      localStorage.setItem('mindroot_user_id', admin.id);
-      localStorage.setItem('mindroot_user_name', admin.name);
-      localStorage.setItem('mindroot_user_role', 'admin');
+      setAuthItem('mindroot_user_id', admin.id);
+      setAuthItem('mindroot_user_name', admin.name);
+      setAuthItem('mindroot_user_role', 'admin');
       navigate('/admin');
     }
     setShowDemoMenu(false);

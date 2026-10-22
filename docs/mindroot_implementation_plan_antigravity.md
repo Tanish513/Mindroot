@@ -1,17 +1,18 @@
 ---
-title: "Mindroot - Antigravity Implementation Plans: Parts 1-4 [REMEDIATED & VERIFIED]"
+title: "Mindroot - Antigravity Implementation Plans: Parts 1-11 [ACTIVE]"
 tags:
   - project/student-to-student
   - plan
   - implementation-plan
   - audit/remediation
   - hackathon/mindroot
-  - status/completed
-status: completed
+  - status/active
+status: active
 created: 2026-09-29
-last_updated: 2026-10-17
-latest_commit: "0ace7df"
-repo_head: "0ace7df"
+last_updated: 2026-10-22
+latest_commit: "5e0e575"
+repo_head: "5e0e575"
+test_status: "126/126 passing across 14 backend suites (104 tests) + 10 E2E suites (22 tests); verified 2026-10-22"
 author: "[[ANTIGRAVITY]]"
 project_hub: "[[student_to_student]]"
 source_spec: "[[student_to_student_spec]]"
@@ -28,6 +29,11 @@ governed_by: "[[AGENTS]]"
 - [x] **Plan 4: Critical Security Hardening, Live Room Modernization & Audit Gaps (Phases 0-4)** *(Resolved & verified on commit `0ffc63d`, 2026-10-17; 42/42 tests passing across 8 suites in-memory & PostgreSQL)*
 - [x] **Plan 5: Live Room Session Gating, Join Window, Practice Room & Deep-Teal Sidebar (Parts A-D)** *(Resolved & verified; 60/60 tests passing across 10 suites in-memory & PostgreSQL; Playwright E2E passing)*
 - [x] **Plan 6: Price Field Validation & Slot Conflict Precision Remediation (Bug 1 & Bug 2)** *(Resolved & verified on 2026-10-19; 10/10 tests passing in `pricing_and_booking_bugs.test.ts`, all existing concurrency & verification suites passing, build and typecheck clean)*
+- [x] **Plan 7: End-to-End Booking-Request Flow & Realtime Sync** *(Resolved & verified; 7/7 pass in `booking_request_flow.test.ts`)*
+- [x] **Plan 8: Notes Model, Migration & Privacy Isolation** *(Resolved & verified; 8/8 pass in `notes_api.test.ts` including 2-seat cohort sessions)*
+- [x] **Plan 9: Payment Broadcast Scoping, Swap Pricing & Gateway Purge** *(Resolved & verified; 11/11 pass in `payment_security_fixes.test.ts`)*
+- [x] **Plan 10: Viewport, UI Gating, Timezone & Hygiene Remediation (Items A-K)** *(Resolved & verified on 2026-10-22; 104/104 backend tests + 22/22 Playwright tests pass; typechecks and build clean)*
+- [ ] **Plan 11: Tab-Isolated Authentication & Multi-Account Session Handling** *(In Progress: transition auth credentials and active user state from origin-scoped `localStorage` to tab-isolated `sessionStorage` with graceful initial-tab `localStorage` seeding)*
 
 
 ---
@@ -1058,3 +1064,110 @@ Codex ran in-memory only. With a local or test Postgres and `DATABASE_URL` set, 
 - [x] Test 6: Target teacher confirms pending booking, status transitions to `confirmed`, slot is reserved *(PASS)*
 - [x] Test 7: Target teacher declines pending booking, status transitions to `declined`, slot is freed *(PASS)*
 - [x] `server/test/booking_request_flow.test.ts`: **7/7 PASS** (100%)
+
+---
+
+# [x] PART 10: Viewport, UI Gating, Timezone & Hygiene Remediation (Items A-K) [IMPLEMENTED & VERIFIED]
+
+> **Checkpoint Commit**: `5e0e575` (working tree changes verified and committed)
+> **Verification Date**: 2026-10-22
+> **Test Status**: **126/126 PASS** across 14 backend suites (104 tests) and 10 Playwright E2E suites (22 tests).
+> **Typechecks & Build**: Server `tsc --noEmit` (0 errors), Client `tsc -b && vite build` (0 errors in 2.66s).
+
+## Summary of Changes Implemented
+
+### Item A: Booking Request Flow Deterministic Sort (`booking_request_flow.test.ts`)
+- **Problem**: In-memory `POST /api/sessions` created session objects without `createdAt`. The teacher read query sorted via `new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()`, leading to `NaN` comparison results where newly created pending sessions could be omitted or mis-ordered.
+- **Fix**: Added `createdAt: new Date().toISOString()` when inserting new sessions in `server/src/index.ts`.
+- **Evidence**: `server/test/booking_request_flow.test.ts` **7/7 PASS**.
+
+### Item B: UPI Modal Scrollable Body & Sticky Footer (`UpiPaymentModal.tsx`)
+- **Problem**: At 1366x768 and 390px, after typing the UTR, the modal confirm button overflowed outside the viewport.
+- **Fix**: Added `max-h-[min(90vh,720px)]` flex column structure with scrollable body (`overflow-y-auto`) and sticky footer (`shrink-0 sticky bottom-0 bg-surface border-t border-outline-variant`).
+- **Evidence**: `e2e/upi_modal_viewport.spec.ts` **2/2 PASS** at 1366x768 and 390px viewports.
+
+### Item C: Blank-UPI Mentors & Error Code Mapping
+- **Problem**: Booking a mentor without configured UPI ID caused unhandled or generic sign-in/expired errors.
+- **Fix**:
+  - In `Marketplace.tsx` and `Schedule.tsx`, mapped `MENTOR_PAYOUT_NOT_CONFIGURED` to user-friendly student error: `"This mentor has not configured payment details yet. Booking is temporarily disabled until payments are set up."`
+  - In `Marketplace.tsx`, badged mentors with `"Payments Not Set Up"` and disabled the booking action with an informative tooltip.
+  - In `TeacherPortal.tsx` and `Dashboard.tsx`, displayed an alert banner notifying the teacher that payout details are not configured.
+- **Evidence**: `e2e/blank_upi_booking.spec.ts` **3/3 PASS**.
+
+### Item D: Live Room 390px Horizontal Overflow
+- **Problem**: Horizontal document scrolling and layout clipping on 390px viewports.
+- **Fix**: Removed fixed minimum widths (`min-w-[420px]`, `min-w-[500px]`) in `LiveRoom.tsx`, `VideoGrid.tsx`, and `WhiteboardCanvas.tsx`. Ensured control elements and video mesh shrink and wrap cleanly.
+- **Evidence**: `e2e/live_room_layout.spec.ts` **4/4 PASS** (1366x768, 1920x1080, 390px mobile, accessibility).
+
+### Item E: Live Room Fullscreen Control & Server DemoMode Gating
+- **Problem**: Duplicate fullscreen toggles existed; developer controls and simulated student tile were gated on URL query string `location.search.includes('demo')`.
+- **Fix**:
+  - Gated dev controls and classmate simulation tile strictly on server state `isDevOrDemo = Boolean(isDemoMode || currentUser?.role === 'admin')`.
+  - Removed duplicate fullscreen button in `WorkspaceSubnav`; retained single authoritative fullscreen toggle in the room header.
+- **Evidence**: `e2e/live_room_controls_gating.spec.ts` **2/2 PASS**.
+
+### Item F: Notification Cards Stacking & Pointer-Events
+- **Problem**: Toast notifications overlayed primary actions, blocking clicks on Notes and request actions.
+- **Fix**: In `NotificationManager.tsx`, repositioned container to bottom-right (`bottom-4 right-4 z-40 flex-col-reverse`), applied `pointer-events-none` on container with `pointer-events-auto` on cards, added auto-dismiss (5s), and added explicit close button with `stopPropagation`.
+
+### Item G: Notes 2-Seat Cohort Session Sync & Delete Account Confirmation
+- **Problem**: Shared notes on 2-seat cohort sessions re-triggered "Unsaved changes" after Save; Profile Delete Account button did not open confirmation dialog.
+- **Fix**:
+  - In `server/src/routes/notes.ts`, updated note routes to recognize 2-seat cohort sessions (`session.students`).
+  - In `NoteEditor.tsx`, stored baseline text in `lastSavedRef` on sync/save, preventing state dirty loop.
+  - In `Profile.tsx`, rendered Delete Account confirmation modal into document body using `createPortal` with `data-testid="delete-account-modal"`, cancel/confirm buttons, and accessible keyboard dismissal.
+- **Evidence**: `server/test/notes_api.test.ts` **8/8 PASS** (Test 8 passed); `e2e/profile_delete_account.spec.ts` **1/1 PASS**.
+
+### Item H: User Timezone Labels on Schedule & Marketplace
+- **Problem**: Schedule displayed hardcoded `GMT` rather than the user's local timezone.
+- **Fix**: Created `src/lib/timezone.ts` resolving user timezone (default `Asia/Kolkata` / `IST`). Updated `Schedule.tsx` to display `{tzAbbr}` and timezone badge; updated `Marketplace.tsx` and `TeacherPortal.tsx` to show timezone badge on availability slots.
+- **Evidence**: `e2e/timezone_labels.spec.ts` **2/2 PASS**.
+
+### Item I: Feedback Verified Peers & Visible Result Banners
+- **Problem**: Feedback allowed selecting unverified peers and lacked visible error/success result banners.
+- **Fix**: Filtered peer selection in `Feedback.tsx` to participants with verified (`confirmed`, `completed`, `live`) sessions. Updated `postReview` in `src/lib/api/index.ts` to throw on non-ok responses. Added visible banners with `feedback-success-banner` and `feedback-error-banner`.
+- **Evidence**: `e2e/feedback_verified_peers.spec.ts` **2/2 PASS**.
+
+### Item J: Playwright Screenshot Directory Test Hygiene
+- **Problem**: Screenshot test wrote files outside the repo into external directories.
+- **Fix**: Updated `e2e/live_room_sidebar.spec.ts` to write screenshots to `test-results/` within repository, which is included in `.gitignore`.
+- **Evidence**: `e2e/live_room_sidebar.spec.ts` **4/4 PASS**.
+
+### Item K: /verify-email Without Token State
+- **Problem**: Visiting `/verify-email` without token parameter showed an indefinite spinner or broken error.
+- **Fix**: Rendered friendly explanation ("Email Verification Link Required", spam check guidance) and a `"Return Home"` button (`data-testid="return-home-btn"`) pointing to `/`.
+- **Evidence**: `e2e/verify_email_no_token.spec.ts` **1/1 PASS**.
+
+---
+
+# [x] PART 11: Tab-Isolated Authentication & Multi-Account Session Handling [COMPLETED]
+
+> [!NOTE] Architecture Context
+> Currently, active user authentication state (`mindroot_auth_token`, `mindroot_current_user`, `mindroot_login_role`, `mindroot_current_role`) is written to `localStorage`. Because `localStorage` is origin-scoped in web browsers, opening Tab 2 and signing in as a different user overwrites the active session of Tab 1. Refreshing or making API calls in Tab 1 causes Tab 1 to switch accounts.
+
+## 1. Problem Specification
+- When a user or evaluator tests the application by opening two tabs in the same browser (e.g. Tab 1 as a Mentor and Tab 2 as a Student):
+  - Tab 2 overwrites `localStorage.getItem('mindroot_auth_token')` and `localStorage.getItem('mindroot_current_user')`.
+  - Switching back to Tab 1 and refreshing reads Tab 2's user, breaking isolation.
+  - Furthermore, `api.ts` `fetchWithAuth()` pulls `localStorage.getItem('mindroot_auth_token')`, meaning even before refresh, API calls in Tab 1 become authenticated as Tab 2.
+
+## 2. Target Design: Tab-Scoped `sessionStorage` with Graceful `localStorage` Seeding
+1. **Primary Session Isolation**:
+   - Store active authentication credentials in `sessionStorage` (`mindroot_auth_token`, `mindroot_current_user`, `mindroot_login_role`, `mindroot_current_role`).
+   - `sessionStorage` is strictly scoped to the individual browser tab and survives reloads/refreshes of that tab.
+2. **Graceful New-Tab Seeding**:
+   - On initial page load of a brand-new tab, check `sessionStorage` first.
+   - If `sessionStorage` is empty, check `localStorage` to seed the session (so opening a link in a new tab stays logged in).
+   - Once a tab explicitly logs in or switches accounts, it writes to `sessionStorage`, isolating itself from any other open tab.
+3. **API & Socket Token Scope**:
+   - Update `getSocketAuthToken()` and `fetchWithAuth()` in `src/lib/api/index.ts` to inspect `sessionStorage` first.
+   - Each tab's Socket.io instance authenticates with that specific tab's user token.
+4. **Logout Handling**:
+   - Logging out clears the tab's `sessionStorage` and also clears `localStorage` so future tabs start unauthenticated.
+
+## 3. Implementation Steps & Verification
+- [ ] Refactor storage helpers in `src/lib/api/index.ts` to provide `getAuthItem(key)` and `setAuthItem(key, val)` preferring `sessionStorage`.
+- [ ] Refactor `src/store/useAppStore.ts` initializers and auth actions (`login`, `logout`, `setCurrentUser`).
+- [ ] Audit direct `localStorage.getItem('mindroot_auth_token')` calls in components (`NotificationManager.tsx`, `UpiPaymentModal.tsx`, `LiveRoom.tsx`, `Schedule.tsx`).
+- [ ] Add an automated Playwright multi-tab test (`e2e/multi_tab_session_isolation.spec.ts`) asserting that two separate browser pages can maintain different active sessions independently without clobbering each other on refresh.
+- [ ] Run full typechecks, linter, and backend test suites.

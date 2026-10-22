@@ -6,11 +6,11 @@ import { calculateSeatPrice } from '../pricing';
 const getBASE = () => getBackendUrl();
 
 export const getSocketAuthToken = () => {
-  if (typeof localStorage === 'undefined') return '';
-  let token = localStorage.getItem('mindroot_auth_token');
+  if (typeof window === 'undefined') return '';
+  let token = getAuthItem('mindroot_auth_token');
   if (!token) {
     try {
-      const stored = localStorage.getItem('mindroot_current_user');
+      const stored = getAuthItem('mindroot_current_user');
       if (stored) {
         const u = JSON.parse(stored);
         if (u?.id) token = `dev-token-${u.id}`;
@@ -118,6 +118,46 @@ export const safeGetStorage = <T>(key: string, fallback: T): T => {
     return fallback;
   }
 };
+
+// Tab-isolated session storage helpers
+export function getAuthItem(key: string): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const sessionVal = sessionStorage.getItem(key);
+    if (sessionVal !== null) return sessionVal;
+    const localVal = localStorage.getItem(key);
+    if (localVal !== null) {
+      try {
+        sessionStorage.setItem(key, localVal);
+      } catch {}
+      return localVal;
+    }
+  } catch {}
+  return null;
+}
+
+export function setAuthItem(key: string, value: any): void {
+  if (typeof window === "undefined") return;
+  const str = typeof value === "string" ? value : JSON.stringify(value);
+  try {
+    sessionStorage.setItem(key, str);
+  } catch (e) {
+    console.warn(`[Storage Warning] Failed to write "${key}" to sessionStorage:`, e);
+  }
+  try {
+    safeSetStorage(key, value);
+  } catch {}
+}
+
+export function removeAuthItem(key: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(key);
+  } catch {}
+  try {
+    localStorage.removeItem(key);
+  } catch {}
+}
 
 export function getSessionApproverId(session: any): string {
   if (!session) return '';
@@ -286,7 +326,7 @@ const notifyDiscussionListeners = (discussions: any[]) => {
 
 // Multi-laptop real-time synchronization listeners
 globalSocket.on('connect', () => {
-  const storedUser = localStorage.getItem('mindroot_current_user');
+  const storedUser = getAuthItem('mindroot_current_user');
   if (storedUser) {
     try {
       const u = JSON.parse(storedUser);
@@ -453,15 +493,15 @@ const getHeaders = () => {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json'
   };
-  let token = typeof localStorage !== 'undefined' ? localStorage.getItem('mindroot_auth_token') : null;
-  if (!token && typeof localStorage !== 'undefined') {
+  let token = typeof window !== 'undefined' ? getAuthItem('mindroot_auth_token') : null;
+  if (!token && typeof window !== 'undefined') {
     try {
-      const storedUser = localStorage.getItem('mindroot_current_user');
+      const storedUser = getAuthItem('mindroot_current_user');
       if (storedUser) {
         const u = JSON.parse(storedUser);
         if (u?.id) {
           token = `dev-token-${u.id}`;
-          safeSetStorage('mindroot_auth_token', token);
+          setAuthItem('mindroot_auth_token', token);
         }
       }
     } catch {}
@@ -474,17 +514,17 @@ const getHeaders = () => {
 
 const safeParse = async (r: Response, fallback: any) => {
   try {
-    if (r.status === 401 && typeof localStorage !== 'undefined') {
-      const existingToken = localStorage.getItem('mindroot_auth_token');
+    if (r.status === 401 && typeof window !== 'undefined') {
+      const existingToken = getAuthItem('mindroot_auth_token');
       if (existingToken && !existingToken.startsWith('dev-token-')) {
         console.warn('[API Auth] 401 Unauthorized encountered with invalid/expired token. Clearing stale auth token and restoring dev session.');
-        localStorage.removeItem('mindroot_auth_token');
+        removeAuthItem('mindroot_auth_token');
         try {
-          const storedUser = localStorage.getItem('mindroot_current_user');
+          const storedUser = getAuthItem('mindroot_current_user');
           if (storedUser) {
             const u = JSON.parse(storedUser);
             if (u?.id) {
-              safeSetStorage('mindroot_auth_token', `dev-token-${u.id}`);
+              setAuthItem('mindroot_auth_token', `dev-token-${u.id}`);
             }
           }
         } catch {}
@@ -555,7 +595,7 @@ export const api = {
       globalBc.postMessage({ type: 'sync-peers', peers: list });
 
       // Automatically persist to API server only if authenticated
-      const token = localStorage.getItem('mindroot_auth_token');
+      const token = getAuthItem('mindroot_auth_token');
       if (token && user.id && !user.id.startsWith('peer-')) {
         api.updateUser(user.id, {
           name: user.name,
@@ -1114,7 +1154,7 @@ export const api = {
     }
 
     if (!createdSession) {
-      const storedUser = localStorage.getItem('mindroot_current_user');
+      const storedUser = getAuthItem('mindroot_current_user');
       let currentUser: any = null;
       if (storedUser) try { currentUser = JSON.parse(storedUser); } catch {}
 
@@ -1230,7 +1270,7 @@ export const api = {
       if (r.ok) updatedSession = await safeParse(r, null);
     } catch {}
 
-    const storedUser = localStorage.getItem('mindroot_current_user');
+    const storedUser = getAuthItem('mindroot_current_user');
     let currentUser: any = null;
     if (storedUser) try { currentUser = JSON.parse(storedUser); } catch {}
 
@@ -1343,9 +1383,9 @@ export const api = {
       const parsed = await safeParse(r, null);
       if (r.ok && parsed && parsed.user) {
         if (parsed.token) {
-          safeSetStorage('mindroot_auth_token', parsed.token);
+          setAuthItem('mindroot_auth_token', parsed.token);
         }
-        safeSetStorage('mindroot_current_user', parsed.user);
+        setAuthItem('mindroot_current_user', parsed.user);
         return parsed.user;
       }
       if (parsed && parsed.error) throw new Error(parsed.error);
@@ -1382,8 +1422,8 @@ export const api = {
     }
 
     if (matched) {
-      safeSetStorage('mindroot_auth_token', 'dev-token-' + matched.id);
-      safeSetStorage('mindroot_current_user', matched);
+      setAuthItem('mindroot_auth_token', 'dev-token-' + matched.id);
+      setAuthItem('mindroot_current_user', matched);
       return matched;
     }
 
@@ -1407,10 +1447,10 @@ export const api = {
       const parsed = await safeParse(r, null);
       if (r.ok && parsed) {
         if (parsed.token) {
-          safeSetStorage('mindroot_auth_token', parsed.token);
+          setAuthItem('mindroot_auth_token', parsed.token);
         }
         createdUser = parsed;
-        safeSetStorage('mindroot_current_user', createdUser);
+        setAuthItem('mindroot_current_user', createdUser);
       } else if (parsed && parsed.error) {
         throw new Error(parsed.error);
       }
@@ -1442,8 +1482,8 @@ export const api = {
         skillsTaught: data.teaches || [],
         skillsLearned: data.learns || []
       };
-      safeSetStorage('mindroot_auth_token', 'dev-token-' + createdUser.id);
-      safeSetStorage('mindroot_current_user', createdUser);
+      setAuthItem('mindroot_auth_token', 'dev-token-' + createdUser.id);
+      setAuthItem('mindroot_current_user', createdUser);
     }
 
     try {
@@ -1477,8 +1517,9 @@ export const api = {
       const parsed = await safeParse(r, null);
       if (r.ok && parsed && parsed.user) {
         if (parsed.token) {
-          safeSetStorage('mindroot_auth_token', parsed.token);
+          setAuthItem('mindroot_auth_token', parsed.token);
         }
+        setAuthItem('mindroot_current_user', parsed.user);
         authRes = parsed;
       } else if (parsed && parsed.error) {
         if (!credential.includes('.devsig')) {
@@ -1522,7 +1563,8 @@ export const api = {
           { type: 'wants_to_learn', skill: { id: 's-Python', name: 'Python', category: 'Software & AI' } }
         ]
       };
-      safeSetStorage('mindroot_auth_token', 'dev-token-' + user.id);
+      setAuthItem('mindroot_auth_token', 'dev-token-' + user.id);
+      setAuthItem('mindroot_current_user', user);
       authRes = { success: true, user, token: 'dev-token-' + user.id, isNewUser: true };
     }
 
@@ -2282,7 +2324,7 @@ export const api = {
       formData.append('file', file);
 
       const headers: Record<string, string> = {};
-      const token = localStorage.getItem('mindroot_auth_token');
+      const token = getAuthItem('mindroot_auth_token');
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
@@ -2302,7 +2344,7 @@ export const api = {
   },
 
   exportDailyNotesUrl: (format: 'zip' | 'md' = 'zip') => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('mindroot_auth_token') : null;
+    const token = typeof window !== 'undefined' ? getAuthItem('mindroot_auth_token') : null;
     return `${getBASE()}/api/notes/export/all?format=${format}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   }
 };
