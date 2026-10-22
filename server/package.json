@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "npx tsx watch src/index.ts",
     "start": "npx tsx src/index.ts",
+    "migrate": "prisma migrate deploy",
+    "start:prod": "npx prisma migrate deploy && npx tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate"
   },

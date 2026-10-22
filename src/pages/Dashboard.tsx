@@ -221,8 +221,6 @@ export function Dashboard() {
     }
   };
 
-  if (!currentUser) return <div className="p-8 text-center text-on-surface-variant font-bold animate-pulse text-sm">Loading dashboard...</div>;
-
   const isPastSession = (s: any) => {
     if (!s || !s.scheduledAt) return false;
     const startTime = new Date(s.scheduledAt).getTime();
@@ -230,13 +228,96 @@ export function Dashboard() {
     return startTime + durationMs <= Date.now();
   };
 
-  const isBothRole = loginRole === 'both' || currentUser?.role === 'both';
-  const isTeacherRole = role === 'teacher' || (!isBothRole && (loginRole === 'teacher' || currentUser?.role === 'teacher'));
-
   const pendingRequestsForMe = useMemo(() => {
     if (!currentUser?.id) return [];
     return sessions.filter(s => s && s.status === 'pending' && getSessionApproverId(s) === currentUser.id && !isPastSession(s));
   }, [sessions, currentUser?.id]);
+
+  // Dynamically compute top recommended peer match from database peers
+  const recommendedPeerMatch = useMemo(() => {
+    if (!currentUser || !peers || peers.length === 0) return null;
+
+    const myId = currentUser.id;
+    const candidatePeers = peers.filter(p => p && p.id && p.id !== myId && p.role !== 'admin');
+    if (candidatePeers.length === 0) return null;
+
+    const myUserSkills = currentUser.userSkills || [
+      ...(currentUser.skillsTaught || []).map((t: string) => ({ type: 'teaches', skill: { id: 's-' + t, name: t } })),
+      ...(currentUser.skillsLearned || []).map((l: string) => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l } }))
+    ];
+
+    const myTeaches = myUserSkills.filter((us: any) => us.type === 'teaches');
+    const myLearns = myUserSkills.filter((us: any) => us.type === 'wants_to_learn');
+
+    const scoredPeers = candidatePeers.map(peer => {
+      const peerUserSkills = peer.userSkills || [
+        ...(peer.skillsTaught || []).map((t: string) => ({ type: 'teaches', skill: { id: 's-' + t, name: t } })),
+        ...(peer.skillsLearned || []).map((l: string) => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l } }))
+      ];
+
+      const peerTeaches = peerUserSkills.filter((us: any) => us.type === 'teaches');
+      const peerLearns = peerUserSkills.filter((us: any) => us.type === 'wants_to_learn');
+
+      const takeMatches = peerTeaches.filter((pt: any) =>
+        myLearns.some((al: any) =>
+          (pt.skill?.id && al.skill?.id && pt.skill.id === al.skill.id) ||
+          (pt.skill?.name && al.skill?.name && pt.skill.name.toLowerCase() === al.skill.name.toLowerCase())
+        )
+      ).length;
+
+      const giveMatches = myTeaches.filter((at: any) =>
+        peerLearns.some((pl: any) =>
+          (at.skill?.id && pl.skill?.id && at.skill.id === pl.skill.id) ||
+          (at.skill?.name && pl.skill?.name && at.skill.name.toLowerCase() === pl.skill.name.toLowerCase())
+        )
+      ).length;
+
+      const totalMatches = takeMatches + giveMatches;
+      let matchScore = 78;
+      if (myUserSkills.length > 0 && peerUserSkills.length > 0) {
+        if (totalMatches > 0) {
+          const maxPossible = Math.max(1, Math.min(myLearns.length + myTeaches.length, peerTeaches.length + peerLearns.length));
+          matchScore = Math.min(99, Math.max(70, Math.round(60 + (totalMatches / maxPossible) * 39)));
+        } else {
+          matchScore = Math.min(88, Math.max(65, Math.round((peer.trustScore || 4.8) * 16)));
+        }
+      }
+
+      const peerSessions = sessions.filter(s => (s.teacherId === peer.id || s.studentId === peer.id));
+      const sessionCount = peerSessions.length;
+
+      const teachesSkills = peerTeaches.map((us: any) => us.skill?.name).filter(Boolean);
+      const learnsSkills = peerLearns.map((us: any) => us.skill?.name).filter(Boolean);
+
+      const teachStr = teachesSkills.length > 0 
+        ? teachesSkills.slice(0, 2).join(' & ') 
+        : (Array.isArray(peer.skillsTaught) && peer.skillsTaught.length > 0 ? peer.skillsTaught.slice(0, 2).join(' & ') : 'Core Mentoring');
+      const learnStr = learnsSkills.length > 0 
+        ? learnsSkills.slice(0, 2).join(' & ') 
+        : (Array.isArray(peer.skillsLearned) && peer.skillsLearned.length > 0 ? peer.skillsLearned.slice(0, 2).join(' & ') : 'Advanced Concepts');
+
+      return {
+        peer,
+        matchScore,
+        totalMatches,
+        sessionCount,
+        teachStr,
+        learnStr
+      };
+    });
+
+    scoredPeers.sort((a, b) => {
+      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
+      return (b.peer.trustScore || 0) - (a.peer.trustScore || 0);
+    });
+
+    return scoredPeers[0] || null;
+  }, [currentUser, peers, sessions]);
+
+  if (!currentUser) return <div className="p-8 text-center text-on-surface-variant font-bold animate-pulse text-sm">Loading dashboard...</div>;
+
+  const isBothRole = loginRole === 'both' || currentUser?.role === 'both';
+  const isTeacherRole = role === 'teacher' || (!isBothRole && (loginRole === 'teacher' || currentUser?.role === 'teacher'));
 
   const handleAcceptBooking = async (sessionId: string) => {
     setActingSessionId(sessionId);
@@ -350,87 +431,6 @@ export function Dashboard() {
   const activeSkillsList = isTeacherRole ? teachSkills : (learnSkills.length ? learnSkills : teachSkills);
   const activeTopicsCount = activeSkillsList.length.toString();
   const activeTopicTags = activeSkillsList.slice(0, 2);
-
-  // Dynamically compute top recommended peer match from database peers
-  const recommendedPeerMatch = useMemo(() => {
-    if (!currentUser || !peers || peers.length === 0) return null;
-
-    const myId = currentUser.id;
-    const candidatePeers = peers.filter(p => p && p.id && p.id !== myId && p.role !== 'admin');
-    if (candidatePeers.length === 0) return null;
-
-    const myUserSkills = currentUser.userSkills || [
-      ...(currentUser.skillsTaught || []).map((t: string) => ({ type: 'teaches', skill: { id: 's-' + t, name: t } })),
-      ...(currentUser.skillsLearned || []).map((l: string) => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l } }))
-    ];
-
-    const myTeaches = myUserSkills.filter((us: any) => us.type === 'teaches');
-    const myLearns = myUserSkills.filter((us: any) => us.type === 'wants_to_learn');
-
-    const scoredPeers = candidatePeers.map(peer => {
-      const peerUserSkills = peer.userSkills || [
-        ...(peer.skillsTaught || []).map((t: string) => ({ type: 'teaches', skill: { id: 's-' + t, name: t } })),
-        ...(peer.skillsLearned || []).map((l: string) => ({ type: 'wants_to_learn', skill: { id: 's-' + l, name: l } }))
-      ];
-
-      const peerTeaches = peerUserSkills.filter((us: any) => us.type === 'teaches');
-      const peerLearns = peerUserSkills.filter((us: any) => us.type === 'wants_to_learn');
-
-      const takeMatches = peerTeaches.filter((pt: any) =>
-        myLearns.some((al: any) =>
-          (pt.skill?.id && al.skill?.id && pt.skill.id === al.skill.id) ||
-          (pt.skill?.name && al.skill?.name && pt.skill.name.toLowerCase() === al.skill.name.toLowerCase())
-        )
-      ).length;
-
-      const giveMatches = myTeaches.filter((at: any) =>
-        peerLearns.some((pl: any) =>
-          (at.skill?.id && pl.skill?.id && at.skill.id === pl.skill.id) ||
-          (at.skill?.name && pl.skill?.name && at.skill.name.toLowerCase() === pl.skill.name.toLowerCase())
-        )
-      ).length;
-
-      const totalMatches = takeMatches + giveMatches;
-      let matchScore = 78;
-      if (myUserSkills.length > 0 && peerUserSkills.length > 0) {
-        if (totalMatches > 0) {
-          const maxPossible = Math.max(1, Math.min(myLearns.length + myTeaches.length, peerTeaches.length + peerLearns.length));
-          matchScore = Math.min(99, Math.max(70, Math.round(60 + (totalMatches / maxPossible) * 39)));
-        } else {
-          matchScore = Math.min(88, Math.max(65, Math.round((peer.trustScore || 4.8) * 16)));
-        }
-      }
-
-      const peerSessions = sessions.filter(s => (s.teacherId === peer.id || s.studentId === peer.id));
-      const sessionCount = peerSessions.length;
-
-      const teachesSkills = peerTeaches.map((us: any) => us.skill?.name).filter(Boolean);
-      const learnsSkills = peerLearns.map((us: any) => us.skill?.name).filter(Boolean);
-
-      const teachStr = teachesSkills.length > 0 
-        ? teachesSkills.slice(0, 2).join(' & ') 
-        : (Array.isArray(peer.skillsTaught) && peer.skillsTaught.length > 0 ? peer.skillsTaught.slice(0, 2).join(' & ') : 'Core Mentoring');
-      const learnStr = learnsSkills.length > 0 
-        ? learnsSkills.slice(0, 2).join(' & ') 
-        : (Array.isArray(peer.skillsLearned) && peer.skillsLearned.length > 0 ? peer.skillsLearned.slice(0, 2).join(' & ') : 'Advanced Concepts');
-
-      return {
-        peer,
-        matchScore,
-        totalMatches,
-        sessionCount,
-        teachStr,
-        learnStr
-      };
-    });
-
-    scoredPeers.sort((a, b) => {
-      if (b.matchScore !== a.matchScore) return b.matchScore - a.matchScore;
-      return (b.peer.trustScore || 0) - (a.peer.trustScore || 0);
-    });
-
-    return scoredPeers[0] || null;
-  }, [currentUser, peers, sessions]);
 
   // Contextual time greeting
   const getGreeting = () => {

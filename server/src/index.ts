@@ -343,7 +343,8 @@ try {
     const adapter = new PrismaPg(pool);
     prisma = new PrismaClient({ adapter });
   } else {
-    prisma = new PrismaClient();
+    // In-memory demo fallback: do not instantiate without adapter/DATABASE_URL
+    prisma = null;
   }
 
   if (prisma && process.env.DATABASE_URL) {
@@ -353,9 +354,18 @@ try {
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "bio" TEXT DEFAULT 'Passionate about peer-to-peer knowledge sharing and skill exchanges.';
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "avatar" TEXT DEFAULT '';
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "isPublic" BOOLEAN NOT NULL DEFAULT true;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "upiId" TEXT;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "upiQrImage" TEXT;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vpaVerified" BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vpaVerifiedAt" TIMESTAMP(3);
       ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3);
       ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "balanceBefore" INTEGER;
       ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "balanceAfter" INTEGER;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "isSwap" BOOLEAN NOT NULL DEFAULT false;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "giveSkill" TEXT;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "takeSkill" TEXT;
+      ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "proposerId" TEXT;
       ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "utrNumber" TEXT;
       ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "utr" TEXT;
       ALTER TABLE "Session" ADD COLUMN IF NOT EXISTS "tokenRefunded" BOOLEAN NOT NULL DEFAULT false;
@@ -364,6 +374,36 @@ try {
       CREATE UNIQUE INDEX IF NOT EXISTS "Transaction_utr_key" ON "Transaction"("utr");
       CREATE UNIQUE INDEX IF NOT EXISTS "Session_utrNumber_key" ON "Session"("utrNumber");
       CREATE UNIQUE INDEX IF NOT EXISTS "Session_utr_key" ON "Session"("utr");
+      CREATE TABLE IF NOT EXISTS "PayoutAccount" (
+        "id" TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL UNIQUE REFERENCES "User"("id") ON DELETE CASCADE,
+        "accountHolderName" TEXT,
+        "accountNumber" TEXT,
+        "ifscCode" TEXT,
+        "bankName" TEXT,
+        "upiId" TEXT,
+        "payoutMethod" TEXT NOT NULL DEFAULT 'upi',
+        "upiQrImage" TEXT,
+        "officialIdType" TEXT,
+        "officialIdNumber" TEXT,
+        "officialIdDocument" TEXT,
+        "officialIdStatus" TEXT NOT NULL DEFAULT 'unverified',
+        "isVerified" BOOLEAN NOT NULL DEFAULT false,
+        "vpaVerified" BOOLEAN NOT NULL DEFAULT false,
+        "vpaVerifiedAt" TIMESTAMP(3),
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE TABLE IF NOT EXISTS "PayoutAuditLog" (
+        "id" TEXT PRIMARY KEY,
+        "userId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,
+        "field" TEXT NOT NULL,
+        "oldMasked" TEXT,
+        "newMasked" TEXT,
+        "changedBy" TEXT NOT NULL,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS "PayoutAuditLog_userId_createdAt_idx" ON "PayoutAuditLog"("userId", "createdAt");
       CREATE TABLE IF NOT EXISTS "Note" (
         "id" TEXT PRIMARY KEY,
         "authorId" TEXT NOT NULL REFERENCES "User"("id") ON DELETE CASCADE,

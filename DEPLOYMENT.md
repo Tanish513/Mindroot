@@ -40,13 +40,20 @@ This document details all required environment variables and post-deployment set
 ## 📋 First Deploy Checklist
 
 1. **Apply Database Schema Migrations**:
-   Run `npx prisma migrate deploy` from the `server/` directory against your production database instance.
+   Run `npx prisma migrate deploy` from the `server/` directory against your production database instance, or use the automated production start command:
    ```bash
    cd server
-   npx prisma migrate deploy
+   npm run start:prod
    ```
+   *Note: In PaaS environments (Render, Railway, Fly.io, Heroku), configure the service start command as `npm run start:prod` (or release command as `npm run migrate`). This guarantees all database tables (`Note`, `PayoutAccount`, `PayoutAuditLog`, and indexes) are migrated automatically before traffic starts.*
 
-2. **Verify Domain in Resend Dashboard**:
+2. **Frontend Deployment (Vercel / Netlify / Cloudflare Pages)**:
+   * **Root Directory**: `./` (repository root)
+   * **Build Command**: `npm run build`
+   * **Output Directory**: `dist`
+   * **Environment Variables**: Set `VITE_BACKEND_URL` to your production backend API domain (e.g. `https://api.yourdomain.com`).
+
+3. **Verify Domain in Resend Dashboard**:
    Before relying on email delivery in production, verify your custom domain DNS records (DKIM, SPF) in the Resend dashboard to prevent emails from landing in spam or hitting free-tier sending restrictions.
 
 3. **Configure Google Cloud Console Authorized Origins**:
