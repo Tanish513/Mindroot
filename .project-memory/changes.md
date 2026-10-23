@@ -289,3 +289,39 @@
     - Zero commits, staging, or pushes executed.
 
 
+- **2026-10-22**:
+  - **Task**: Multi-Tab Account Isolation & Concurrency Verification.
+  - **Commit**: `041fec5` - `feat(auth): implement tab-isolated multi-account session storage and e2e test suite`
+  - **Changes Implemented**:
+    1. **Tab Isolation**: Migrated browser auth token storage to `sessionStorage` with graceful migration from `localStorage` (`src/context/AuthContext.tsx`, `src/lib/auth-storage.ts`, `src/lib/api/index.ts`). Allows multiple tabs/windows to be logged in simultaneously as different users (e.g. Student in Tab 1, Teacher/Mentor in Tab 2) without token overwrites or cross-tab contamination.
+    2. **Multi-Tab E2E Testing**: Added Playwright test suite `e2e/multi_tab_accounts.spec.ts` testing simultaneous independent login, session requests, and notifications across isolated browser contexts.
+  - **Verification**:
+    - Backend: 15 suites, 107 tests passing.
+    - Playwright: 11 suites, 23 tests passing.
+
+- **2026-10-23**:
+  - **Task**: Resilient Mentor Approval Request Delivery & Multi-User Notification Recovery.
+  - **Commit**: `998510e` - `fix(booking): deliver approval requests to teachers via resilient socket and REST fallback`
+  - **Changes Implemented**:
+    1. **Socket Delivery Hardening**:
+       - Fixed `server/src/index.ts` to register users into `user:${userId}` rooms immediately on socket connection and when client emits `register-user-sync`.
+       - Emits `session-request-created` directly to `user:${approverId}` and `user:${studentId}` when a booking request is created.
+       - Dispatches in-memory and database notifications to the approver.
+       - Client socket (`src/context/SocketContext.tsx`): Exposes `isDisconnected` and auto-registers `register-user-sync` on connect/reconnect with token verification.
+    2. **REST Fallback & Polling**:
+       - Added `GET /api/sessions/pending-count` endpoint to `server/src/index.ts` returning `{ pendingApprovalsCount, pendingRequestsCount }` scoped to authenticated user.
+       - Added client API helper `fetchPendingApprovalsCount()` in `src/lib/api/index.ts`.
+       - Created custom hook `src/hooks/usePendingApprovalsCount.ts` polling every 30s and re-fetching on window `focus` / `visibilitychange`.
+       - Updated `Navbar.tsx` and `DashboardLayout.tsx` to render live pending badge counters on Teacher Portal navigation items and top bar notification icons.
+    3. **Both-Role Visibility**:
+       - Ensured users with role `both` in student view see banner and badge alerts for pending approvals awaiting their review, with 1-click switcher to Teacher mode.
+    4. **Offline Teacher Catch-up**:
+       - On login, pending approval count is immediately fetched via REST, ensuring teachers who were offline during booking receive immediate notification.
+    5. **Automated Test Coverage**:
+       - Added 2 new tests in `server/test/booking_request_flow.test.ts` verifying real-time socket delivery to approver room, REST pending count accuracy, role isolation (wrong user cannot access), and offline teacher recovery.
+  - **Verification**:
+    - Backend: 15 suites, 109 tests passing (109/109 PASS, Exit 0).
+    - Playwright E2E: 11 suites, 23 tests passing (23/23 PASS, Exit 0).
+    - Total: 132/132 tests passing.
+    - Server typecheck: 0 errors.
+    - Client build: `tsc -b && vite build` 0 errors in 5.55s.

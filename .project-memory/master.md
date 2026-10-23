@@ -67,5 +67,15 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
        - Enforced server-authoritative swap pricing in `server/src/index.ts`: when mentor has no hourly rate configured, client-supplied prices are never trusted. Uses original session's server price if found; otherwise rejects with HTTP 400 `SWAP_PRICE_UNAVAILABLE`. Closed zero-price bypass loophole (`|| clientSuppliedPrice === 0` removed).
        - Updated `docs/API.md` line ~40 to describe exact authoritative swap pricing behavior and error contracts (`PRICE_TAMPERING_DETECTED`, `SWAP_PRICE_UNAVAILABLE`).
        - Verified by `server/test/payment_security_fixes.test.ts` (subtests 2d, 2e, 2f-i, 2f-ii).
-- **Latest verification**: All 14 automated backend suites (103/103) and Playwright E2E passing (100%). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 3.48s.
+   14. Multi-Tab Session Isolation (`041fec5`):
+       - Migrated auth token storage to `sessionStorage` with seamless migration from `localStorage`.
+       - Enabled concurrent logins across multiple tabs/windows without account overwrite.
+       - Verified by `e2e/multi_tab_accounts.spec.ts`.
+   15. Resilient Mentor Approval Request Delivery & Multi-User Notification Recovery (`998510e`):
+       - Socket delivery of `session-request-created` directly into `user:${approverId}` rooms on booking.
+       - REST fallback endpoint `GET /api/sessions/pending-count` and 30s client polling hook with window focus re-fetch.
+       - Visual pending badges in Navbar, Teacher Portal navigation, and notification bell.
+       - Offline teacher catch-up on login, `both` role banner for dual-role users, and socket disconnection banners.
+       - Verified by `server/test/booking_request_flow.test.ts` (7/7 tests passing).
+- **Latest verification**: All 15 automated backend suites (109/109 tests) and 11 Playwright E2E suites (23/23 tests) passing (132/132 total passing). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 5.55s.
 - **Known Issues**: None. All items fully verified and resolved.

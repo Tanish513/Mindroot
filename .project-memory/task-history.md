@@ -64,3 +64,15 @@
   - Item 3 (Memory Scrubbing): Removed stale payment gateway mentions, false "no references remain" claims, and literal fractional counter text from `.project-memory/changes.md` and `.project-memory/master.md`.
   - Verification: Server typecheck (0 errors), frontend typecheck (0 errors), Vite production build (0 errors in 3.48s), `pricing_and_booking_bugs.test.ts` (10/10 PASS), `payment_security_fixes.test.ts` (3/3 suites, 11 subtests PASS), and `verification_gaps.test.ts` (8/8 PASS). No real DATABASE_URL used; zero git commits or pushes.
 
+
+- **2026-10-22**: Multi-Tab Account Isolation & Concurrency Verification (`041fec5`).
+  - Switched client token storage to tab-scoped `sessionStorage` with backward-compatible migration from `localStorage`.
+  - Added multi-tab account switching support and multi-browser Playwright test (`e2e/multi_tab_accounts.spec.ts`).
+  - All 15 backend suites and 11 Playwright suites pass cleanly.
+
+- **2026-10-23**: Resilient Mentor Approval Request Delivery & Multi-User Notification Recovery (`998510e`).
+  - Hardened real-time WebSocket delivery for mentor session approval requests (`session-request-created` to `user:${approverId}`).
+  - Added REST fallback endpoint `GET /api/sessions/pending-count` and 30-second polling hook with window focus re-fetch.
+  - Added visual pending badges in Navbar, Teacher Portal navigation, and top bar notification bell.
+  - Implemented offline teacher recovery, student/teacher role banner for `both` users, and socket disconnection banners.
+  - Added automated tests in `server/test/booking_request_flow.test.ts`. Full test suite passes: 109 backend unit/integration tests and 23 Playwright E2E tests (132/132 total passing).
