@@ -140,6 +140,18 @@ function toPublicUser(user: any, role?: string): any {
   if (Array.isArray(user)) {
     return user.map(u => toPublicUser(u, role));
   }
+  if (user.deletedAt) {
+    return {
+      id: user.id,
+      name: 'Deleted user',
+      email: 'deleted@invalid.mindroot.edu',
+      avatar: null,
+      bio: '',
+      role: user.role || 'student',
+      isPublic: false,
+      deletedAt: user.deletedAt
+    };
+  }
   const isPublicVal = user.isPublic !== undefined ? Boolean(user.isPublic) : true;
   if (role === 'admin') {
     const { password, passwordResetToken, emailVerificationToken, ...adminSafe } = user;
@@ -267,10 +279,13 @@ app.use((req: any, _res: any, next: any) => {
       const decoded = jwt.verify(token, JWT_SECRET) as any;
       req.userId = decoded.userId || decoded.id;
       req.userRole = decoded.role;
+      req.tokenVersion = decoded.tokenVersion;
+      req.rawAuthToken = token;
     } catch {
       // Support dev-token- prefix for rapid local tests, demo modes, and fallback sessions
       if (token.startsWith('dev-token-')) {
         req.userId = token.replace('dev-token-', '');
+        req.rawAuthToken = token;
         const matched = inMemoryUsers.find(u => u.id === req.userId);
         if (matched) {
           req.userRole = matched.role;
@@ -297,21 +312,59 @@ app.get('/api/config', (_req, res) => {
   });
 });
 
-const requireAuth = (req: any, res: any, next: any) => {
+const requireAuth = async (req: any, res: any, next: any) => {
   if (!req.userId) {
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token.' });
   }
+
+  let userTokenVersion: number | undefined;
+  let isDeleted = false;
+
+  if (process.env.DATABASE_URL && prisma) {
+    try {
+      const dbUser = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: { tokenVersion: true, deletedAt: true }
+      });
+      if (dbUser) {
+        userTokenVersion = dbUser.tokenVersion ?? 0;
+        if (dbUser.deletedAt) isDeleted = true;
+      }
+    } catch {}
+  }
+
+  if (userTokenVersion === undefined) {
+    const memUser = inMemoryUsers.find(u => u.id === req.userId);
+    if (memUser) {
+      userTokenVersion = memUser.tokenVersion ?? 0;
+      if (memUser.deletedAt) isDeleted = true;
+    }
+  }
+
+  if (isDeleted) {
+    return res.status(401).json({ error: 'Unauthorized: Account has been deleted.' });
+  }
+
+  const rawToken = req.rawAuthToken || '';
+  if (!rawToken.startsWith('dev-token-')) {
+    if (typeof req.tokenVersion !== 'number') {
+      return res.status(401).json({ error: 'Unauthorized: Token missing tokenVersion claim.' });
+    }
+    if (userTokenVersion !== undefined && req.tokenVersion < userTokenVersion) {
+      return res.status(401).json({ error: 'Unauthorized: Token revoked. Stale tokenVersion.' });
+    }
+  }
+
   next();
 };
 
-const requireAdmin = (req: any, res: any, next: any) => {
-  if (!req.userId) {
-    return res.status(401).json({ error: 'Unauthorized: Missing or invalid authentication token.' });
-  }
-  if (req.userRole !== 'admin') {
-    return res.status(403).json({ error: 'Forbidden: Administrator privileges required.' });
-  }
-  next();
+const requireAdmin = async (req: any, res: any, next: any) => {
+  await requireAuth(req, res, () => {
+    if (req.userRole !== 'admin') {
+      return res.status(403).json({ error: 'Forbidden: Administrator privileges required.' });
+    }
+    next();
+  });
 };
 
 const requireUserOwnershipOrAdmin = (req: any, res: any, next: any) => {
@@ -537,6 +590,7 @@ try {
       'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "vpaVerifiedAt" TIMESTAMP(3)',
       'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "version" INTEGER NOT NULL DEFAULT 0',
       'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "deletedAt" TIMESTAMP(3)',
+      'ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "tokenVersion" INTEGER NOT NULL DEFAULT 0',
       'CREATE UNIQUE INDEX IF NOT EXISTS "User_email_key" ON "User"("email")',
       'ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "balanceBefore" INTEGER',
       'ALTER TABLE "Transaction" ADD COLUMN IF NOT EXISTS "balanceAfter" INTEGER',
@@ -1728,7 +1782,7 @@ const expireSessionsInterval = setInterval(checkAndExpirePendingSessions, 60000)
 expireSessionsInterval.unref();
 
 // Socket.io Handshake Authentication Middleware
-io.use((socket, next) => {
+io.use(async (socket, next) => {
   const token = socket.handshake.auth?.token || (socket.handshake.headers?.authorization && socket.handshake.headers.authorization.startsWith('Bearer ') ? socket.handshake.headers.authorization.split(' ')[1] : null);
   if (!token) {
     // Unauthenticated guest socket connection (e.g. before login)
@@ -1742,22 +1796,58 @@ io.use((socket, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as any;
     const uId = decoded.userId || decoded.id;
-    const memUser = inMemoryUsers.find(u => u.id === uId);
-    if (memUser && typeof memUser.tokenVersion === 'number' && decoded.tokenVersion !== undefined && decoded.tokenVersion < memUser.tokenVersion) {
+
+    let activeTokenVersion: number | undefined;
+    let isDeleted = false;
+
+    if (process.env.DATABASE_URL && prisma) {
+      try {
+        const dbUser = await prisma.user.findUnique({
+          where: { id: uId },
+          select: { tokenVersion: true, deletedAt: true }
+        });
+        if (dbUser) {
+          activeTokenVersion = dbUser.tokenVersion ?? 0;
+          if (dbUser.deletedAt) isDeleted = true;
+        }
+      } catch {}
+    }
+
+    if (activeTokenVersion === undefined) {
+      const memUser = inMemoryUsers.find(u => u.id === uId);
+      if (memUser) {
+        activeTokenVersion = memUser.tokenVersion ?? 0;
+        if (memUser.deletedAt) isDeleted = true;
+      }
+    }
+
+    if (isDeleted) {
+      return next(new Error('Authentication error: User account has been deleted.'));
+    }
+
+    if (typeof decoded.tokenVersion !== 'number') {
+      return next(new Error('Authentication error: Token missing tokenVersion claim.'));
+    }
+
+    if (activeTokenVersion !== undefined && decoded.tokenVersion < activeTokenVersion) {
       return next(new Error('Authentication error: Token revoked. Stale tokenVersion.'));
     }
+
     (socket as any).userId = uId;
     (socket as any).userRole = decoded.role;
     socket.data.userId = uId;
     socket.data.userRole = decoded.role;
     socket.data.tokenVersion = decoded.tokenVersion;
     next();
-  } catch {
+  } catch (err: any) {
     if (token.startsWith('dev-token-')) {
       const uId = token.replace('dev-token-', '');
+      const matched = inMemoryUsers.find(u => u.id === uId);
+      if (matched?.deletedAt) {
+        return next(new Error('Authentication error: User account has been deleted.'));
+      }
       (socket as any).userId = uId;
       socket.data.userId = uId;
-      const matched = inMemoryUsers.find(u => u.id === uId);
       if (matched) {
         (socket as any).userRole = matched.role;
         socket.data.userRole = matched.role;
@@ -1765,11 +1855,9 @@ io.use((socket, next) => {
         (socket as any).userRole = 'student';
         socket.data.userRole = 'student';
       }
-      next();
-    } else {
-      // Reject invalid or expired tokens so client is notified of auth error rather than silently dropped to guest
-      return next(new Error('Authentication error: Invalid or expired token'));
+      return next();
     }
+    return next(new Error('Authentication error: ' + (err.message || 'Invalid or expired token.')));
   }
 });
 
@@ -2456,7 +2544,7 @@ const HOST_ONLY_ROOM_EVENTS = new Set(['fullscreen', 'workspace', 'sync-full-sta
 });
 
 // GET /api/users/me — return profile of logged in user from verified token
-app.get('/api/users/me', async (req: any, res) => {
+app.get('/api/users/me', requireAuth, async (req: any, res) => {
   const userId = req.userId;
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
@@ -2468,7 +2556,7 @@ app.get('/api/users/me', async (req: any, res) => {
         where: { id: userId },
         include: { userSkills: { include: { skill: true } } }
       });
-      if (user) return res.json(toPublicUser(user));
+      if (user) { if (user.deletedAt) return res.status(401).json({ error: 'Unauthorized: Account has been deleted.' }); return res.json(toPublicUser(user)); }
       return res.status(404).json({ error: 'User not found' });
     } catch (err: any) {
       logger.error({ err, userId }, 'Database error in /api/users/me');
@@ -2477,7 +2565,8 @@ app.get('/api/users/me', async (req: any, res) => {
   }
 
   const memUser = inMemoryUsers.find(u => u.id === userId);
-  if (!memUser) {
+  if (!memUser || memUser.deletedAt) {
+    if (memUser?.deletedAt) return res.status(401).json({ error: 'Unauthorized: Account has been deleted.' });
     return res.status(404).json({ error: 'User not found' });
   }
   res.json(toPublicUser(memUser));
@@ -2662,7 +2751,7 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
     adminUser.role = 'admin';
     adminUser.emailVerified = true;
     const token = jwt.sign(
-      { userId: adminUser.id, name: adminUser.name, role: 'admin' },
+      { userId: adminUser.id, name: adminUser.name, role: 'admin', tokenVersion: adminUser.tokenVersion ?? 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -2696,7 +2785,7 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
     );
   }
 
-  if (!user) {
+  if (!user || user.deletedAt) {
     return res.status(401).json({ error: 'Invalid User ID/Email or Password. Please try again.' });
   }
 
@@ -2704,14 +2793,15 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
   let isMatch = false;
   if ((user.role === 'admin' || user.id === 'user-admin' || user.email?.toLowerCase() === ADMIN_EMAIL) && isAdminPassword) {
     isMatch = true;
-  } else if (user.password) {
+  } else if (user.password && typeof user.password === 'string' && user.password.trim() !== '') {
     if (user.password.startsWith('$2a$') || user.password.startsWith('$2b$') || user.password.startsWith('$2y$')) {
       isMatch = await bcrypt.compare(cleanPassword, user.password);
     } else {
       isMatch = (user.password === cleanPassword);
     }
   } else {
-    isMatch = true;
+    // Missing/null/empty password (e.g. Google-only accounts or deleted users) - NEVER match
+    isMatch = false;
   }
 
   if (!isMatch) {
@@ -2719,7 +2809,7 @@ app.post('/api/auth/login', authRateLimiter, async (req, res) => {
   }
 
   const token = jwt.sign(
-    { userId: user.id, name: user.name, role: user.role },
+    { userId: user.id, name: user.name, role: user.role, tokenVersion: user.tokenVersion ?? 0 },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -2871,7 +2961,7 @@ app.post('/api/auth/register', authRateLimiter, async (req, res) => {
     io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
     const token = jwt.sign(
-      { userId: newUser.id, name: newUser.name, role: newUser.role, emailVerified: true },
+      { userId: newUser.id, name: newUser.name, role: newUser.role, emailVerified: true, tokenVersion: 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -3303,8 +3393,11 @@ app.post('/api/auth/google', async (req, res) => {
   }
 
   if (existingUser) {
+    if (existingUser.deletedAt) {
+      return res.status(401).json({ error: 'Account has been deleted.' });
+    }
     const token = jwt.sign(
-      { userId: existingUser.id, name: existingUser.name, role: existingUser.role },
+      { userId: existingUser.id, name: existingUser.name, role: existingUser.role, tokenVersion: existingUser.tokenVersion ?? 0 },
       JWT_SECRET,
       { expiresIn: '7d' }
     );
@@ -3358,8 +3451,11 @@ app.post('/api/auth/google', async (req, res) => {
             include: { userSkills: { include: { skill: true } } }
           });
           if (concurrentUser) {
+            if (concurrentUser.deletedAt) {
+              return res.status(401).json({ error: 'Account has been deleted.' });
+            }
             const token = jwt.sign(
-              { userId: concurrentUser.id, name: concurrentUser.name, role: concurrentUser.role },
+              { userId: concurrentUser.id, name: concurrentUser.name, role: concurrentUser.role, tokenVersion: concurrentUser.tokenVersion ?? 0 },
               JWT_SECRET,
               { expiresIn: '7d' }
             );
@@ -3377,7 +3473,7 @@ app.post('/api/auth/google', async (req, res) => {
   io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
 
   const token = jwt.sign(
-    { userId: newUser.id, name: newUser.name, role: newUser.role },
+    { userId: newUser.id, name: newUser.name, role: newUser.role, tokenVersion: 0 },
     JWT_SECRET,
     { expiresIn: '7d' }
   );
@@ -4037,13 +4133,13 @@ app.get('/api/sessions/pending-count', requireAuth, async (req: any, res: any) =
         orderBy: { scheduledAt: 'asc' }
       });
       if (dbSessions && dbSessions.length) {
-        const safeSessions = dbSessions.map((s: any) => ({
+        const safeSessions = dbSessions.map((s: any) => sanitizeSessionForPeer({
           ...s,
           teacher: toPublicUser(s.teacher),
           student: toPublicUser(s.student)
         }));
         const forApprover = safeSessions.filter((s: any) => getSessionApproverId(s) === userId && s.status === 'pending');
-        return res.json({ count: forApprover.length, sessions: forApprover });
+        return res.json({ count: forApprover.length, sessions: forApprover.map(sanitizeSessionForPeer) });
       }
     }
   } catch (err) {
@@ -4051,8 +4147,48 @@ app.get('/api/sessions/pending-count', requireAuth, async (req: any, res: any) =
   }
 
   const memForApprover = inMemorySessions.filter((s: any) => s && s.status === 'pending' && getSessionApproverId(s) === userId);
-  return res.json({ count: memForApprover.length, sessions: memForApprover });
+  return res.json({ count: memForApprover.length, sessions: memForApprover.map(sanitizeSessionForPeer) });
 });
+
+function sanitizeSessionForPeer(s: any): any {
+  if (!s) return s;
+  const copy = { ...s };
+  const teacherId = copy.teacherId || copy.teacher?.id;
+  const isTeacherDeleted = copy.teacher?.deletedAt || inMemoryUsers.find(u => u.id === teacherId)?.deletedAt;
+  if (isTeacherDeleted) {
+    copy.teacherName = 'Deleted user';
+    copy.teacherEmail = 'deleted@invalid.mindroot.edu';
+    copy.teacher = {
+      id: teacherId,
+      name: 'Deleted user',
+      email: 'deleted@invalid.mindroot.edu',
+      avatar: null
+    };
+  }
+  const studentId = copy.studentId || copy.student?.id;
+  const isStudentDeleted = copy.student?.deletedAt || inMemoryUsers.find(u => u.id === studentId)?.deletedAt;
+  if (isStudentDeleted) {
+    copy.studentName = 'Deleted user';
+    copy.studentEmail = 'deleted@invalid.mindroot.edu';
+    copy.student = {
+      id: studentId,
+      name: 'Deleted user',
+      email: 'deleted@invalid.mindroot.edu',
+      avatar: null
+    };
+  }
+  if (Array.isArray(copy.students)) {
+    copy.students = copy.students.map((st: any) => {
+      const stId = typeof st === 'string' ? st : st?.id;
+      const isStDeleted = st?.deletedAt || inMemoryUsers.find(u => u.id === stId)?.deletedAt;
+      if (isStDeleted) {
+        return typeof st === 'string' ? st : { ...st, name: 'Deleted user', email: 'deleted@invalid.mindroot.edu', avatar: null };
+      }
+      return st;
+    });
+  }
+  return copy;
+}
 
 app.get('/api/sessions', async (req: any, res: any) => {
   consolidateGroupSessions();
@@ -4079,13 +4215,13 @@ app.get('/api/sessions', async (req: any, res: any) => {
         orderBy: { scheduledAt: 'asc' }
       });
       if (sessions && sessions.length) {
-        const safeSessions = sessions.map((s: any) => ({
+        const safeSessions = sessions.map((s: any) => sanitizeSessionForPeer({
           ...s,
           teacher: toPublicUser(s.teacher),
           student: toPublicUser(s.student)
         }));
         const filtered = filterSessionsForUser(safeSessions, userId, userRole);
-        return res.json(filtered);
+        return res.json(filtered.map(sanitizeSessionForPeer));
       }
     }
   } catch (err: any) {
@@ -4093,10 +4229,11 @@ app.get('/api/sessions', async (req: any, res: any) => {
   }
 
   const filteredMem = filterSessionsForUser(inMemorySessions, userId, userRole);
+  const sanitizedMem = filteredMem.map(sanitizeSessionForPeer);
   if (process.env.NODE_ENV !== 'production') {
-    logger.info({ userId, userRole, count: filteredMem.length, pendingCount: filteredMem.filter(s => s.status === 'pending').length }, '[Booking Read Path] GET /api/sessions');
+    logger.info({ userId, userRole, count: sanitizedMem.length, pendingCount: sanitizedMem.filter(s => s.status === 'pending').length }, '[Booking Read Path] GET /api/sessions');
   }
-  res.json(filteredMem);
+  res.json(sanitizedMem);
 });
 
 // POST /api/sessions/:id/join — join an existing open group session (Reserve now, Pay after lecture)
@@ -5306,8 +5443,8 @@ app.patch('/api/sessions/:id', requireAuth, async (req: any, res: any) => {
 });
 
 // PATCH /api/users/:id — Edit user details / profile / availability / streak / official ID & UPI QR
-app.patch('/api/users/:id', requireAuth, async (req: any, res: any) => {
-  const { id } = req.params;
+app.patch(['/api/users/:id', '/api/users/me'], requireAuth, async (req: any, res: any) => {
+  const id = (req.params.id === 'me' || req.path === '/api/users/me') ? req.userId : (req.params.id || req.userId);
   const { 
     password, name, email, role, hourlyRate, batchPricing, trustScore, tokenBalance, 
     rewardPoints, availability, isAvailableNow, streak, lastActiveDate, badges, bio, 
@@ -6098,95 +6235,277 @@ app.delete(['/api/users/me', '/api/users/:id'], requireAuth, async (req: any, re
 
   const oldName = memUser?.name;
 
-  // 1. Soft-delete and anonymize in PostgreSQL
+  // 1. Soft-delete and anonymize in PostgreSQL - Single transaction, no error swallowing, fail loudly!
   if (process.env.DATABASE_URL && prisma) {
     try {
-      await prisma.user.update({
-        where: { id: targetId },
-        data: {
-          name: 'Deleted User',
-          email: `deleted+${targetId}@invalid.mindroot.edu`,
-          password: null,
-          avatar: null,
-          bio: 'This account has been deleted.',
-          deletedAt: new Date(),
-          isPublic: false
+      await prisma.$transaction(async (tx: any) => {
+        // A. Soft-delete and anonymize user record
+        await tx.user.update({
+          where: { id: targetId },
+          data: {
+            name: 'Deleted user',
+            email: `deleted+${targetId}@invalid.mindroot.edu`,
+            password: null,
+            avatar: null,
+            bio: '',
+            upiId: null,
+            upiQrImage: null,
+            vpaVerified: false,
+            vpaVerifiedAt: null,
+            deletedAt: new Date(),
+            isPublic: false,
+            tokenVersion: { increment: 1 }
+          }
+        });
+
+        // B. Delete teaching skills
+        await tx.userSkill.deleteMany({
+          where: { userId: targetId, type: 'teaches' }
+        });
+
+        // C. Delete verification & reset tokens
+        await tx.emailVerificationToken.deleteMany({ where: { userId: targetId } });
+        await tx.passwordResetToken.deleteMany({ where: { userId: targetId } });
+
+        // D. Delete payout account
+        await tx.payoutAccount.deleteMany({ where: { userId: targetId } });
+
+        // E. Delete user's authored notes and notes shared with user
+        await tx.note.deleteMany({
+          where: {
+            OR: [
+              { authorId: targetId },
+              { sharedWithUserId: targetId }
+            ]
+          }
+        });
+
+        // F. Delete sent message text
+        await tx.message.updateMany({
+          where: { senderId: targetId },
+          data: { text: '[Message removed due to account deactivation]' }
+        });
+
+        // G. Anonymize reviews
+        await tx.review.updateMany({
+          where: { authorId: targetId },
+          data: { quote: '[Review comment removed due to account deactivation]' }
+        });
+        await tx.review.updateMany({
+          where: { targetId: targetId },
+          data: { quote: '[Review comment removed due to account deactivation]' }
+        });
+
+        // H. Anonymize transactions
+        await tx.transaction.updateMany({
+          where: { userId: targetId },
+          data: { peerName: 'Deleted user' }
+        });
+        if (oldName) {
+          await tx.transaction.updateMany({
+            where: { peerName: oldName },
+            data: { peerName: 'Deleted user' }
+          });
         }
-      }).catch(() => {});
-      await prisma.emailVerificationToken.deleteMany({ where: { userId: targetId } }).catch(() => {});
-      await prisma.passwordResetToken.deleteMany({ where: { userId: targetId } }).catch(() => {});
-      await prisma.payoutAccount.deleteMany({ where: { userId: targetId } }).catch(() => {});
-      await prisma.message.updateMany({
-        where: { senderId: targetId },
-        data: { text: '[Message removed due to account deactivation]' }
-      }).catch(() => {});
-      await prisma.review.updateMany({
-        where: { authorId: targetId },
-        data: { quote: '[Review comment removed due to account deactivation]' }
-      }).catch(() => {});
-      if (oldName) {
-        await prisma.transaction.updateMany({
-          where: { userId: { not: targetId }, peerName: oldName },
-          data: { peerName: 'Deactivated User' }
-        }).catch(() => {});
-      }
+
+        // I. Anonymize sessions (title, students array)
+        const dbSessionsWithUser = await tx.session.findMany({
+          where: {
+            OR: [
+              { teacherId: targetId },
+              { studentId: targetId }
+            ]
+          }
+        });
+        for (const s of dbSessionsWithUser) {
+          let updatedTitle = s.title;
+          if (oldName && updatedTitle && updatedTitle.includes(oldName)) {
+            updatedTitle = updatedTitle.replace(new RegExp(oldName, 'g'), 'Deleted user');
+          }
+          let updatedStudents = s.students;
+          if (Array.isArray(updatedStudents)) {
+            updatedStudents = updatedStudents.map((st: any) => {
+              const stId = typeof st === 'string' ? st : st?.id;
+              if (stId === targetId) {
+                return typeof st === 'string' ? st : { ...st, name: 'Deleted user', email: 'deleted@invalid.mindroot.edu' };
+              }
+              return st;
+            });
+          }
+          if (updatedTitle !== s.title || updatedStudents !== s.students) {
+            await tx.session.update({
+              where: { id: s.id },
+              data: { title: updatedTitle, students: updatedStudents }
+            });
+          }
+        }
+
+        // J. Anonymize PayoutAuditLog
+        await tx.payoutAuditLog.updateMany({
+          where: { userId: targetId },
+          data: { changedBy: 'Deleted user' }
+        });
+        await tx.payoutAuditLog.updateMany({
+          where: { changedBy: targetId },
+          data: { changedBy: 'Deleted user' }
+        });
+      });
     } catch (dbErr: any) {
       logger.error({ dbErr, targetId }, 'Database error soft-deleting user');
+      return res.status(500).json({ error: 'Failed to delete account in database: ' + (dbErr?.message || 'Transaction error') });
     }
   }
 
   // 2. Soft-delete and anonymize in Memory & invalidate JWTs
   if (memUser) {
-    memUser.name = memUser.role === 'teacher' ? 'Deleted Mentor' : 'Deleted Student';
+    memUser.name = 'Deleted user';
     memUser.email = `deleted+${targetId}@invalid.mindroot.edu`;
     memUser.password = '';
     memUser.avatar = null;
     memUser.bio = '';
+    memUser.upiId = null;
+    memUser.upiQrImage = null;
+    memUser.vpaVerified = false;
+    memUser.vpaVerifiedAt = null;
+    delete memUser.phone;
+    delete memUser.emailVerificationToken;
+    delete memUser.passwordResetToken;
     memUser.deletedAt = new Date().toISOString();
     memUser.tokenVersion = (memUser.tokenVersion || 0) + 1; // Invalidate active JWTs
     memUser.isPublic = false;
+    memUser.skillsTaught = [];
+    memUser.userSkills = (memUser.userSkills || []).filter((s: any) => s.type !== 'teaches');
   }
 
   // 3. Delete payout account
   delete inMemoryPayoutAccounts[targetId];
 
-  // 4. Disconnect active Socket.io instances for this user
+  // 4. Delete user's notes and shared copies in memory
+  for (let i = inMemoryNotes.length - 1; i >= 0; i--) {
+    const n = inMemoryNotes[i];
+    if (n && (n.userId === targetId || n.authorId === targetId || n.sharedWithUserId === targetId || (Array.isArray(n.sharedWith) && n.sharedWith.includes(targetId)))) {
+      inMemoryNotes.splice(i, 1);
+    }
+  }
+
+  // 5. Delete verification and reset tokens in memory
+  for (let i = inMemoryVerificationTokens.length - 1; i >= 0; i--) {
+    if (inMemoryVerificationTokens[i].userId === targetId) {
+      inMemoryVerificationTokens.splice(i, 1);
+    }
+  }
+  for (let i = inMemoryResetTokens.length - 1; i >= 0; i--) {
+    if (inMemoryResetTokens[i].userId === targetId) {
+      inMemoryResetTokens.splice(i, 1);
+    }
+  }
+
+  // 6. Delete user's discussion posts and comments in memory
+  for (let i = inMemoryDiscussions.length - 1; i >= 0; i--) {
+    if (inMemoryDiscussions[i].authorId === targetId) {
+      inMemoryDiscussions.splice(i, 1);
+    } else if (Array.isArray(inMemoryDiscussions[i].comments)) {
+      inMemoryDiscussions[i].comments = inMemoryDiscussions[i].comments.filter((c: any) => c.authorId !== targetId);
+    }
+  }
+
+  // 7. Anonymize reward redemption identity in memory
+  inMemoryRedemptions.forEach(r => {
+    if (r.userId === targetId) {
+      r.userId = 'deleted-user';
+      if (r.userName) r.userName = 'Deleted user';
+      if (r.userEmail) r.userEmail = 'deleted@invalid.mindroot.edu';
+    }
+  });
+
+  // 8. Disconnect active Socket.io instances for this user
   for (const [_, socket] of io.sockets.sockets) {
     if ((socket as any).userId === targetId || socket.data?.userId === targetId) {
       socket.disconnect(true);
     }
   }
 
-  // 5. Scrub deleted user's name from other users' transaction records (keep financial amounts intact)
-  if (oldName) {
-    inMemoryTransactions.forEach(tx => {
-      if (tx.userId !== targetId) {
-        if (tx.peerName === oldName) tx.peerName = 'Deactivated User';
-        if (tx.title && tx.title.includes(oldName)) {
-          tx.title = tx.title.replace(new RegExp(oldName, 'g'), 'Deactivated User');
-        }
+  // 9. Anonymize transactions in memory
+  inMemoryTransactions.forEach(tx => {
+    if (tx.userId === targetId) {
+      tx.peerName = 'Deleted user';
+      if (tx.userName) tx.userName = 'Deleted user';
+      if (tx.userEmail) tx.userEmail = 'deleted@invalid.mindroot.edu';
+    }
+    if (oldName) {
+      if (tx.peerName === oldName) tx.peerName = 'Deleted user';
+      if (tx.title && tx.title.includes(oldName)) {
+        tx.title = tx.title.replace(new RegExp(oldName, 'g'), 'Deleted user');
       }
-    });
-  }
+    }
+  });
 
-  // 6. Blank messages and review quotes
+  // 10. Blank sent message text and anonymize received messages in memory
   inMemoryMessages.forEach(msg => {
     if (msg.senderId === targetId) {
       msg.text = '[Message removed due to account deactivation]';
       if (msg.content) msg.content = '[Message removed due to account deactivation]';
+      if (msg.senderName) msg.senderName = 'Deleted user';
     }
-  });
-  inMemoryReviews.forEach(rev => {
-    if (rev.authorId === targetId || rev.studentId === targetId) {
-      rev.quote = '[Review comment removed due to account deactivation]';
-      rev.comment = '[Review comment removed due to account deactivation]';
+    if (msg.receiverId === targetId) {
+      if (msg.receiverName) msg.receiverName = 'Deleted user';
     }
   });
 
-  // 7. Save persistence
+  // 11. Anonymize review quotes in memory
+  inMemoryReviews.forEach(rev => {
+    if (rev.authorId === targetId || rev.studentId === targetId || rev.targetId === targetId || rev.teacherId === targetId || rev.userId === targetId || (oldName && (rev.reviewerName === oldName || rev.authorName === oldName))) {
+      rev.quote = '[Review comment removed due to account deactivation]';
+      if (rev.comment) rev.comment = '[Review comment removed due to account deactivation]';
+      if (rev.reviewerName) rev.reviewerName = 'Deleted user';
+    }
+  });
+
+  // 12. Anonymize sessions in memory
+  inMemorySessions.forEach(s => {
+    if (s.teacherId === targetId) {
+      s.teacherName = 'Deleted user';
+      s.teacherEmail = 'deleted@invalid.mindroot.edu';
+      if (s.teacher) {
+        s.teacher.name = 'Deleted user';
+        s.teacher.email = 'deleted@invalid.mindroot.edu';
+      }
+    }
+    if (s.studentId === targetId) {
+      s.studentName = 'Deleted user';
+      s.studentEmail = 'deleted@invalid.mindroot.edu';
+      if (s.student) {
+        s.student.name = 'Deleted user';
+        s.student.email = 'deleted@invalid.mindroot.edu';
+      }
+    }
+    if (oldName && s.title && s.title.includes(oldName)) {
+      s.title = s.title.replace(new RegExp(oldName, 'g'), 'Deleted user');
+    }
+    if (Array.isArray(s.students)) {
+      s.students = s.students.map((st: any) => {
+        const stId = typeof st === 'string' ? st : st?.id;
+        if (stId === targetId) {
+          return typeof st === 'string' ? st : { ...st, name: 'Deleted user', email: 'deleted@invalid.mindroot.edu' };
+        }
+        return st;
+      });
+    }
+  });
+
+  // 13. Anonymize PayoutAuditLog in memory
+  inMemoryPayoutAuditLogs.forEach(l => {
+    if (l.userId === targetId || l.changedBy === targetId) {
+      l.changedBy = 'Deleted user';
+      if (l.recipientName) l.recipientName = 'Deleted user';
+      if (l.recipientEmail) l.recipientEmail = 'deleted@invalid.mindroot.edu';
+    }
+  });
+
+  // 14. Save persistence
   saveDb();
 
-  // 8. Emit socket updates across all network clients
+  // 15. Emit socket updates across all network clients
   io.emit('network-peers-updated', getBroadcastPeers(inMemoryUsers));
   io.emit('network-sessions-updated', inMemorySessions);
   io.emit('network-messages-updated', inMemoryMessages);
@@ -7065,7 +7384,7 @@ app.get('/api/community-champions', async (req: any, res: any) => {
 });
 
 // GET /api/auth/me — Alias for /api/users/me (authenticated user profile)
-app.get('/api/auth/me', async (req: any, res) => {
+app.get('/api/auth/me', requireAuth, async (req: any, res) => {
   const userId = req.userId;
   if (!userId) {
     return res.status(401).json({ error: 'Unauthorized: Missing or invalid token' });
@@ -7077,7 +7396,12 @@ app.get('/api/auth/me', async (req: any, res) => {
         where: { id: userId },
         include: { userSkills: { include: { skill: true } } }
       });
-      if (user) return res.json({ user: toPublicUser(user) });
+      if (user) {
+        if (user.deletedAt) {
+          return res.status(401).json({ error: 'Unauthorized: Account has been deleted.' });
+        }
+        return res.json({ user: toPublicUser(user) });
+      }
       return res.status(404).json({ error: 'User not found' });
     } catch (err: any) {
       logger.error({ err, userId }, 'Database error in /api/auth/me');
@@ -7086,7 +7410,10 @@ app.get('/api/auth/me', async (req: any, res) => {
   }
 
   const memUser = inMemoryUsers.find(u => u.id === userId);
-  if (!memUser) {
+  if (!memUser || memUser.deletedAt) {
+    if (memUser?.deletedAt) {
+      return res.status(401).json({ error: 'Unauthorized: Account has been deleted.' });
+    }
     return res.status(404).json({ error: 'User not found' });
   }
   syncUserStreakStatus(memUser);

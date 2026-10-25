@@ -1496,7 +1496,7 @@ export function Profile() {
               <div>
                 <h3 id="delete-account-title" className="text-lg font-black text-on-surface tracking-tight">Delete Your Account?</h3>
                 <p className="text-xs text-on-surface-variant font-medium mt-1 leading-relaxed">
-                  Are you sure you want to delete your account? This action cannot be undone. All your profile information, teaching sessions, chat messages, and reviews will be permanently deleted.
+                  Are you sure you want to delete your account? This action cannot be undone. All your profile information, UPI details, notes, teaching skills, and login tokens will be permanently deleted. Your past sessions, transactions, and reviews will be anonymized as "Deleted user" to maintain shared records.
                 </p>
               </div>
             </div>

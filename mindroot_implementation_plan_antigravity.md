@@ -1,5 +1,5 @@
 ---
-title: "Mindroot - Antigravity Implementation Plans: Parts 1-11 [ACTIVE]"
+title: "Mindroot - Antigravity Implementation Plans: Parts 1-13 [ACTIVE]"
 tags:
   - project/student-to-student
   - plan
@@ -9,10 +9,10 @@ tags:
   - status/active
 status: active
 created: 2026-09-29
-last_updated: 2026-10-22
-latest_commit: "5e0e575"
-repo_head: "5e0e575"
-test_status: "126/126 passing across 14 backend suites (104 tests) + 10 E2E suites (22 tests); verified 2026-10-22"
+last_updated: 2026-10-23
+latest_commit: "c95d6d3"
+repo_head: "c95d6d3"
+test_status: "137/137 passing across 16 backend suites (114 tests) + 11 E2E suites (23 tests); verified 2026-10-23"
 author: "[[ANTIGRAVITY]]"
 project_hub: "[[student_to_student]]"
 source_spec: "[[student_to_student_spec]]"
@@ -33,7 +33,9 @@ governed_by: "[[AGENTS]]"
 - [x] **Plan 8: Notes Model, Migration & Privacy Isolation** *(Resolved & verified; 8/8 pass in `notes_api.test.ts` including 2-seat cohort sessions)*
 - [x] **Plan 9: Payment Broadcast Scoping, Swap Pricing & Gateway Purge** *(Resolved & verified; 11/11 pass in `payment_security_fixes.test.ts`)*
 - [x] **Plan 10: Viewport, UI Gating, Timezone & Hygiene Remediation (Items A-K)** *(Resolved & verified on 2026-10-22; 104/104 backend tests + 22/22 Playwright tests pass; typechecks and build clean)*
-- [ ] **Plan 11: Tab-Isolated Authentication & Multi-Account Session Handling** *(In Progress: transition auth credentials and active user state from origin-scoped `localStorage` to tab-isolated `sessionStorage` with graceful initial-tab `localStorage` seeding)*
+- [x] **Plan 11: Tab-Isolated Authentication & Multi-Account Session Handling** *(Resolved & verified on commit `041fec5`; `e2e/multi_tab_isolation.spec.ts` passing)*
+- [x] **Plan 12: Resilient Mentor Approval Request Delivery & Multi-User Notification Recovery** *(Resolved & verified on commit `998510e`; 5/5 tests passing in `server/test/booking_approval_delivery.test.ts`, all 15 server suites passing, all 23 Playwright tests passing)*
+- [x] **Plan 13: PostgreSQL Schema Parity & Mentor Booking Persistence Remediation** *(Resolved & verified on 2026-10-23; 5/5 tests passing in `server/test/mentor_booking_visibility_regression.test.ts`, all 16 server suites passing, all 23 Playwright tests passing; 137/137 total)*
 
 
 ---
@@ -1069,7 +1071,7 @@ Codex ran in-memory only. With a local or test Postgres and `DATABASE_URL` set, 
 
 # [x] PART 10: Viewport, UI Gating, Timezone & Hygiene Remediation (Items A-K) [IMPLEMENTED & VERIFIED]
 
-> **Checkpoint Commit**: `5e0e575` (working tree changes verified and committed)
+> **Checkpoint Commit**: `041fec5` (working tree changes verified and committed)
 > **Verification Date**: 2026-10-22
 > **Test Status**: **126/126 PASS** across 14 backend suites (104 tests) and 10 Playwright E2E suites (22 tests).
 > **Typechecks & Build**: Server `tsc --noEmit` (0 errors), Client `tsc -b && vite build` (0 errors in 2.66s).
@@ -1166,8 +1168,90 @@ Codex ran in-memory only. With a local or test Postgres and `DATABASE_URL` set, 
    - Logging out clears the tab's `sessionStorage` and also clears `localStorage` so future tabs start unauthenticated.
 
 ## 3. Implementation Steps & Verification
-- [ ] Refactor storage helpers in `src/lib/api/index.ts` to provide `getAuthItem(key)` and `setAuthItem(key, val)` preferring `sessionStorage`.
-- [ ] Refactor `src/store/useAppStore.ts` initializers and auth actions (`login`, `logout`, `setCurrentUser`).
-- [ ] Audit direct `localStorage.getItem('mindroot_auth_token')` calls in components (`NotificationManager.tsx`, `UpiPaymentModal.tsx`, `LiveRoom.tsx`, `Schedule.tsx`).
-- [ ] Add an automated Playwright multi-tab test (`e2e/multi_tab_session_isolation.spec.ts`) asserting that two separate browser pages can maintain different active sessions independently without clobbering each other on refresh.
-- [ ] Run full typechecks, linter, and backend test suites.
+- [x] Refactor storage helpers in `src/lib/api/index.ts` to provide `getAuthItem(key)` and `setAuthItem(key, val)` preferring `sessionStorage`. *(Implemented in `src/lib/api/index.ts`)*
+- [x] Refactor `src/store/useAppStore.ts` initializers and auth actions (`login`, `logout`, `setCurrentUser`). *(Implemented in `src/store/useAppStore.ts`)*
+- [x] Audit direct `localStorage.getItem('mindroot_auth_token')` calls in components (`NotificationManager.tsx`, `UpiPaymentModal.tsx`, `LiveRoom.tsx`, `Schedule.tsx`). *(Migrated to `getAuthItem` / `setAuthItem`)*
+- [x] Add an automated Playwright multi-tab test (`e2e/multi_tab_isolation.spec.ts`) asserting that two separate browser pages can maintain different active sessions independently without clobbering each other on refresh. *(Verified: 1/1 PASS in 2.7s)*
+- [x] Run full typechecks, linter, and backend test suites. *(Server typecheck 0 errors, client build clean in 5.55s, oxlint 0 errors)*
+
+---
+
+# [x] PART 12: Resilient Mentor Approval Request Delivery & Multi-User Notification Recovery [COMPLETED]
+
+> [!NOTE] Architecture Context
+> When a student booked a session, the target teacher sometimes did not receive the approval notification or find the request in their dashboard. Sockets are inherently transient, and if token authentication silently dropped or the teacher was offline, requests became invisible.
+
+## 1. Problem Specification & Hypotheses
+1. **Hypothesis 1 (Socket Handshake & Guest Degradation)**: `io.use` silently caught invalid tokens and assigned guest IDs. Subsequent `register-user-sync` calls were blocked by `callerId && user.id !== callerId`, preventing the socket from joining `user:${teacherId}` and causing `session-request-created` to be lost.
+2. **Hypothesis 2 (REST Session Filtering & Date/Timezone Masking)**: `filterSessionsForUser` omitted checking `getSessionApproverId(s) === userId`. Meanwhile, `Dashboard.tsx` filtered `pendingRequestsForMe` with `!isPastSession(s)`, prematurely hiding active requests scheduled close to current time or across timezone offsets.
+3. **Hypothesis 3 (Role View Visibility)**: When an account with `role: 'both'` was in student view mode (`role === 'student'`), the sidebar omitted the Teacher Portal and the UI showed no indicator that mentor requests were awaiting approval.
+4. **Hypothesis 4 (Mail Delivery)**: The email module used a stub that did not attempt real SMTP/Resend credentials or log fallback behavior.
+
+## 2. Target Design: Robust Socket + Multi-Tier REST Delivery
+1. **Socket Handshake & Upgrade**: Handshake explicitly rejects invalid/expired tokens with `Authentication error`. `register-user-sync` upgrades guest sockets (`guest-*`) into `user:${user.id}`.
+2. **Dedicated REST Polling**: `GET /api/sessions/pending-count` (`requireAuth`) returns `{ count, sessions }` strictly for `getSessionApproverId(s) === req.userId && s.status === 'pending'`.
+3. **Active Request Visibility**: Removed `!isPastSession(s)` filter on pending requests in `Dashboard.tsx`. Rendered an amber `Mentor Action Required` badge on the Dashboard request review banner for "both" users in student view, and showed pending count badges on "Switch to Teacher" and Teacher Portal navigation in the Sidebar.
+4. **Autonomous Polling Hook**: Created `src/hooks/usePendingApprovals.ts` that polls every 30 seconds, re-fetches on window focus and document visibility change, and syncs on socket events.
+5. **Presence & Fallback**: TopBar renders a live amber pending requests badge button and an in-app banner with a 1-click reconnect trigger when the live socket disconnects.
+6. **Email Cascade**: `server/src/lib/email.ts` attempts SMTP (`getSmtpTransporter()`), falls back to Resend (`getResendClient()`), and falls back to simulated logger without crashing requests.
+
+## 3. Implementation Steps & Verification
+- [x] Harden `server/src/index.ts` socket handshake and `register-user-sync` guest promotion. *(Lines 1439-1442, 1506-1516)*
+- [x] Add `GET /api/sessions/pending-count` and update `filterSessionsForUser` approver check. *(Lines 1531-1538, 4036-4062)*
+- [x] Remove premature `!isPastSession(s)` filter in `src/pages/Dashboard.tsx` and add `Mentor Action Required` banner. *(Lines 231-235, 729-736)*
+- [x] Build `src/hooks/usePendingApprovals.ts` with 30s polling, focus re-fetch, and socket listeners. *(Lines 1-71)*
+- [x] Add pending count badges to `Sidebar.tsx` and `TopBar.tsx`, plus socket disconnected banner. *(Sidebar lines 250-255, 420-429; TopBar lines 272-288, 622-635)*
+- [x] Implement SMTP -> Resend -> simulated logger failover in `server/src/lib/email.ts`. *(Lines 52-98)*
+- [x] Add automated integration test suite `server/test/booking_approval_delivery.test.ts` covering teacher online, teacher offline, "both" user view, wrong-user isolation, and token handshake rejection. *(Verified: 5/5 PASS)*
+- [x] Run full verification: server typecheck (0 errors), client build (512 modules transformed in 5.55s), oxlint (0 errors), all 15 server test suites (109/109 tests passed), and Playwright E2E suite (23/23 tests passed).
+
+---
+
+# [x] PART 13: PostgreSQL Schema Parity & Mentor Booking Persistence Remediation [COMPLETED]
+
+> [!NOTE] Architecture Context
+> When testing mentor booking visibility in both in-memory mode and against a real local PostgreSQL database built from `server/prisma/migrations`, inquiries revealed that the in-memory mode passed all checks, but PostgreSQL crashed immediately upon startup and booking due to migration schema drift. Several columns present in `schema.prisma` were absent from disk migrations and unawaited startup DDL.
+
+## 1. Problem Specification & Root Causes
+1. **Prisma vs. Migration Drift**:
+   - `server/prisma/migrations/` (migrations 1–10) omitted key columns present in `schema.prisma`:
+     - `User`: `upiId`, `upiQrImage`, `vpaVerified`, `vpaVerifiedAt`, `deletedAt`
+     - `Session`: `paymentStatus`, `paymentId`, `orderId`, `pricePerStudent`, `amount`, `maxCapacity`, `students`
+     - `Transaction`: `sessionId`, `title`, `peerName`, `paymentId`, `orderId`, `currency`, `status`, `deletedAt`
+     - Indexes: `Session_teacherId_studentId_idx`
+   - In PostgreSQL mode, `prisma.user.findMany()` failed on startup with error `P2022: The column User.upiId does not exist in the current database`.
+   - `prisma.session.create()` threw error `P2022: The column Session.paymentStatus does not exist in the current database`.
+2. **Unawaited Background DDL**:
+   - Background DDL in `server/src/index.ts` lines 545–578 ran fire-and-forget without being awaited before `syncWithDatabase()` executed. Additionally, DDL statements omitted `paymentStatus`, `pricePerStudent`, `amount`, `maxCapacity`, and `students`.
+3. **Route Aliasing & Mentor Profile Persistence**:
+   - `PATCH /api/users/:id` rejected `/api/users/me` with 403 Forbidden because `'me' !== req.userId`.
+   - `PATCH /api/users/:id` omitted `upiId`, `upiQrImage`, `vpaVerified`, and `vpaVerifiedAt` from Prisma `updateData`, preventing mentor UPI setups from saving to the database.
+4. **Prisma Fallback & Expiry Filter**:
+   - `GET /api/sessions` and `GET /api/sessions/pending-count` had `if (dbSessions && dbSessions.length)` which erroneously treated an empty database array (`[]`) as falsy, falling through to stale in-memory mock state.
+   - Background session expiration checks crashed unhandled with Prisma error P2025 (`Record to update not found`).
+5. **Environment Variable Protection**:
+   - `dotenv.config({ path: ..., override: true })` clobbered caller-supplied `DATABASE_URL` during tests.
+
+## 2. Target Design: Schema Parity & Zero-Drift Persistence
+1. **Migration Parity**:
+   - Added migration `20261023000000_sync_session_user_schema/migration.sql` with idempotent `IF NOT EXISTS` column additions and index creation matching `schema.prisma`.
+2. **Synchronized Awaited DDL**:
+   - Added missing column definitions to self-healing `DDL_STATEMENTS` in `server/src/index.ts`, assigned `ddlPromise`, and awaited `ddlPromise` inside `syncWithDatabase()` before issuing queries.
+3. **Profile & Booking Write Path**:
+   - Added `PATCH /api/users/me` alias route and persisted `upiId`, `upiQrImage`, `vpaVerified`, and `vpaVerifiedAt` in Prisma `updateData`.
+   - Included `students: newSession.students || undefined` in `prisma.session.create()`.
+4. **Deterministic DB Result Handling**:
+   - Changed `if (dbSessions && dbSessions.length)` to `if (dbSessions)` in `GET /api/sessions` and `GET /api/sessions/pending-count`.
+   - Filtered Prisma P2025 errors during background session expiry sweeps.
+5. **Pre-Existing Env Var Guard**:
+   - Protected pre-existing `DATABASE_URL` and `DIRECT_URL` in `server/src/index.ts` so test suites can supply isolated disposable database connection strings without reading `.env`.
+
+## 3. Implementation Steps & Verification
+- [x] Create idempotent schema parity migration `20261023000000_sync_session_user_schema/migration.sql`. *(Verified across PostgreSQL 18 migrations)*
+- [x] Protect pre-existing `DATABASE_URL` / `DIRECT_URL` in `server/src/index.ts` lines 56–61.
+- [x] Update `DDL_STATEMENTS` with all columns and await `ddlPromise` in `syncWithDatabase()` in `server/src/index.ts`. *(Lines 336, 553–575, 1174–1183)*
+- [x] Fix `PATCH /api/users` to handle `/me` and persist UPI fields in Prisma `updateData`. *(Lines 5342–5345, 5457–5461)*
+- [x] Include `students` in `prisma.session.create()` and fix `if (dbSessions)` empty check. *(Lines 4068–4075, 4110–4117, 4768–4773)*
+- [x] Filter P2025 errors in `checkAndExpirePendingSessions()`. *(Lines 1736–1743)*
+- [x] Author dedicated regression test `server/test/mentor_booking_visibility_regression.test.ts` verifying in-memory booking response (201), teacher pending session list over REST (200), `session-request-created` socket delivery, "both" user pending visibility, and full PostgreSQL schema parity and persistence. *(Verified: 5/5 PASS)*
+- [x] Run full test suite: server typecheck (0 errors), 16 backend test suites (114/114 passing), 11 Playwright E2E suites (23/23 passing), production build clean in 3.57s. *(137/137 total passing tests)*

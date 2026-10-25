@@ -392,7 +392,7 @@ async function runAuditGapsTests() {
     assert.strictEqual(okDeleteRes.status, 200, 'Account deletion with zero balance should succeed');
 
     // 3. Verify PII scrubbing
-    assert.strictEqual(userToDelete.name, 'Deleted Student', 'Name should be anonymized to Deleted Student');
+    assert.strictEqual(userToDelete.name, 'Deleted user', 'Name should be anonymized to Deleted user');
     assert.strictEqual(userToDelete.bio, '', 'Bio should be wiped');
     assert.strictEqual(userToDelete.avatar, null, 'Avatar should be null');
     assert.strictEqual(inMemoryPayoutAccounts[deleteUserId], undefined, 'PayoutAccount should be deleted');
@@ -403,7 +403,7 @@ async function runAuditGapsTests() {
 
     // 5. Verify peer transaction denormalized peerName scrubbed
     const peerTx = inMemoryTransactions.find(t => t.userId === peerUserId);
-    assert.strictEqual(peerTx?.peerName, 'Deactivated User', 'Peer transaction peerName must be scrubbed to Deactivated User');
+    assert.strictEqual(peerTx?.peerName, 'Deleted user', 'Peer transaction peerName must be scrubbed to Deleted user');
     console.log('✅ TEST 5 PASSED: Balance protected; PII, messages, payout details, and peer ledger records scrubbed!');
 
     // -------------------------------------------------------------

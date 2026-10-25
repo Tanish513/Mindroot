@@ -29,6 +29,7 @@ model User {
   vpaVerified      Boolean                  @default(false)
   vpaVerifiedAt    DateTime?
   version          Int                      @default(0)
+  tokenVersion     Int                      @default(0)
   deletedAt        DateTime?
   taughtSessions   Session[]                @relation("TeacherSessions")
   learnedSessions  Session[]                @relation("StudentSessions")
