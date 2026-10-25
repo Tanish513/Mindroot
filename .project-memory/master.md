@@ -77,5 +77,10 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
        - Visual pending badges in Navbar, Teacher Portal navigation, and notification bell.
        - Offline teacher catch-up on login, `both` role banner for dual-role users, and socket disconnection banners.
        - Verified by `server/test/booking_request_flow.test.ts` (7/7 tests passing).
-- **Latest verification**: All 15 automated backend suites (109/109 tests) and 11 Playwright E2E suites (23/23 tests) passing (132/132 total passing). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 5.55s.
+   16. Run 16 Account Deletion Security Remediation, JWT Revocation, Password Validation, and Mentor Booking Visibility (`a1e2319`):
+       - Required strict non-empty bcrypt password hash match on login; rejected null/missing passwords and deleted users.
+       - Added tokenVersion to Prisma User schema, JWT payloads, requireAuth, and Socket.io handshake; tokenVersion increments on deletion to revoke all active tokens immediately.
+       - Enforced atomic PostgreSQL $transaction for account deletion; deleted user-owned data and sanitized shared records to "Deleted user".
+       - Added server/test/account_deletion_run16.test.ts and server/test/mentor_booking_visibility_regression.test.ts.
+- **Latest verification**: All 17 automated backend suites (124/124 tests) and 11 Playwright E2E suites (23/23 tests) passing (147/147 total passing). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 2.15s.
 - **Known Issues**: None. All items fully verified and resolved.

@@ -325,3 +325,36 @@
     - Total: 132/132 tests passing.
     - Server typecheck: 0 errors.
     - Client build: `tsc -b && vite build` 0 errors in 5.55s.
+
+- **2026-10-25**:
+  - **Task**: Run 16 Account Deletion Security Remediation, JWT Revocation, Password Validation, and Mentor Booking Visibility Regression.
+  - **Commit**: `a1e2319` - `fix(security): resolve Run 16 account-deletion findings, JWT revocation, password check, and mentor booking visibility`
+  - **Changes Implemented**:
+    1. **Login Password Validation & Google OAuth Gating (`server/src/index.ts`)**:
+       - Enforced that non-admin accounts must match a non-empty stored password hash via `bcrypt.compare`.
+       - Users with missing/null passwords (e.g. Google-only accounts) strictly fail password login with HTTP 401 instead of matching by default.
+       - Users with `deletedAt` set are rejected with HTTP 401.
+    2. **JWT Revocation & `tokenVersion` (`server/prisma/schema.prisma`, `server/src/index.ts`)**:
+       - Added `tokenVersion Int @default(0)` column to PostgreSQL User schema with Prisma migration (`20261025000000_add_token_version`).
+       - Issued JWTs in `POST /api/auth/login`, `POST /api/auth/register`, and `POST /api/auth/google` explicitly include `tokenVersion`.
+       - `requireAuth` validates that tokens include `tokenVersion` claim and rejects tokens with stale `tokenVersion` (< active version) or belonging to deleted users.
+       - Socket.io handshake middleware validates `tokenVersion` claim, rejects stale tokens with `Authentication error: Token revoked. Stale tokenVersion.`, and rejects deleted accounts.
+       - `GET /api/auth/me` and `GET /api/users/me` reject deleted accounts with HTTP 401.
+       - `DELETE /api/users/me` increments `tokenVersion` in both memory and PostgreSQL, revoking all existing tokens immediately on HTTP and WebSocket.
+    3. **Account Deletion Policy (Own Data vs. Shared Records)**:
+       - **Deleted**: Authored and shared notes, UPI fields (`upiId`, `upiQrImage`), phone number, teaching skills (`skillsTaught`), email/password reset token arrays, discussion posts and comments, and sent message text replaced with deactivation notice.
+       - **Anonymized**: Past sessions, transactions, reviews, received messages, and `PayoutAuditLog` entries sanitized to `"Deleted user"` and `deleted@invalid.mindroot.edu` while preserving IDs, amounts, and dates.
+       - `GET /api/sessions` and `GET /api/sessions/pending-count` run through `sanitizeSessionForPeer`, ensuring peers never see deleted user names or emails.
+    4. **Atomic Transaction in PostgreSQL**:
+       - Replaced individual fire-and-forget deletion queries with a unified `prisma.$transaction(async (tx) => { ... })` that fails loudly on database errors without swallowing exceptions.
+    5. **Profile Delete Account Dialog Copy (`src/pages/Profile.tsx`)**:
+       - Updated confirmation dialog copy to describe exact data deleted (profile, UPI, notes, skills, tokens) vs. anonymized (sessions, transactions, reviews as "Deleted user").
+    6. **Comprehensive Automated Test Coverage**:
+       - Added `server/test/account_deletion_run16.test.ts` testing all Run 16 items in memory and against disposable local PostgreSQL (`disposable_test_booking`).
+       - Added `server/test/mentor_booking_visibility_regression.test.ts` testing mentor request flows.
+  - **Verification**:
+    - Backend: 17 suites, 124 tests passing (17/17 PASS, Exit 0).
+    - Playwright E2E: 11 suites, 23 tests passing (23/23 PASS, Exit 0).
+    - Total: 147/147 tests passing.
+    - Server typecheck: 0 errors (`tsc --noEmit`).
+    - Client build: `tsc -b && vite build` 0 errors in 2.15s.

@@ -76,3 +76,10 @@
   - Added visual pending badges in Navbar, Teacher Portal navigation, and top bar notification bell.
   - Implemented offline teacher recovery, student/teacher role banner for `both` users, and socket disconnection banners.
   - Added automated tests in `server/test/booking_request_flow.test.ts`. Full test suite passes: 109 backend unit/integration tests and 23 Playwright E2E tests (132/132 total passing).
+
+- **2026-10-25**: Run 16 Account Deletion Security Remediation, JWT Revocation, Password Validation, and Mentor Booking Visibility (`a1e2319`).
+  - Required strict non-empty bcrypt password hash match on login; rejected null/missing passwords and deleted users.
+  - Added `tokenVersion` to Prisma User schema, JWT payloads, `requireAuth`, and Socket.io handshake; tokenVersion increments on deletion to revoke all active tokens immediately.
+  - Enforced atomic PostgreSQL `$transaction` for account deletion; deleted user-owned data and sanitized shared records to `"Deleted user"`.
+  - Added `server/test/account_deletion_run16.test.ts` and `server/test/mentor_booking_visibility_regression.test.ts`.
+  - Full test suite passes: 124 backend unit/integration tests across 17 suites and 23 Playwright E2E tests (147/147 total passing). Server and client typecheck 0 errors, build succeeds in 2.15s.
