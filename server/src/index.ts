@@ -940,26 +940,34 @@ async function awardRewardPoints(userId: string, points: number, reason: string,
   }
 }
 
-function getLocalDateStr(d: Date = new Date()): string {
+function getLocalDateStr(d: Date = new Date(), tz?: string): string {
+  if (tz) {
+    try {
+      const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' });
+      return formatter.format(d);
+    } catch {
+      // Fallback on invalid tz string
+    }
+  }
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-function syncUserStreakStatus(user: any) {
+function syncUserStreakStatus(user: any, tz?: string) {
   if (!user || typeof user.streak !== 'number' || user.streak <= 0) return;
   const lastActive = user.lastActiveDate;
   if (!lastActive) {
     user.streak = 0;
     return;
   }
-  const todayStr = getLocalDateStr();
+  const todayStr = getLocalDateStr(new Date(), tz);
   if (lastActive === todayStr) return;
 
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = getLocalDateStr(yesterday);
+  const yesterdayStr = getLocalDateStr(yesterday, tz);
 
   if (lastActive === yesterdayStr) return;
 
@@ -967,12 +975,12 @@ function syncUserStreakStatus(user: any) {
   user.streak = 0;
 }
 
-async function recordUserActivity(userId: string, activityType: 'session' | 'discussion' | 'login') {
+async function recordUserActivity(userId: string, activityType: 'session' | 'discussion' | 'login' | 'visit', tz?: string) {
   if (!userId) return null;
   const user = inMemoryUsers.find(u => u.id === userId);
   if (!user) return null;
 
-  const todayStr = getLocalDateStr();
+  const todayStr = getLocalDateStr(new Date(), tz);
   const lastActive = user.lastActiveDate || '';
 
   if (typeof user.streak !== 'number' || isNaN(user.streak)) {
@@ -5775,6 +5783,39 @@ app.post('/api/users/:id/activity', requireAuth, async (req: any, res: any) => {
   const updatedUser = await recordUserActivity(id, type || 'session');
   if (!updatedUser) return res.status(404).json({ error: 'User not found' });
   return res.json({ success: true, user: toPublicUser(updatedUser) });
+});
+
+// POST /api/users/me/visit & POST /api/users/:id/visit — Record daily visit idempotently under mutex
+app.post(['/api/users/me/visit', '/api/users/:id/visit'], requireAuth, async (req: any, res: any) => {
+  const targetId = (!req.params.id || req.params.id === 'me') ? req.userId : req.params.id;
+  if (req.userId !== targetId && req.userRole !== 'admin') {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  const tz = (req.body?.tz as string) || (req.body?.timeZone as string) || (req.query?.tz as string) || 'Asia/Kolkata';
+
+  return withOrderedLocks([targetId], async () => {
+    const user = inMemoryUsers.find(u => u.id === targetId);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    if (!Array.isArray(user.streakHistory)) {
+      user.streakHistory = [];
+    }
+
+    const todayStr = getLocalDateStr(new Date(), tz);
+    const existingHist = user.streakHistory.find((h: any) => h.date === todayStr);
+    const alreadyVisited = !!(existingHist && Array.isArray(existingHist.activities) && existingHist.activities.includes('visit'));
+
+    const updatedUser = await recordUserActivity(targetId, 'visit', tz);
+
+    return res.json({
+      success: true,
+      isFirstVisitToday: !alreadyVisited,
+      todayStr,
+      streak: updatedUser?.streak ?? user.streak,
+      user: toPublicUser(updatedUser || user)
+    });
+  });
 });
 
 // ==========================================

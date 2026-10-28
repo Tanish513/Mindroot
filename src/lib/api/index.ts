@@ -2009,6 +2009,20 @@ export const api = {
     }
   },
 
+  recordVisit: async (tz?: string) => {
+    try {
+      const userTz = tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+      const r = await fetch(`${getBASE()}/api/users/me/visit`, {
+        method: 'POST',
+        headers: getHeaders(),
+        body: JSON.stringify({ tz: userTz })
+      });
+      return await safeParse(r, { success: false });
+    } catch {
+      return { success: false };
+    }
+  },
+
   // Community Discussions endpoints
   getDiscussions: async (params?: { tag?: string; search?: string; sort?: string }) => {
     try {

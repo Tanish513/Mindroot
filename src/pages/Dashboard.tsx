@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '../components/ui/Button';
 import { useAppStore } from '../store/useAppStore';
 import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated, getSessionApproverId } from '../lib/api';
@@ -17,6 +18,39 @@ export function Dashboard() {
 
   // Today's Note Dashboard Card State
   const [todayNote, setTodayNote] = useState<any | null>(null);
+  const [isAnimatingToday, setIsAnimatingToday] = useState(false);
+  const visitRecordedRef = useRef<string | null>(null);
+
+  // Dedicated daily visit recording effect (runs once per authenticated user session)
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (visitRecordedRef.current === currentUser.id) return;
+    visitRecordedRef.current = currentUser.id;
+
+    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+    api.recordVisit(userTz).then((res: any) => {
+      if (res?.success && res.user) {
+        setCurrentUser(res.user);
+        const today = res.todayStr || getLocalDateStr(new Date());
+        const animKey = `mindroot_streak_anim_${currentUser.id}_${today}`;
+        const animAlreadyPlayed = localStorage.getItem(animKey) === 'true';
+        const prefersReducedMotion = typeof window !== 'undefined' &&
+          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (res.isFirstVisitToday && !animAlreadyPlayed) {
+          localStorage.setItem(animKey, 'true');
+          if (!prefersReducedMotion) {
+            setIsAnimatingToday(true);
+            setTimeout(() => {
+              setIsAnimatingToday(false);
+            }, 750);
+          }
+        }
+      }
+    }).catch(() => {
+      // Fail closed: keep non-visited state
+    });
+  }, [currentUser?.id, setCurrentUser]);
   const [todayNoteInput, setTodayNoteInput] = useState('');
   const [isSavingTodayNote, setIsSavingTodayNote] = useState(false);
   const [noteStreak, setNoteStreak] = useState(0);
@@ -37,8 +71,9 @@ export function Dashboard() {
       setLoadingChampions(false);
     }).catch(() => setLoadingChampions(false));
 
-    // Load today's daily note and note streak
     const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
+
+    // Load today's daily note and note streak
     api.getTodayNote(userTz).then(res => {
       if (res?.note) {
         setTodayNote(res.note);
@@ -177,6 +212,8 @@ export function Dashboard() {
       const isFuture = idx > dayOfWeek;
       const isGift = item.num === 7;
       const wasActive = activeDates.has(dateStr);
+      const isVisited = isPast ? wasActive : isToday ? (isTodayCompleted || wasActive) : false;
+      const isMissed = isPast && !wasActive;
 
       return {
         ...item,
@@ -185,7 +222,9 @@ export function Dashboard() {
         isToday,
         isFuture,
         isGift,
-        wasActive
+        wasActive,
+        isVisited,
+        isMissed
       };
     });
   }, [currentDate, currentUser?.streakHistory, isTodayCompleted, todayStr, lastActive, isStreakLapsed]);
@@ -830,45 +869,115 @@ export function Dashboard() {
 
         {/* 7-Day Streak & Weekly Calendar Tracker */}
         <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 self-stretch sm:self-auto justify-between sm:justify-start">
-          <div className="flex items-center gap-1.5">
+          <div className="relative flex items-center gap-1.5" data-testid="streak-tracker-container">
+            {/* Connecting track line behind circles */}
+            <div 
+              className="absolute top-3.5 left-3.5 right-3.5 h-0.5 bg-border pointer-events-none" 
+              aria-hidden="true"
+              data-testid="streak-track-line"
+            />
+            {/* Filled connecting line up to last visited day */}
+            {(() => {
+              const lastVisitedIdx = weeklyTrackerDays
+                .map((d, i) => (d.isVisited ? i : -1))
+                .reduce((max, i) => Math.max(max, i), -1);
+              if (lastVisitedIdx < 0) return null;
+              return (
+                <div 
+                  className="absolute top-3.5 left-3.5 h-0.5 bg-accent transition-all duration-500 pointer-events-none"
+                  style={{
+                    width: `calc((100% - 28px) * ${lastVisitedIdx / 6})`
+                  }}
+                  aria-hidden="true"
+                  data-testid="streak-filled-line"
+                />
+              );
+            })()}
+
             {weeklyTrackerDays.map((item, idx) => {
-              const isFinished = item.wasActive;
               const isToday = item.isToday;
               const isGift = item.isGift;
+              const isVisited = item.isVisited;
+              const isMissed = item.isMissed;
+              const days1To6Visited = weeklyTrackerDays.slice(0, 6).every(d => d.isVisited);
+              const isGiftClaimable = isGift && (days1To6Visited || canClaimBonus);
+
+              // Determine classes based on visual states spec
+              let circleClasses = 'bg-surface text-muted border-border';
+              if (isGift) {
+                circleClasses = isGiftClaimable
+                  ? 'bg-accent text-white border-accent shadow-md animate-bounce cursor-pointer'
+                  : isVisited
+                    ? 'bg-accent text-white border-accent shadow-xs'
+                    : 'bg-surface text-accent-text border-border';
+              } else if (isToday) {
+                circleClasses = isVisited
+                  ? 'bg-accent text-white border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface shadow-xs'
+                  : 'bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface animate-pulse';
+              } else if (item.isPast) {
+                circleClasses = isVisited
+                  ? 'bg-accent text-white border-accent shadow-xs'
+                  : 'bg-surface/50 text-muted/40 border-border/60';
+              }
 
               return (
                 <div 
                   key={idx} 
-                  className="flex flex-col items-center gap-1 group cursor-default" 
-                  title={`${item.full} (${item.dateStr}): ${isFinished ? 'Completed ✓' : isToday ? (isTodayCompleted ? 'Completed Today 🔥' : 'Pending: Complete session or reply today!') : isGift ? '+20 Bonus Points on Day 7 🎁' : 'Upcoming'}`}
+                  className="flex flex-col items-center gap-1 group cursor-default relative z-10" 
+                  title={`${item.full} (${item.dateStr}): ${isVisited ? 'Visited ✓' : isToday ? 'Today: Not yet visited 🔥' : isMissed ? 'Missed ✕' : isGift ? '+20 Bonus Points on Day 7 🎁' : 'Upcoming'}`}
+                  data-testid={`streak-day-container-${item.num}`}
                 >
-                  <div
-                    className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${
-                      isFinished
-                        ? 'bg-primary text-on-primary border-primary shadow-xs'
-                        : isToday
-                          ? isTodayCompleted
-                            ? 'bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface'
-                            : 'bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface animate-pulse'
-                          : isGift
-                            ? canClaimBonus
-                              ? 'bg-accent text-on-primary border-accent shadow-md animate-bounce cursor-pointer'
-                              : 'bg-surface text-accent-text border-border'
-                            : 'bg-surface text-muted border-border'
-                    }`}
-                  >
-                    {isFinished ? (
-                      '✓'
-                    ) : isToday ? (
-                      <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                        local_fire_department
-                      </span>
-                    ) : isGift ? (
-                      '🎁'
-                    ) : (
-                      item.num
-                    )}
-                  </div>
+                  {isToday && isAnimatingToday ? (
+                    <motion.div
+                      key="today-animating"
+                      initial={{ scale: 1 }}
+                      animate={{
+                        scale: [1, 1.25, 0.95, 1.08, 1],
+                        rotate: [0, -6, 6, -3, 0],
+                        boxShadow: [
+                          '0 0 0 0px var(--accent)',
+                          '0 0 0 8px rgba(245, 158, 11, 0.35)',
+                          '0 0 0 0px rgba(245, 158, 11, 0)'
+                        ]
+                      }}
+                      transition={{ duration: 0.75, ease: 'easeOut' }}
+                      className="w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all bg-accent text-white border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface shadow-xs"
+                      data-testid="streak-day-today"
+                    >
+                      <motion.span
+                        initial={{ scale: 0.8, opacity: 0 }}
+                        animate={{ scale: [0.8, 1.3, 1], opacity: 1 }}
+                        transition={{ duration: 0.75 }}
+                        className="text-white font-bold text-xs"
+                      >
+                        ✓
+                      </motion.span>
+                    </motion.div>
+                  ) : (
+                    <div
+                      className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${circleClasses}`}
+                      data-testid={isToday ? 'streak-day-today' : `streak-day-${item.num}`}
+                      onClick={isGiftClaimable ? handleClaimStreakReward : undefined}
+                    >
+                      {isGift ? (
+                        '🎁'
+                      ) : isToday ? (
+                        isVisited ? (
+                          <span className="text-white font-bold text-xs">✓</span>
+                        ) : (
+                          <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
+                            local_fire_department
+                          </span>
+                        )
+                      ) : isVisited ? (
+                        <span className="text-white font-bold text-xs">✓</span>
+                      ) : isMissed ? (
+                        <span className="text-muted/40 text-[10px] font-medium">✕</span>
+                      ) : (
+                        item.num
+                      )}
+                    </div>
+                  )}
                   <div className="flex flex-col items-center leading-none">
                     <span className={`text-[9px] ${isToday ? 'text-accent-text font-bold' : 'text-muted font-medium'}`}>
                       Day {item.num}
