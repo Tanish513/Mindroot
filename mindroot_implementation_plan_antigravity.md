@@ -1,5 +1,5 @@
 ---
-title: "Mindroot - Antigravity Implementation Plans: Parts 1-13 [ACTIVE]"
+title: "Mindroot - Antigravity Implementation Plans: Parts 1-14 [ACTIVE]"
 tags:
   - project/student-to-student
   - plan
@@ -9,10 +9,10 @@ tags:
   - status/active
 status: active
 created: 2026-09-29
-last_updated: 2026-10-23
-latest_commit: "c95d6d3"
-repo_head: "c95d6d3"
-test_status: "137/137 passing across 16 backend suites (114 tests) + 11 E2E suites (23 tests); verified 2026-10-23"
+last_updated: 2026-10-28
+latest_commit: "6f66f1f"
+repo_head: "6f66f1f"
+test_status: "156/156 passing across 18 backend suites (129 tests) + 12 E2E suites (27 tests); 2026-10-28"
 author: "[[ANTIGRAVITY]]"
 project_hub: "[[student_to_student]]"
 source_spec: "[[student_to_student_spec]]"
@@ -36,6 +36,7 @@ governed_by: "[[AGENTS]]"
 - [x] **Plan 11: Tab-Isolated Authentication & Multi-Account Session Handling** *(Resolved & verified on commit `041fec5`; `e2e/multi_tab_isolation.spec.ts` passing)*
 - [x] **Plan 12: Resilient Mentor Approval Request Delivery & Multi-User Notification Recovery** *(Resolved & verified on commit `998510e`; 5/5 tests passing in `server/test/booking_approval_delivery.test.ts`, all 15 server suites passing, all 23 Playwright tests passing)*
 - [x] **Plan 13: PostgreSQL Schema Parity & Mentor Booking Persistence Remediation** *(Resolved & verified on 2026-10-23; 5/5 tests passing in `server/test/mentor_booking_visibility_regression.test.ts`, all 16 server suites passing, all 23 Playwright tests passing; 137/137 total)*
+- [x] **Plan 14: Daily Visited State & First-Open-of-Day Streak Tracker Animation** *(Implemented; 5/5 pass in `server/test/visit_streak.test.ts`, 4/4 pass in `e2e/streak_visited.spec.ts`; 156/156 total tests passing)*
 
 
 ---
@@ -1255,3 +1256,59 @@ Codex ran in-memory only. With a local or test Postgres and `DATABASE_URL` set, 
 - [x] Filter P2025 errors in `checkAndExpirePendingSessions()`. *(Lines 1736–1743)*
 - [x] Author dedicated regression test `server/test/mentor_booking_visibility_regression.test.ts` verifying in-memory booking response (201), teacher pending session list over REST (200), `session-request-created` socket delivery, "both" user pending visibility, and full PostgreSQL schema parity and persistence. *(Verified: 5/5 PASS)*
 - [x] Run full test suite: server typecheck (0 errors), 16 backend test suites (114/114 passing), 11 Playwright E2E suites (23/23 passing), production build clean in 3.57s. *(137/137 total passing tests)*
+
+---
+
+# [x] PART 14: Daily Visited State & 7-Day Streak Tracker Animation [IMPLEMENTED]
+
+> [!NOTE] Implementation Status: IMPLEMENTED (Codex independent verification pending)
+> **Checkpoint Commit**: `6f66f1f`
+> **Short Summary**:
+> Implemented daily visited state tracking and first-open-of-day animation on the 7-day streak tracker in `src/pages/Dashboard.tsx`. Added `POST /api/users/me/visit` and `POST /api/users/:id/visit` protected by `withOrderedLocks` mutex and timezone-aware local date handling. On first daily open, today's day circle executes a 0.75s Framer Motion flame pop and pulse ring animation that settles into a permanent filled amber check. Reloads bypass animation via device storage flag (`mindroot_streak_anim_<userId>_<date>`), and `prefers-reduced-motion` is strictly respected. Added connecting background and active progress track behind day circles adapting to light and dark theme tokens. Backed by 5/5 backend tests in `server/test/visit_streak.test.ts` and 4/4 Playwright tests in `e2e/streak_visited.spec.ts`.
+
+## 1. Step 0 Inspection & Code References
+- **Server streak & claim endpoints**:
+  - `POST /api/users/:id/claim-streak-reward`: `server/src/index.ts:5730-5765`
+  - `POST /api/users/:id/activity`: `server/src/index.ts:5769-5778`
+  - `GET /api/notes/daily/streak`: `server/src/routes/notes.ts:288-339`
+  - `PATCH /api/users/:id` & `/api/users/me`: `server/src/index.ts:5445-5695`
+- **Daily activity log & continuity**:
+  - `recordUserActivity(userId, activityType, tz)`: `server/src/index.ts:970-1034`
+  - Logs activity into `user.streakHistory`: `server/src/index.ts:1014-1029`
+- **Midnight rollover logic**:
+  - `getLocalDateStr(d, tz)`: `server/src/index.ts:943-956`
+  - `syncUserStreakStatus(user, tz)`: `server/src/index.ts:958-976`
+  - Client rollover monitor: `src/pages/Dashboard.tsx:124-132`
+  - Client lapse calculation: `src/pages/Dashboard.tsx:150-160`
+- **Streak fields on User**:
+  - `streak`: integer consecutive count (`server/src/index.ts:986-1011`)
+  - `lastActiveDate`: `YYYY-MM-DD` string (`server/src/index.ts:996, 1007, 1010`)
+  - `streakHistory`: array of `{ date, activities }` (`server/src/index.ts:989, 1022-1028`)
+  - `lastClaimedStreakMilestone`: milestone counter (`server/src/index.ts:5747-5752`)
+  - `rewardPoints`: loyalty balance (`server/src/index.ts:5753, 5763`)
+- **Claim mutex**:
+  - `withOrderedLocks([id], async () => { ... })`: `server/src/index.ts:5737-5765`
+  - Unaltered claim mutex and +20 points logic preserved.
+
+## 2. Visual States Implementation (`src/pages/Dashboard.tsx`)
+| State | Look Implemented | Theme Tokens Used |
+| :--- | :--- | :--- |
+| **Visited (past/today)** | Filled amber (`bg-accent text-white border-accent shadow-xs`), white check (`✓`) | `--accent`, `--on-primary` |
+| **Today, not yet visited** | Glow ring + flame (`bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface animate-pulse`) | `--surface`, `--accent` |
+| **Today, visited** | Glow ring + filled amber + check (`bg-accent text-white border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface shadow-xs`) | `--accent`, `--surface` |
+| **Missed** | Hollow, greyed, faint x (`bg-surface/50 text-muted/40 border-border/60`) | `--surface`, `--muted`, `--border` |
+| **Upcoming** | Hollow, light border (`bg-surface text-muted border-border`), day number | `--surface`, `--muted`, `--border` |
+| **Day 7 gift** | Gift icon (`🎁`); claimable once Days 1-6 visited (`bg-accent text-white border-accent shadow-md animate-bounce cursor-pointer`) | `--accent`, `--border` |
+| **Connecting line** | Track line (`bg-border`) and filled line (`bg-accent`) behind day circles filling to last visited day index | `--border`, `--accent` |
+
+## 3. Implementation Steps & Test Evidence
+- [x] Add timezone parameter `tz?: string` to `getLocalDateStr()` and `syncUserStreakStatus()` in `server/src/index.ts`. *(server/test/visit_streak.test.ts Test 4 PASSED)*
+- [x] Implement `POST /api/users/me/visit` and `POST /api/users/:id/visit` under `withOrderedLocks([targetId])` mutex returning `{ success, isFirstVisitToday, todayStr, streak, user }`. *(server/test/visit_streak.test.ts Test 1, 2, 3, 5 PASSED)*
+- [x] Expose `api.recordVisit(tz)` in `src/lib/api/index.ts`. *(server/test/visit_streak.test.ts Tests 1-5 PASSED)*
+- [x] Wire up dedicated visit effect in `src/pages/Dashboard.tsx` with ref guard preventing re-renders, fail-closed error handling, and local storage flag (`mindroot_streak_anim_<userId>_<date>`). *(e2e/streak_visited.spec.ts Tests 1-2 PASSED)*
+- [x] Implement Framer Motion 0.75s animation on first daily open (scale pop, rotate flicker, expanding ring pulse) settling into permanent visited state. *(e2e/streak_visited.spec.ts Test 1 PASSED)*
+- [x] Implement `prefers-reduced-motion` detection instantly switching to settled state without animation. *(e2e/streak_visited.spec.ts Test 3 PASSED)*
+- [x] Implement connecting track and filled progress line behind circles adapting to light and dark theme tokens. *(e2e/streak_visited.spec.ts Tests 1 & 4 PASSED; captured `screenshots/streak-tracker-light.png` and `screenshots/streak-tracker-dark.png`)*
+- [x] Run full backend test suite: 18/18 suites pass (129/129 tests). *(node server test runner: 18/18 PASSED)*
+- [x] Run full Playwright test suite: 12/12 suites pass (27/27 tests). *(playwright test: 27/27 PASSED)*
+- [x] Run production build (`npm run build`) and server typecheck (`npm --prefix server run typecheck`): 0 errors. *(Vite build: 2.54s, tsc 0 errors)*
