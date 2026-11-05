@@ -130,6 +130,11 @@ export function AIAssistant() {
     sendQuery(input);
   };
 
+  // Hide AI Assistant inside Live Room to prevent control obstruction
+  if (location.pathname.startsWith('/live') || location.pathname.startsWith('/live-room')) {
+    return null;
+  }
+
   return (
     <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
       {/* Chat Window */}
@@ -250,11 +255,11 @@ export function AIAssistant() {
 
       {/* FAB Button */}
       <motion.button
-        whileHover={{ scale: 1.08, y: -2 }}
-        whileTap={{ scale: 0.92 }}
+        whileHover={{ scale: 1.06, y: -2 }}
+        whileTap={{ scale: 0.94 }}
         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
         onClick={() => setOpen(o => !o)}
-        className="w-14 h-14 bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-lg flex items-center justify-center relative cursor-pointer"
+        className="w-12 h-12 bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-md flex items-center justify-center relative cursor-pointer"
         aria-label="Open AI Assistant"
       >
         {!open && (

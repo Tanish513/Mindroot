@@ -52,17 +52,9 @@ export function createSyntheticVideoStream(label: string, subtitle = 'LIVE VIDEO
       ctx.font = 'bold 20px sans-serif';
       ctx.fillText(label || 'Peer User', 320, 220);
 
-      ctx.fillStyle = '#22c55e';
+      ctx.fillStyle = '#94a3b8';
       ctx.font = 'bold 12px sans-serif';
-      ctx.fillText(`● ${subtitle}`, 320, 248);
-
-      const barCount = 9;
-      const startX = 320 - (barCount * 14) / 2;
-      for (let i = 0; i < barCount; i++) {
-        const h = 6 + Math.abs(Math.sin(frame * 0.12 + i * 0.7)) * 22;
-        ctx.fillStyle = '#4ade80';
-        ctx.fillRect(startX + i * 14, 288 - h / 2, 7, h);
-      }
+      ctx.fillText(subtitle || 'Video Connected', 320, 248);
     };
 
     draw();
@@ -235,7 +227,7 @@ export function VideoTile({
   hasMultipleCameras,
   isRemote,
   onUnlockAudio,
-  isSimulated,
+  onKick,
   className
 }: { 
   stream: MediaStream | null; 
@@ -253,6 +245,7 @@ export function VideoTile({
   isRemote?: boolean;
   onUnlockAudio?: () => void;
   isSimulated?: boolean;
+  onKick?: () => void;
   className?: string;
 }) {
   const [, setTrackVersion] = useState(0);
@@ -302,13 +295,6 @@ export function VideoTile({
         className="h-full w-full bg-surface-2 object-cover"
       />
 
-      {isSimulated && (
-        <div className="absolute top-2 right-2 bg-accent text-on-primary font-black px-2 py-0.5 rounded-md text-[10px] uppercase tracking-wider shadow-xs backdrop-blur-md z-30 flex items-center gap-1 border border-accent-text/20">
-          <span className="material-symbols-outlined text-xs">smart_display</span>
-          <span>Simulated</span>
-        </div>
-      )}
-
       {hasMultipleCameras && onSwitchCamera && (
         <button
           onClick={onSwitchCamera}
@@ -322,31 +308,31 @@ export function VideoTile({
       )}
 
       {showPlaceholder && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-surface-2 p-2 text-center z-10">
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 border border-slate-800 p-2 text-center z-10">
           <div className={clsx('grid h-11 w-11 place-items-center rounded-2xl text-base font-bold text-white shadow-xs', accent || 'bg-primary')}>
             {waiting ? <span className="material-symbols-outlined animate-pulse text-lg">person_search</span> : cleanDisplayName.slice(0, 1).toUpperCase()}
           </div>
-          <p className="text-xs font-semibold text-muted mt-1.5">
+          <p className="text-xs font-semibold text-slate-300 mt-1.5">
             {waiting ? 'Connecting…' : (cameraOff ? 'Camera Off' : 'Waiting for video…')}
           </p>
         </div>
       )}
 
       {/* Role Pill & Name Badge on bottom left */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-border bg-surface/90 text-text px-2 py-0.5 text-xs font-bold shadow-xs backdrop-blur-md z-20 max-w-[88%]">
-        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-accent" : "bg-primary animate-pulse")} />
+      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/85 text-white px-2 py-0.5 text-xs font-bold shadow-xs backdrop-blur-md z-20 max-w-[88%]">
+        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-amber-400" : "bg-emerald-400 animate-pulse")} />
         <span className="truncate">{cleanDisplayName}</span>
         <span className={clsx(
           "text-[10px] uppercase px-1.5 py-0.5 rounded font-black tracking-wider shrink-0",
-          isTeacher ? 'bg-primary text-on-primary' : 'bg-accent text-on-primary'
+          isTeacher ? 'bg-primary text-white' : 'bg-slate-700 text-slate-200'
         )}>
           {isTeacher ? 'Teacher' : 'Student'}
         </span>
       </div>
 
-      {/* Mic Status Badge on bottom right */}
+      {/* Mic Status Badge on bottom right (neutral dark, slash icon) */}
       {micOff && (
-        <div className="absolute bottom-2 right-2 bg-danger text-white p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Muted" aria-label="Microphone muted">
+        <div className="absolute bottom-2 right-2 bg-slate-800 border border-slate-700 text-slate-300 p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Muted" aria-label="Microphone muted">
           <span className="material-symbols-outlined text-sm">mic_off</span>
         </div>
       )}
@@ -356,6 +342,24 @@ export function VideoTile({
         <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-accent text-on-primary shadow-xs animate-bounce z-20" aria-label="Hand raised">
           <span className="material-symbols-outlined text-sm">pan_tool</span>
         </div>
+      )}
+
+      {/* Teacher remove participant button on top right */}
+      {onKick && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onKick();
+          }}
+          className="absolute top-2 right-2 bg-red-600/85 hover:bg-red-600 text-white px-2 py-1 rounded-lg backdrop-blur-md transition-all border border-red-500/50 shadow-xs flex items-center gap-1 text-[11px] font-bold z-20 cursor-pointer active:scale-95"
+          title={`Remove ${cleanDisplayName} from class`}
+          aria-label={`Remove ${cleanDisplayName} from class`}
+          data-testid="remove-student-btn"
+        >
+          <span className="material-symbols-outlined text-xs">person_remove</span>
+          <span className="hidden sm:inline">Remove</span>
+        </button>
       )}
     </div>
   );
@@ -389,6 +393,8 @@ interface VideoGridProps {
   onOpenWhiteboardStudio: () => void;
   onSimulateStudents?: (count: number) => void;
   isTeacher: boolean;
+  isDevOrDemo?: boolean;
+  onKickParticipant?: (participant: RemoteParticipant) => void;
 }
 
 export function VideoGrid({
@@ -408,18 +414,25 @@ export function VideoGrid({
   unlockAudio,
   onOpenWhiteboardStudio,
   onSimulateStudents,
-  isTeacher
+  isTeacher,
+  isDevOrDemo,
+  onKickParticipant
 }: VideoGridProps) {
   return (
     <div className="flex-1 min-h-0 flex flex-col gap-2 p-2 bg-slate-950 rounded-2xl border border-slate-800 shadow-inner overflow-hidden">
       <div className="flex items-center justify-between px-2 text-xs text-slate-300 font-bold shrink-0">
-        <span className="flex items-center gap-1.5">
+        <span className="flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Gallery Grid View · {totalParticipantsCount} Active Feeds (Mesh Video Cap: 4 Feeds Max)</span>
+          <span>Gallery View · {totalParticipantsCount} {totalParticipantsCount === 1 ? 'Participant' : 'Participants'}</span>
+          {remoteParticipants.some(p => p.isSimulated) && (
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+              Demo: simulated participants
+            </span>
+          )}
         </span>
         <button
           onClick={onOpenWhiteboardStudio}
-          className="flex items-center gap-1 px-3 py-1 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-extrabold shadow-elevation-1 active:scale-95 transition-all"
+          className="flex items-center gap-1 px-3 py-1 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-extrabold shadow-elevation-1 active:scale-95 transition-all cursor-pointer"
         >
           <span className="material-symbols-outlined text-sm">draw</span>
           <span>Open Whiteboard Studio</span>
@@ -484,6 +497,7 @@ export function VideoGrid({
             accent={p.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
             isRemote
             onUnlockAudio={unlockAudio}
+            onKick={isTeacher && p.role !== 'teacher' && onKickParticipant ? () => onKickParticipant(p) : undefined}
             className="h-full w-full"
           />
         ))}
@@ -492,9 +506,25 @@ export function VideoGrid({
         {overflowAudioParticipants.map(p => (
           <div 
             key={p.id}
-            className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center shadow-sm h-full w-full"
+            className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center shadow-sm h-full w-full group"
             title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth for up to 5 cohort members"
           >
+            {isTeacher && p.role !== 'teacher' && onKickParticipant && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onKickParticipant(p);
+                }}
+                className="absolute top-2 right-2 bg-red-600/85 hover:bg-red-600 text-white px-2 py-1 rounded-lg backdrop-blur-md transition-all border border-red-500/50 shadow-xs flex items-center gap-1 text-[11px] font-bold z-20 cursor-pointer active:scale-95 opacity-0 group-hover:opacity-100"
+                title={`Remove ${p.name} from class`}
+                aria-label={`Remove ${p.name} from class`}
+                data-testid="remove-student-btn"
+              >
+                <span className="material-symbols-outlined text-xs">person_remove</span>
+                <span className="hidden sm:inline">Remove</span>
+              </button>
+            )}
             <div className="h-12 w-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-sm mb-2 shadow-inner">
               {p.name.slice(0, 1).toUpperCase()}
             </div>
@@ -511,14 +541,14 @@ export function VideoGrid({
             <div className="w-12 h-12 rounded-full bg-primary-container/30 text-primary flex items-center justify-center mb-2">
               <span className="material-symbols-outlined text-2xl">groups</span>
             </div>
-            <h4 className="text-sm font-bold text-white">Waiting for Classmates & Teacher</h4>
+            <h4 className="text-sm font-bold text-white">Waiting for classmates</h4>
             <p className="text-xs text-slate-400 mt-1 max-w-[240px]">
-              Share the room link or click below to simulate the 3-student batch immediately.
+              Share the session link to invite peers.
             </p>
-            {onSimulateStudents && (
+            {isDevOrDemo && onSimulateStudents && (
               <button
                 onClick={() => onSimulateStudents(3)}
-                className="mt-3 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold shadow-md active:scale-95 transition-all"
+                className="mt-3 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold shadow-md active:scale-95 transition-all cursor-pointer"
               >
                 + Simulate 3 Students
               </button>

@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api, onPeersUpdated, onSessionsUpdated, globalSocket } from '../lib/api';
 import { Button } from '../components/ui/Button';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { EmptyState } from '../components/ui/EmptyState';
 
 export function AdminPortal() {
   const [users, setUsers] = useState<any[]>([]);
@@ -214,21 +216,21 @@ export function AdminPortal() {
   return (
     <div className="max-w-7xl mx-auto space-y-8 pb-16 select-none">
       {/* Header Banner */}
-      <div className="bg-surface-container-high border border-outline-variant rounded-3xl p-8 text-on-surface shadow-elevation-1 relative overflow-hidden">
+      <div className="bg-surface-2 border border-border rounded-2xl p-8 text-text shadow-xs relative overflow-hidden">
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-2">
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-surface-container text-on-surface border border-outline-variant rounded-full text-xs font-semibold uppercase tracking-wider">
+            <div className="inline-flex items-center gap-2 px-3 py-1 bg-surface-2 text-text border border-border rounded-full text-xs font-semibold uppercase tracking-wider">
               <span className="material-symbols-outlined text-[16px] text-primary">admin_panel_settings</span>
               Administrator Portal
             </div>
-            <h1 className="text-3xl font-semibold tracking-tight text-on-surface">Platform Data & User Management</h1>
-            <p className="text-on-surface-variant text-sm font-medium max-w-2xl">
+            <h1 className="text-3xl font-semibold tracking-tight text-text">Platform Data & User Management</h1>
+            <p className="text-muted text-sm font-medium max-w-2xl">
               Inspect student and teacher profiles, manage user IDs & account passwords, monitor active peer sessions, and ensure platform security.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <Button onClick={loadData} variant="secondary" className="bg-surface-container text-on-surface border border-outline-variant hover:bg-surface-container-high">
+            <Button onClick={loadData} variant="secondary" className="bg-surface-2 text-text border border-border hover:bg-surface-2">
               <span className="material-symbols-outlined text-lg mr-2">refresh</span>
               Sync Live Data
             </Button>
@@ -238,69 +240,69 @@ export function AdminPortal() {
 
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-2 text-on-surface">
-          <div className="flex items-center justify-between text-on-surface-variant">
+        <div className="bg-surface p-5 rounded-2xl border border-border shadow-xs space-y-2 text-text">
+          <div className="flex items-center justify-between text-muted">
             <span className="text-xs font-semibold uppercase tracking-wider">Registered Users</span>
             <span className="material-symbols-outlined text-primary">group</span>
           </div>
-          <p className="text-3xl font-bold text-on-surface">{users.length}</p>
-          <p className="text-xs text-on-surface-variant font-medium">
-            <span className="text-on-surface font-semibold">{totalStudents}</span> Students • <span className="text-on-surface font-semibold">{totalTeachers}</span> Teachers
+          <p className="text-3xl font-bold text-text">{users.length}</p>
+          <p className="text-xs text-muted font-medium">
+            <span className="text-text font-semibold">{totalStudents}</span> Students • <span className="text-text font-semibold">{totalTeachers}</span> Teachers
           </p>
         </div>
 
-        <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-2 text-on-surface">
-          <div className="flex items-center justify-between text-on-surface-variant">
+        <div className="bg-surface p-5 rounded-2xl border border-border shadow-xs space-y-2 text-text">
+          <div className="flex items-center justify-between text-muted">
             <span className="text-xs font-semibold uppercase tracking-wider">Peer Sessions</span>
             <span className="material-symbols-outlined text-primary">video_camera_front</span>
           </div>
-          <p className="text-3xl font-bold text-on-surface">{sessions.length}</p>
-          <p className="text-xs text-on-surface-variant font-medium">
-            <span className="text-on-surface font-semibold">{totalCompletedSessions}</span> Completed • <span className="text-on-surface font-semibold">{totalActiveSessions}</span> Active
+          <p className="text-3xl font-bold text-text">{sessions.length}</p>
+          <p className="text-xs text-muted font-medium">
+            <span className="text-text font-semibold">{totalCompletedSessions}</span> Completed • <span className="text-text font-semibold">{totalActiveSessions}</span> Active
           </p>
         </div>
 
-        <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-2 text-on-surface">
-          <div className="flex items-center justify-between text-on-surface-variant">
+        <div className="bg-surface p-5 rounded-2xl border border-border shadow-xs space-y-2 text-text">
+          <div className="flex items-center justify-between text-muted">
             <span className="text-xs font-semibold uppercase tracking-wider">Platform UPI Volume</span>
             <span className="material-symbols-outlined text-primary">payments</span>
           </div>
-          <p className="text-3xl font-bold text-on-surface">₹{(totalCompletedSessions * 499 + 14990).toLocaleString('en-IN')}</p>
-          <p className="text-xs text-on-surface-variant font-medium">Total Processed Mentoring GMV</p>
+          <p className="text-3xl font-bold text-text">₹{(totalCompletedSessions * 499 + 14990).toLocaleString('en-IN')}</p>
+          <p className="text-xs text-muted font-medium">Total Processed Mentoring GMV</p>
         </div>
 
-        <div className="bg-surface p-5 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-2 text-on-surface">
-          <div className="flex items-center justify-between text-on-surface-variant">
+        <div className="bg-surface p-5 rounded-2xl border border-border shadow-xs space-y-2 text-text">
+          <div className="flex items-center justify-between text-muted">
             <span className="text-xs font-semibold uppercase tracking-wider">Avg Trust Rating</span>
             <span className="material-symbols-outlined text-primary">star</span>
           </div>
-          <p className="text-3xl font-bold text-on-surface">{avgTrustScore} / 5.0</p>
-          <p className="text-xs text-on-surface-variant font-medium">Platform verified standard</p>
+          <p className="text-3xl font-bold text-text">{avgTrustScore} / 5.0</p>
+          <p className="text-xs text-muted font-medium">Platform verified standard</p>
         </div>
       </div>
 
       {/* Notification Banner */}
       {actionMessage && (
-        <div className="bg-teaching-emerald-container border border-teaching-emerald/20 text-on-teaching-emerald-container rounded-2xl p-4 text-xs font-bold flex items-center justify-between shadow-elevation-1 animate-in fade-in duration-200">
+        <div className="bg-primary-tint border border-primary/20 text-primary-text rounded-2xl p-4 text-xs font-bold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-teaching-emerald text-lg">check_circle</span>
+            <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
             <span>{actionMessage}</span>
           </div>
-          <button onClick={() => setActionMessage('')} className="text-on-teaching-emerald-container hover:opacity-80">
+          <button onClick={() => setActionMessage('')} className="text-primary-text hover:opacity-80">
             <span className="material-symbols-outlined text-sm">close</span>
           </button>
         </div>
       )}
 
       {/* Main Section Navigation Tabs */}
-      <div className="flex items-center justify-between border-b border-outline-variant pb-4">
+      <div className="flex items-center justify-between border-b border-border pb-4">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveSection('users')}
             className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
               activeSection === 'users'
-                ? 'bg-primary text-on-primary shadow-elevation-1'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-muted hover:bg-surface-2 hover:text-text'
             }`}
           >
             <span className="material-symbols-outlined text-lg align-middle mr-2">manage_accounts</span>
@@ -311,8 +313,8 @@ export function AdminPortal() {
             onClick={() => setActiveSection('sessions')}
             className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
               activeSection === 'sessions'
-                ? 'bg-primary text-on-primary shadow-elevation-1'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-muted hover:bg-surface-2 hover:text-text'
             }`}
           >
             <span className="material-symbols-outlined text-lg align-middle mr-2">event_available</span>
@@ -323,8 +325,8 @@ export function AdminPortal() {
             onClick={() => setActiveSection('disputes')}
             className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
               activeSection === 'disputes'
-                ? 'bg-primary text-on-primary shadow-elevation-1'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-muted hover:bg-surface-2 hover:text-text'
             }`}
           >
             <span className="material-symbols-outlined text-lg align-middle mr-2">gavel</span>
@@ -335,8 +337,8 @@ export function AdminPortal() {
             onClick={() => setActiveSection('analytics')}
             className={`px-4 py-2.5 rounded-xl font-extrabold text-sm transition-all ${
               activeSection === 'analytics'
-                ? 'bg-primary text-on-primary shadow-elevation-1'
-                : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
+                ? 'bg-primary text-white shadow-xs'
+                : 'text-muted hover:bg-surface-2 hover:text-text'
             }`}
           >
             <span className="material-symbols-outlined text-lg align-middle mr-2">analytics</span>
@@ -348,13 +350,13 @@ export function AdminPortal() {
           <div className="flex items-center gap-3">
             {/* Search Input */}
             <div className="relative w-64">
-              <span className="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant text-lg">search</span>
+              <span className="material-symbols-outlined absolute left-3 top-2.5 text-muted text-lg">search</span>
               <input
                 type="text"
                 placeholder="Search user, ID or skill..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-surface border border-outline-variant rounded-xl text-xs font-bold text-on-surface outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                className="w-full pl-9 pr-3 py-2 bg-surface border border-border rounded-xl text-xs font-bold text-text outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
               />
             </div>
 
@@ -362,7 +364,7 @@ export function AdminPortal() {
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value as any)}
-              className="bg-surface border border-outline-variant rounded-xl text-xs font-bold text-on-surface px-3 py-2 outline-none focus:border-primary"
+              className="bg-surface border border-border rounded-xl text-xs font-bold text-text px-3 py-2 outline-none focus:border-primary"
             >
               <option value="all">All Roles</option>
               <option value="student">Student</option>
@@ -376,16 +378,22 @@ export function AdminPortal() {
 
       {/* SECTION 1: USERS TABLE */}
       {activeSection === 'users' && (
-        <div className="bg-surface rounded-2xl border border-outline-variant shadow-elevation-1 overflow-hidden">
+        <div className="bg-surface rounded-2xl border border-border shadow-xs overflow-hidden">
           {loading ? (
-            <div className="p-12 text-center text-on-surface-variant font-bold animate-pulse">Loading platform profiles...</div>
+            <div className="p-12 text-center text-muted font-bold animate-pulse">Loading platform profiles...</div>
           ) : filteredUsers.length === 0 ? (
-            <div className="p-12 text-center text-on-surface-variant font-bold">No user profiles found matching your search.</div>
+            <div className="p-8">
+            <EmptyState
+              icon="person_search"
+              title="No user profiles found"
+              description="No profiles match your search criteria. Try modifying your filter or keywords."
+            />
+          </div>
           ) : (
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-surface-container-low border-b border-outline-variant text-[11px] font-black uppercase text-on-surface-variant tracking-wider">
+                  <tr className="bg-surface-2/60 border-b border-border text-[11px] font-black uppercase text-muted tracking-wider">
                     <th className="py-3.5 px-5">User Profile</th>
                     <th className="py-3.5 px-4">User ID & Password</th>
                     <th className="py-3.5 px-4">Role Perspective</th>
@@ -398,7 +406,7 @@ export function AdminPortal() {
                 <tbody className="divide-y divide-outline-variant text-xs font-medium">
                   {filteredUsers.map((u, i) => {
                     return (
-                      <tr key={u.id || i} className="hover:bg-surface-container transition-colors">
+                      <tr key={u.id || i} className="hover:bg-surface-2 transition-colors">
                         <td className="py-3.5 px-5">
                           <div className="flex items-center gap-3">
                             <img
@@ -407,26 +415,26 @@ export function AdminPortal() {
                               className="w-9 h-9 rounded-full object-cover ring-2 ring-outline-variant"
                             />
                             <div>
-                              <p className="font-black text-on-surface text-sm">{u.name}</p>
-                              <p className="text-[11px] text-on-surface-variant font-medium">{u.email || u.id}</p>
+                              <p className="font-black text-text text-sm">{u.name}</p>
+                              <p className="text-[11px] text-muted font-medium">{u.email || u.id}</p>
                             </div>
                           </div>
                         </td>
 
                         <td className="py-3.5 px-4 font-mono text-xs">
                           <div className="space-y-1">
-                            <div className="flex items-center gap-1.5 text-on-surface">
-                              <span className="text-[10px] font-bold uppercase text-on-surface-variant">ID:</span>
-                              <span className="font-bold text-on-surface select-all">{u.id}</span>
+                            <div className="flex items-center gap-1.5 text-text">
+                              <span className="text-[10px] font-bold uppercase text-muted">ID:</span>
+                              <span className="font-bold text-text select-all">{u.id}</span>
                             </div>
-                            <div className="flex items-center gap-1.5 text-on-surface">
-                              <span className="text-[10px] font-bold uppercase text-on-surface-variant">PWD:</span>
-                              <span className="font-mono text-teaching-emerald font-bold bg-teaching-emerald-container border border-teaching-emerald/20 px-2 py-0.5 rounded text-[11px] select-all">
+                            <div className="flex items-center gap-1.5 text-text">
+                              <span className="text-[10px] font-bold uppercase text-muted">PWD:</span>
+                              <span className="font-mono text-primary font-bold bg-primary-tint border border-primary/20 px-2 py-0.5 rounded text-[11px] select-all">
                                 ••••••••
                               </span>
                               <button
                                 onClick={() => handleEditPassword(u)}
-                                className="text-on-surface-variant hover:text-primary p-0.5 transition-colors hover:scale-110 ml-0.5"
+                                className="text-muted hover:text-primary p-0.5 transition-colors hover:scale-110 ml-0.5"
                                 title="Edit password for this user"
                               >
                                 <span className="material-symbols-outlined text-sm">edit</span>
@@ -437,9 +445,9 @@ export function AdminPortal() {
 
                         <td className="py-3.5 px-4">
                           <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-black capitalize ${
-                            u.role === 'admin' ? 'bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20' :
-                            u.role === 'teacher' ? 'bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20' :
-                            'bg-primary-container text-on-primary-container border border-primary/20'
+                            u.role === 'admin' ? 'bg-accent-tint text-accent-text border border-accent/25' :
+                            u.role === 'teacher' ? 'bg-primary-tint text-primary-text border border-primary/20' :
+                            'bg-primary-tint text-primary-text border border-primary/20'
                           }`}>
                             <span className="material-symbols-outlined text-[14px]">
                               {u.role === 'admin' ? 'admin_panel_settings' : u.role === 'teacher' ? 'workspace_premium' : u.role === 'both' ? 'swap_horiz' : 'school'}
@@ -447,7 +455,7 @@ export function AdminPortal() {
                             {u.role || 'both'}
                           </span>
                           {(u.officialIdStatus === 'verified' || u.officialIdDocument) && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-primary-container text-on-primary-container text-[9px] font-black uppercase mt-1">
+                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-primary-tint text-primary-text text-[9px] font-black uppercase mt-1">
                               <span className="material-symbols-outlined text-[10px] text-primary">verified_user</span>
                               {u.officialIdStatus === 'verified' ? 'ID Verified' : 'ID Pending'}
                             </span>
@@ -455,25 +463,25 @@ export function AdminPortal() {
                         </td>
 
                       <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-1 font-black text-on-surface">
-                          <span className="material-symbols-outlined text-learning-amber text-base">star</span>
+                        <div className="flex items-center gap-1 font-black text-text">
+                          <span className="material-symbols-outlined text-accent text-base">star</span>
                           {typeof u.trustScore === 'number' ? u.trustScore.toFixed(2) : '5.00'}
                         </div>
                       </td>
 
-                      <td className="py-3.5 px-4 font-black text-teaching-emerald text-sm">
+                      <td className="py-3.5 px-4 font-black text-primary text-sm">
                         ₹{u.hourlyRate || 499}/hr
                       </td>
 
                       <td className="py-3.5 px-4">
                         <div className="space-y-1 max-w-xs">
                           {u.skillsTaught?.length > 0 && (
-                            <p className="truncate text-[11px] text-on-surface-variant">
-                              <span className="font-extrabold text-teaching-emerald">Teaches:</span> {u.skillsTaught.join(', ')}
+                            <p className="truncate text-[11px] text-muted">
+                              <span className="font-extrabold text-primary">Teaches:</span> {u.skillsTaught.join(', ')}
                             </p>
                           )}
                           {u.skillsLearned?.length > 0 && (
-                            <p className="truncate text-[11px] text-on-surface-variant">
+                            <p className="truncate text-[11px] text-muted">
                               <span className="font-extrabold text-primary">Learns:</span> {u.skillsLearned.join(', ')}
                             </p>
                           )}
@@ -493,7 +501,7 @@ export function AdminPortal() {
                           {u.role !== 'admin' && u.id !== 'user-admin' && (
                             <button
                               onClick={() => handleDeleteUser(u)}
-                              className="p-1.5 rounded-lg border border-alert-rose/20 bg-alert-rose-container hover:opacity-80 text-on-alert-rose-container font-bold transition-all shadow-elevation-1"
+                              className="p-1.5 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 hover:opacity-80 text-red-700 dark:text-red-300 font-bold transition-all shadow-xs"
                               title="Delete user account"
                             >
                               <span className="material-symbols-outlined text-base">delete</span>
@@ -513,14 +521,20 @@ export function AdminPortal() {
 
       {/* SECTION 2: SESSION LEDGER */}
       {activeSection === 'sessions' && (
-        <div className="bg-surface rounded-2xl border border-outline-variant shadow-elevation-1 overflow-hidden">
+        <div className="bg-surface rounded-2xl border border-border shadow-xs overflow-hidden">
           {sessions.length === 0 ? (
-            <div className="p-12 text-center text-on-surface-variant font-bold">No platform sessions found.</div>
+            <div className="p-8">
+            <EmptyState
+              icon="event_busy"
+              title="No platform sessions found"
+              description="There are currently no scheduled or completed peer learning sessions."
+            />
+          </div>
           ) : (
             <div className="overflow-x-auto custom-scrollbar">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-surface-container-low border-b border-outline-variant text-[11px] font-black uppercase text-on-surface-variant tracking-wider">
+                  <tr className="bg-surface-2/60 border-b border-border text-[11px] font-black uppercase text-muted tracking-wider">
                     <th className="py-3.5 px-5">Session & ID</th>
                     <th className="py-3.5 px-4">Teacher (Name / Email / ID)</th>
                     <th className="py-3.5 px-4">Student (Name / ID)</th>
@@ -538,41 +552,40 @@ export function AdminPortal() {
                     const price = s.amount || s.pricePerStudent || s.teacher?.hourlyRate || 0;
 
                     return (
-                      <tr key={s.id || i} className="hover:bg-surface-container">
-                        <td className="py-3.5 px-5 font-black text-on-surface">
+                      <tr key={s.id || i} className="hover:bg-surface-2">
+                        <td className="py-3.5 px-5 font-black text-text">
                           <div>{s.title || 'Peer Learning Exchange'}</div>
-                          <div className="text-[10px] text-on-surface-variant font-mono">{s.id}</div>
+                          <div className="text-[10px] text-muted font-mono">{s.id}</div>
                         </td>
                         <td className="py-3.5 px-4">
-                          <div className="font-bold text-teaching-emerald">{s.teacher?.name || 'Teacher'}</div>
-                          {s.teacher?.email && <div className="text-[10px] text-on-surface-variant">{s.teacher.email}</div>}
-                          <div className="text-[10px] text-on-surface-variant/80 font-mono truncate max-w-[140px]">{tId}</div>
+                          <div className="font-bold text-primary">{s.teacher?.name || 'Teacher'}</div>
+                          {s.teacher?.email && <div className="text-[10px] text-muted">{s.teacher.email}</div>}
+                          <div className="text-[10px] text-muted/80 font-mono truncate max-w-[140px]">{tId}</div>
                         </td>
                         <td className="py-3.5 px-4">
                           <div className="font-bold text-primary">{s.student?.name || 'Student'}</div>
-                          {s.student?.email && <div className="text-[10px] text-on-surface-variant">{s.student.email}</div>}
-                          <div className="text-[10px] text-on-surface-variant/80 font-mono truncate max-w-[140px]">{sId}</div>
+                          {s.student?.email && <div className="text-[10px] text-muted">{s.student.email}</div>}
+                          <div className="text-[10px] text-muted/80 font-mono truncate max-w-[140px]">{sId}</div>
                         </td>
-                        <td className="py-3.5 px-4 font-bold text-on-surface-variant">
+                        <td className="py-3.5 px-4 font-bold text-muted">
                           <div>{format}</div>
                           <div className="text-[11px] text-primary">₹{price}</div>
                         </td>
-                        <td className="py-3.5 px-4 text-[11px] text-on-surface-variant">
+                        <td className="py-3.5 px-4 text-[11px] text-muted">
                           <div>{new Date(s.scheduledAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</div>
                           <div>{new Date(s.scheduledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
                         </td>
                         <td className="py-3.5 px-4">
-                          <span className={`px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                            s.status === 'completed' ? 'bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20' :
-                            s.status === 'confirmed' ? 'bg-primary-container text-on-primary-container border border-primary/20' : 'bg-learning-amber-container text-on-learning-amber-container border border-learning-amber/20'
-                          }`}>
-                            {s.status || 'confirmed'}
-                          </span>
+                          <StatusBadge
+                            size="sm"
+                            status={s.status === 'completed' ? 'completed' : s.status === 'confirmed' ? 'confirmed' : 'pending'}
+                            label={s.status || 'confirmed'}
+                          />
                         </td>
                         <td className="py-3.5 px-5 text-right">
                           <button
                             onClick={() => handleDeleteSession(s)}
-                            className="p-1.5 rounded-lg border border-alert-rose/20 bg-alert-rose-container hover:opacity-80 text-on-alert-rose-container font-bold transition-all shadow-elevation-1 cursor-pointer"
+                            className="p-1.5 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 hover:opacity-80 text-red-700 dark:text-red-300 font-bold transition-all shadow-xs cursor-pointer"
                             title="Delete / Cancel session"
                           >
                             <span className="material-symbols-outlined text-base">delete</span>
@@ -593,31 +606,31 @@ export function AdminPortal() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <h3 className="text-base font-black text-on-surface flex items-center gap-2">
-                <span className="material-symbols-outlined text-alert-rose">gavel</span>
+              <h3 className="text-base font-black text-text flex items-center gap-2">
+                <span className="material-symbols-outlined text-red-600 dark:text-red-400">gavel</span>
                 <span>P2P UPI Payment Disputes & Escalations</span>
               </h3>
-              <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+              <p className="text-xs text-muted font-medium mt-0.5">
                 Review payment mismatches, unverified UTR submissions, and mentor escalations.
               </p>
             </div>
-            <span className="text-xs font-mono font-bold px-3 py-1 bg-surface-container rounded-xl border border-outline-variant">
+            <span className="text-xs font-mono font-bold px-3 py-1 bg-surface-2 rounded-xl border border-border">
               Total Disputes: {disputes.length}
             </span>
           </div>
 
           {disputes.length === 0 ? (
-            <div className="bg-surface rounded-2xl border border-outline-variant p-12 text-center space-y-3">
-              <span className="material-symbols-outlined text-4xl text-teaching-emerald">verified</span>
-              <h4 className="text-sm font-bold text-on-surface">Zero Payment Disputes</h4>
-              <p className="text-xs text-on-surface-variant max-w-md mx-auto font-medium">
-                All student UPI transfers and mentor acknowledgments are operating smoothly with no open claims.
-              </p>
-            </div>
+            <div className="bg-surface rounded-2xl border border-border p-6 shadow-xs">
+            <EmptyState
+              icon="verified"
+              title="Zero Payment Disputes"
+              description="All student UPI transfers and mentor acknowledgments are operating smoothly with no open claims."
+            />
+          </div>
           ) : (
-            <div className="bg-surface rounded-2xl border border-outline-variant shadow-elevation-1 overflow-x-auto">
+            <div className="bg-surface rounded-2xl border border-border shadow-xs overflow-x-auto">
               <table className="w-full text-left text-xs">
-                <thead className="bg-surface-container border-b border-outline-variant text-on-surface-variant font-black uppercase text-[10px] tracking-wider">
+                <thead className="bg-surface-2 border-b border-border text-muted font-black uppercase text-[10px] tracking-wider">
                   <tr>
                     <th className="p-4">Session / Topic</th>
                     <th className="p-4">Student</th>
@@ -629,41 +642,33 @@ export function AdminPortal() {
                     <th className="p-4 text-right">Admin Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-outline-variant font-medium">
+                <tbody className="divide-y divide-border font-medium">
                   {disputes.map((disp: any) => (
-                    <tr key={disp.id} className="hover:bg-surface-container-low transition-colors">
+                    <tr key={disp.id} className="hover:bg-surface-2/60 transition-colors">
                       <td className="p-4">
-                        <p className="font-bold text-on-surface truncate max-w-[180px]">{disp.sessionTitle || 'Mentorship Session'}</p>
-                        <p className="text-[10px] text-on-surface-variant font-mono">{disp.sessionId}</p>
+                        <p className="font-bold text-text truncate max-w-[180px]">{disp.sessionTitle || 'Mentorship Session'}</p>
+                        <p className="text-[10px] text-muted font-mono">{disp.sessionId}</p>
                       </td>
-                      <td className="p-4 font-semibold text-on-surface">{disp.studentName || disp.studentId}</td>
-                      <td className="p-4 font-semibold text-on-surface">{disp.teacherName || disp.teacherId}</td>
-                      <td className="p-4 font-black text-teaching-emerald">₹{disp.amount || 499}</td>
+                      <td className="p-4 font-semibold text-text">{disp.studentName || disp.studentId}</td>
+                      <td className="p-4 font-semibold text-text">{disp.teacherName || disp.teacherId}</td>
+                      <td className="p-4 font-black text-primary">₹{disp.amount || 499}</td>
                       <td className="p-4 font-mono font-bold text-primary text-[11px]">{disp.utrNumber || 'N/A'}</td>
-                      <td className="p-4 text-on-surface-variant max-w-[200px] truncate" title={disp.reason}>
+                      <td className="p-4 text-muted max-w-[200px] truncate" title={disp.reason}>
                         {disp.reason}
                       </td>
                       <td className="p-4">
-                        {disp.status === 'open' ? (
-                          <span className="px-2.5 py-1 rounded-full bg-alert-rose/15 text-alert-rose font-bold text-[10px]">
-                            Open Dispute
-                          </span>
-                        ) : disp.status === 'resolved_verified' ? (
-                          <span className="px-2.5 py-1 rounded-full bg-teaching-emerald/15 text-teaching-emerald font-bold text-[10px]">
-                            Verified & Unlocked
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-1 rounded-full bg-surface-container-high text-on-surface-variant font-bold text-[10px]">
-                            Declined
-                          </span>
-                        )}
+                        <StatusBadge
+                          size="sm"
+                          status={disp.status === 'open' ? 'pending' : disp.status === 'resolved_verified' ? 'verified' : 'canceled'}
+                          label={disp.status === 'open' ? 'Open Dispute' : disp.status === 'resolved_verified' ? 'Verified & Unlocked' : 'Declined'}
+                        />
                       </td>
                       <td className="p-4 text-right">
                         {disp.status === 'open' ? (
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               onClick={() => handleResolveDispute(disp.id, 'verified')}
-                              className="px-2.5 py-1 rounded-lg bg-teaching-emerald hover:bg-teaching-emerald/90 text-white font-bold text-[11px] transition-colors flex items-center gap-1"
+                              className="px-2.5 py-1 rounded-lg bg-primary hover:bg-primary/90 text-white font-bold text-[11px] transition-colors flex items-center gap-1"
                               title="Approve payment and unlock session"
                             >
                               <span className="material-symbols-outlined text-xs">check</span>
@@ -671,14 +676,14 @@ export function AdminPortal() {
                             </button>
                             <button
                               onClick={() => handleResolveDispute(disp.id, 'rejected')}
-                              className="px-2 py-1 rounded-lg bg-alert-rose/10 hover:bg-alert-rose/20 text-alert-rose font-bold text-[11px] transition-colors"
+                              className="px-2 py-1 rounded-lg bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400 font-bold text-[11px] transition-colors"
                               title="Reject payment and cancel session"
                             >
                               Reject
                             </button>
                           </div>
                         ) : (
-                          <span className="text-[10px] text-on-surface-variant font-semibold">Resolved</span>
+                          <span className="text-[10px] text-muted font-semibold">Resolved</span>
                         )}
                       </td>
                     </tr>
@@ -693,24 +698,24 @@ export function AdminPortal() {
       {/* SECTION 3: SYSTEM ANALYTICS */}
       {activeSection === 'analytics' && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="bg-surface p-6 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-4">
-            <h3 className="text-base font-black text-on-surface flex items-center gap-2">
+          <div className="bg-surface p-6 rounded-2xl border border-border shadow-xs space-y-4">
+            <h3 className="text-base font-black text-text flex items-center gap-2">
               <span className="material-symbols-outlined text-primary">pie_chart</span>
               Role Distribution Matrix
             </h3>
             <div className="space-y-3">
               {[
                 { label: 'Students Only', count: users.filter(u => u.role === 'student').length, color: 'bg-primary' },
-                { label: 'Teachers Only', count: users.filter(u => u.role === 'teacher').length, color: 'bg-teaching-emerald' },
+                { label: 'Teachers Only', count: users.filter(u => u.role === 'teacher').length, color: 'bg-primary' },
                 { label: 'Dual Roles (Both)', count: users.filter(u => u.role === 'both').length, color: 'bg-secondary' },
                 { label: 'Administrators', count: users.filter(u => u.role === 'admin').length, color: 'bg-learning-amber' }
               ].map(item => (
                 <div key={item.label} className="space-y-1">
-                  <div className="flex justify-between text-xs font-bold text-on-surface">
+                  <div className="flex justify-between text-xs font-bold text-text">
                     <span>{item.label}</span>
                     <span>{item.count} users ({users.length ? Math.round((item.count / users.length) * 100) : 0}%)</span>
                   </div>
-                  <div className="w-full bg-surface-container-high h-2.5 rounded-full overflow-hidden">
+                  <div className="w-full bg-surface-2 h-2.5 rounded-full overflow-hidden">
                     <div className={`${item.color} h-full transition-all duration-500`} style={{ width: `${users.length ? (item.count / users.length) * 100 : 0}%` }} />
                   </div>
                 </div>
@@ -718,17 +723,17 @@ export function AdminPortal() {
             </div>
           </div>
 
-          <div className="bg-surface p-6 rounded-2xl border border-outline-variant shadow-elevation-1 space-y-4">
-            <h3 className="text-base font-black text-on-surface flex items-center gap-2">
-              <span className="material-symbols-outlined text-teaching-emerald">verified_user</span>
+          <div className="bg-surface p-6 rounded-2xl border border-border shadow-xs space-y-4">
+            <h3 className="text-base font-black text-text flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary">verified_user</span>
               Platform Integrity & Security
             </h3>
-            <div className="space-y-3 text-xs font-medium text-on-surface-variant">
-              <div className="p-3 bg-teaching-emerald-container border border-teaching-emerald/20 rounded-xl text-on-teaching-emerald-container font-bold flex items-center gap-3">
-                <span className="material-symbols-outlined text-teaching-emerald text-xl">shield</span>
+            <div className="space-y-3 text-xs font-medium text-muted">
+              <div className="p-3 bg-primary-tint border border-primary/20 rounded-xl text-primary-text font-bold flex items-center gap-3">
+                <span className="material-symbols-outlined text-primary text-xl">shield</span>
                 Multi-Laptop Real-Time Synchronization Active
               </div>
-              <div className="p-3 bg-primary-container border border-primary/20 rounded-xl text-on-primary-container font-bold flex items-center gap-3">
+              <div className="p-3 bg-primary-tint border border-primary/20 rounded-xl text-primary-text font-bold flex items-center gap-3">
                 <span className="material-symbols-outlined text-primary text-xl">account_balance_wallet</span>
                 Atomic Prisma Database Transactions Enabled for Token Transfers
               </div>
@@ -739,10 +744,10 @@ export function AdminPortal() {
 
       {/* USER INSPECTION MODAL / DRAWER */}
       {inspectUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-surface rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-elevation-3 border border-outline-variant flex flex-col animate-in fade-in zoom-in-95 duration-200 text-on-surface">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-surface rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden shadow-md border border-border flex flex-col animate-in fade-in zoom-in-95 duration-200 text-text">
             {/* Modal Header */}
-            <div className="bg-surface-container-high p-6 text-on-surface flex items-center justify-between border-b border-outline-variant">
+            <div className="bg-surface-2 p-6 text-text flex items-center justify-between border-b border-border">
               <div className="flex items-center gap-4">
                 <img
                   src={inspectUser.avatar || `https://i.pravatar.cc/150?img=11`}
@@ -752,50 +757,50 @@ export function AdminPortal() {
                 <div>
                   <div className="flex items-center gap-2">
                     <h2 className="text-xl font-black">{inspectUser.name}</h2>
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-primary-container text-on-primary-container border border-primary/20">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-primary-tint text-primary-text border border-primary/20">
                       {inspectUser.role || 'both'}
                     </span>
                   </div>
-                  <p className="text-xs text-on-surface-variant font-mono">User ID: {inspectUser.id}</p>
+                  <p className="text-xs text-muted font-mono">User ID: {inspectUser.id}</p>
                 </div>
               </div>
 
               <button
                 onClick={() => setInspectUser(null)}
                 aria-label="Close user inspection modal"
-                className="w-9 h-9 rounded-full bg-surface-container hover:bg-surface-container-high flex items-center justify-center text-on-surface transition-colors"
+                className="w-9 h-9 rounded-full bg-surface-2 hover:bg-surface-2 flex items-center justify-center text-text transition-colors"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
             </div>
 
             {/* Admin Credential Audit Banner */}
-            <div className="bg-surface-container border-b border-outline-variant p-4 text-on-surface font-mono text-xs select-text">
+            <div className="bg-surface-2 border-b border-border p-4 text-text font-mono text-xs select-text">
               <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-1.5 text-learning-amber font-bold text-[11px] uppercase tracking-wider">
+                <div className="flex items-center gap-1.5 text-accent font-bold text-[11px] uppercase tracking-wider">
                   <span className="material-symbols-outlined text-sm">key</span>
                   Admin Credential Audit
                 </div>
-                <span className="px-2 py-0.5 bg-learning-amber-container text-on-learning-amber-container rounded text-[10px] font-extrabold border border-learning-amber/20">Master Admin View</span>
+                <span className="px-2 py-0.5 bg-accent-tint text-accent-text rounded text-[10px] font-extrabold border border-accent/25">Master Admin View</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-surface p-2.5 rounded-xl border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-bold block uppercase">User ID</span>
-                  <span className="font-bold text-on-surface text-xs select-all">{inspectUser.id}</span>
+                <div className="bg-surface p-2.5 rounded-xl border border-border">
+                  <span className="text-[10px] text-muted font-bold block uppercase">User ID</span>
+                  <span className="font-bold text-text text-xs select-all">{inspectUser.id}</span>
                 </div>
-                <div className="bg-surface p-2.5 rounded-xl border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-bold block uppercase">Email</span>
-                  <span className="font-bold text-on-surface text-xs truncate block select-all">{inspectUser.email || `${inspectUser.id}@mindroot.com`}</span>
+                <div className="bg-surface p-2.5 rounded-xl border border-border">
+                  <span className="text-[10px] text-muted font-bold block uppercase">Email</span>
+                  <span className="font-bold text-text text-xs truncate block select-all">{inspectUser.email || `${inspectUser.id}@mindroot.com`}</span>
                 </div>
-                <div className="bg-surface p-2.5 rounded-xl border border-outline-variant">
-                  <span className="text-[10px] text-on-surface-variant font-bold block uppercase">Password</span>
+                <div className="bg-surface p-2.5 rounded-xl border border-border">
+                  <span className="text-[10px] text-muted font-bold block uppercase">Password</span>
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-teaching-emerald text-xs select-all">
+                    <span className="font-bold text-primary text-xs select-all">
                       ••••••••
                     </span>
                     <button
                       onClick={() => handleEditPassword(inspectUser)}
-                      className="text-on-surface-variant hover:text-primary p-0.5 transition-colors hover:scale-110"
+                      className="text-muted hover:text-primary p-0.5 transition-colors hover:scale-110"
                       title="Edit password for this user"
                     >
                       <span className="material-symbols-outlined text-sm">edit</span>
@@ -806,28 +811,28 @@ export function AdminPortal() {
             </div>
 
             {/* Modal Key Badges */}
-            <div className="bg-surface-container-low border-b border-outline-variant p-4 grid grid-cols-3 gap-3 text-center">
-              <div className="bg-surface p-3 rounded-xl border border-outline-variant shadow-elevation-1">
-                <span className="text-[10px] font-black uppercase text-on-surface-variant block">Trust Score</span>
-                <span className="text-lg font-black text-on-surface flex items-center justify-center gap-1">
-                  <span className="material-symbols-outlined text-learning-amber text-sm">star</span>
+            <div className="bg-surface-2/60 border-b border-border p-4 grid grid-cols-3 gap-3 text-center">
+              <div className="bg-surface p-3 rounded-xl border border-border shadow-xs">
+                <span className="text-[10px] font-black uppercase text-muted block">Trust Score</span>
+                <span className="text-lg font-black text-text flex items-center justify-center gap-1">
+                  <span className="material-symbols-outlined text-accent text-sm">star</span>
                   {typeof inspectUser.trustScore === 'number' ? inspectUser.trustScore.toFixed(2) : '5.00'}
                 </span>
               </div>
 
-              <div className="bg-surface p-3 rounded-xl border border-outline-variant shadow-elevation-1">
-                <span className="text-[10px] font-black uppercase text-on-surface-variant block">Token Balance</span>
-                <span className="text-lg font-black text-learning-amber">{inspectUser.tokenBalance ?? 50} Tokens</span>
+              <div className="bg-surface p-3 rounded-xl border border-border shadow-xs">
+                <span className="text-[10px] font-black uppercase text-muted block">Token Balance</span>
+                <span className="text-lg font-black text-accent">{inspectUser.tokenBalance ?? 50} Tokens</span>
               </div>
 
-              <div className="bg-surface p-3 rounded-xl border border-outline-variant shadow-elevation-1">
-                <span className="text-[10px] font-black uppercase text-on-surface-variant block">Hourly Rate</span>
-                <span className="text-lg font-black text-teaching-emerald">₹{inspectUser.hourlyRate || 499}/Hr</span>
+              <div className="bg-surface p-3 rounded-xl border border-border shadow-xs">
+                <span className="text-[10px] font-black uppercase text-muted block">Hourly Rate</span>
+                <span className="text-lg font-black text-primary">₹{inspectUser.hourlyRate || 499}/Hr</span>
               </div>
             </div>
 
             {/* Inspection Tabs */}
-            <div className="flex border-b border-outline-variant bg-surface px-6">
+            <div className="flex border-b border-border bg-surface px-6">
               {[
                 { key: 'overview', label: 'Skills Matrix', icon: 'psychology' },
                 { key: 'sessions', label: 'Session History', icon: 'event' },
@@ -841,7 +846,7 @@ export function AdminPortal() {
                   className={`py-3 px-4 text-xs font-black border-b-2 flex items-center gap-2 transition-colors ${
                     inspectTab === t.key
                       ? 'border-primary text-primary'
-                      : 'border-transparent text-on-surface-variant hover:text-on-surface'
+                      : 'border-transparent text-muted hover:text-text'
                   }`}
                 >
                   <span className="material-symbols-outlined text-base">{t.icon}</span>
@@ -853,39 +858,39 @@ export function AdminPortal() {
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto flex-1 max-h-96 custom-scrollbar">
               {loadingDetails ? (
-                <div className="py-8 text-center text-on-surface-variant font-bold animate-pulse">Loading detailed inspection logs...</div>
+                <div className="py-8 text-center text-muted font-bold animate-pulse">Loading detailed inspection logs...</div>
               ) : (
                 <>
                   {/* TAB 1: OVERVIEW & SKILLS */}
                   {inspectTab === 'overview' && (
                     <div className="space-y-6">
                       <div>
-                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant mb-3">Skills Offered (Teaches)</h4>
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted mb-3">Skills Offered (Teaches)</h4>
                         {inspectUser.skillsTaught?.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {inspectUser.skillsTaught.map((s: string) => (
-                              <span key={s} className="px-3 py-1.5 bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20 rounded-xl text-xs font-black">
+                              <span key={s} className="px-3 py-1.5 bg-primary-tint text-primary-text border border-primary/20 rounded-xl text-xs font-black">
                                 {s}
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-xs text-on-surface-variant italic">No skills listed for teaching.</p>
+                          <p className="text-xs text-muted italic">No skills listed for teaching.</p>
                         )}
                       </div>
 
                       <div>
-                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface-variant mb-3">Skills Desired (Wants to Learn)</h4>
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-muted mb-3">Skills Desired (Wants to Learn)</h4>
                         {inspectUser.skillsLearned?.length > 0 ? (
                           <div className="flex flex-wrap gap-2">
                             {inspectUser.skillsLearned.map((s: string) => (
-                              <span key={s} className="px-3 py-1.5 bg-primary-container text-on-primary-container border border-primary/20 rounded-xl text-xs font-black">
+                              <span key={s} className="px-3 py-1.5 bg-primary-tint text-primary-text border border-primary/20 rounded-xl text-xs font-black">
                                 {s}
                               </span>
                             ))}
                           </div>
                         ) : (
-                          <p className="text-xs text-on-surface-variant italic">No desired skills listed.</p>
+                          <p className="text-xs text-muted italic">No desired skills listed.</p>
                         )}
                       </div>
                     </div>
@@ -895,19 +900,19 @@ export function AdminPortal() {
                   {inspectTab === 'sessions' && (
                     <div className="space-y-3">
                       {sessions.filter(s => s.teacherId === inspectUser.id || s.studentId === inspectUser.id).length === 0 ? (
-                        <p className="text-xs text-on-surface-variant text-center py-6 font-bold">No sessions logged for this user.</p>
+                        <p className="text-xs text-muted text-center py-6 font-bold">No sessions logged for this user.</p>
                       ) : (
                         sessions
                           .filter(s => s.teacherId === inspectUser.id || s.studentId === inspectUser.id)
                           .map((s, i) => (
-                            <div key={s.id || i} className="p-3 border border-outline-variant rounded-xl flex items-center justify-between text-xs bg-surface">
+                            <div key={s.id || i} className="p-3 border border-border rounded-xl flex items-center justify-between text-xs bg-surface">
                               <div>
-                                <p className="font-extrabold text-on-surface">{s.title}</p>
-                                <p className="text-on-surface-variant text-[11px]">
-                                  Role: <span className="font-bold text-on-surface">{s.teacherId === inspectUser.id ? 'Teacher' : 'Student'}</span>
+                                <p className="font-extrabold text-text">{s.title}</p>
+                                <p className="text-muted text-[11px]">
+                                  Role: <span className="font-bold text-text">{s.teacherId === inspectUser.id ? 'Teacher' : 'Student'}</span>
                                 </p>
                               </div>
-                              <span className="px-2.5 py-1 bg-surface-container rounded-full font-black text-[10px] uppercase text-on-surface">
+                              <span className="px-2.5 py-1 bg-surface-2 rounded-full font-black text-[10px] uppercase text-text">
                                 {s.status}
                               </span>
                             </div>
@@ -920,15 +925,15 @@ export function AdminPortal() {
                   {inspectTab === 'transactions' && (
                     <div className="space-y-3">
                       {inspectTransactions.length === 0 ? (
-                        <p className="text-xs text-on-surface-variant text-center py-6 font-bold">No token transactions recorded yet.</p>
+                        <p className="text-xs text-muted text-center py-6 font-bold">No token transactions recorded yet.</p>
                       ) : (
                         inspectTransactions.map((tx: any, i: number) => (
-                          <div key={tx.id || i} className="p-3 border border-outline-variant rounded-xl flex items-center justify-between text-xs bg-surface">
+                          <div key={tx.id || i} className="p-3 border border-border rounded-xl flex items-center justify-between text-xs bg-surface">
                             <div>
-                              <p className="font-bold text-on-surface">{tx.description || 'Token Transfer'}</p>
-                              <p className="text-[10px] text-on-surface-variant">{tx.createdAt ? new Date(tx.createdAt).toLocaleString() : 'Recent Activity'}</p>
+                              <p className="font-bold text-text">{tx.description || 'Token Transfer'}</p>
+                              <p className="text-[10px] text-muted">{tx.createdAt ? new Date(tx.createdAt).toLocaleString() : 'Recent Activity'}</p>
                             </div>
-                            <span className={`font-black text-sm ${tx.type === 'earned' ? 'text-teaching-emerald' : 'text-on-surface'}`}>
+                            <span className={`font-black text-sm ${tx.type === 'earned' ? 'text-primary' : 'text-text'}`}>
                               {tx.type === 'earned' ? '+' : '-'}{tx.amount} Tokens
                             </span>
                           </div>
@@ -941,18 +946,18 @@ export function AdminPortal() {
                   {inspectTab === 'reviews' && (
                     <div className="space-y-3">
                       {inspectReviews.length === 0 ? (
-                        <p className="text-xs text-on-surface-variant text-center py-6 font-bold">No reviews submitted for this profile yet.</p>
+                        <p className="text-xs text-muted text-center py-6 font-bold">No reviews submitted for this profile yet.</p>
                       ) : (
                         inspectReviews.map((rev: any, i: number) => (
-                          <div key={rev.id || i} className="p-4 bg-surface-container-low border border-outline-variant rounded-2xl space-y-2">
+                          <div key={rev.id || i} className="p-4 bg-surface-2/60 border border-border rounded-2xl space-y-2">
                             <div className="flex items-center justify-between">
-                              <span className="font-black text-xs text-on-surface">{rev.topic || 'Peer Session'}</span>
-                              <div className="flex items-center text-learning-amber font-black text-xs">
+                              <span className="font-black text-xs text-text">{rev.topic || 'Peer Session'}</span>
+                              <div className="flex items-center text-accent font-black text-xs">
                                 <span className="material-symbols-outlined text-sm mr-0.5">star</span>
                                 {rev.rating} / 5
                               </div>
                             </div>
-                            <p className="text-xs italic text-on-surface-variant">"{rev.quote}"</p>
+                            <p className="text-xs italic text-muted">"{rev.quote}"</p>
                           </div>
                         ))
                       )}
@@ -965,10 +970,10 @@ export function AdminPortal() {
                       {/* Status Banner */}
                       <div className={`p-4 rounded-2xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
                         inspectUser.officialIdStatus === 'verified'
-                          ? 'bg-teaching-emerald/10 border-teaching-emerald/30 text-teaching-emerald'
+                          ? 'bg-primary/10 border-primary/30 text-primary'
                           : inspectUser.officialIdStatus === 'rejected'
-                          ? 'bg-alert-rose/10 border-alert-rose/30 text-alert-rose'
-                          : 'bg-learning-amber/10 border-learning-amber/30 text-learning-amber'
+                          ? 'bg-red-50 dark:bg-red-950/30 border-red-300 dark:border-red-800 text-red-600 dark:text-red-400'
+                          : 'bg-learning-amber/10 border-accent/30 text-accent'
                       }`}>
                         <div className="flex items-center gap-3">
                           <span className="material-symbols-outlined text-3xl">
@@ -978,7 +983,7 @@ export function AdminPortal() {
                             <h4 className="font-extrabold text-sm uppercase tracking-wide">
                               Verification Status: {inspectUser.officialIdStatus || (inspectUser.officialIdDocument ? 'Verified' : 'Unverified')}
                             </h4>
-                            <p className="text-xs text-on-surface-variant font-medium">
+                            <p className="text-xs text-muted font-medium">
                               {inspectUser.officialIdStatus === 'verified'
                                 ? 'Teacher has verified credentials and displays an ID Verified badge on marketplace.'
                                 : inspectUser.officialIdStatus === 'rejected'
@@ -999,7 +1004,7 @@ export function AdminPortal() {
                               setActionMessage(`Teacher ID verified for ${inspectUser.name}!`);
                               setTimeout(() => setActionMessage(''), 4000);
                             }}
-                            className="px-3 py-1.5 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                            className="px-3 py-1.5 bg-primary hover:bg-primary/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-sm">check_circle</span>
                             Approve
@@ -1013,7 +1018,7 @@ export function AdminPortal() {
                               setActionMessage(`Teacher verification rejected for ${inspectUser.name}.`);
                               setTimeout(() => setActionMessage(''), 4000);
                             }}
-                            className="px-3 py-1.5 bg-alert-rose hover:bg-alert-rose/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
+                            className="px-3 py-1.5 bg-red-600 hover:bg-red-600/90 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1"
                           >
                             <span className="material-symbols-outlined text-sm">cancel</span>
                             Reject
@@ -1024,13 +1029,13 @@ export function AdminPortal() {
                       {/* Credentials Grid */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* ID Document Box */}
-                        <div className="bg-surface p-4 rounded-2xl border border-outline-variant space-y-3">
+                        <div className="bg-surface p-4 rounded-2xl border border-border space-y-3">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-1.5">
+                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-text flex items-center gap-1.5">
                               <span className="material-symbols-outlined text-sm text-primary">badge</span>
                               Official Academic / Gov ID
                             </h4>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-container uppercase">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-surface-2 uppercase">
                               {inspectUser.officialIdType === 'college_id' ? 'College Student ID' :
                                inspectUser.officialIdType === 'faculty_id' ? 'Faculty / Professor ID' :
                                inspectUser.officialIdType === 'govt_id' ? 'Govt Photo ID' :
@@ -1038,12 +1043,12 @@ export function AdminPortal() {
                             </span>
                           </div>
 
-                          <div className="text-xs text-on-surface-variant">
-                            <strong>ID / Roll Number:</strong> <span className="font-mono font-bold text-on-surface">{inspectUser.officialIdNumber || 'Not specified'}</span>
+                          <div className="text-xs text-muted">
+                            <strong>ID / Roll Number:</strong> <span className="font-mono font-bold text-text">{inspectUser.officialIdNumber || 'Not specified'}</span>
                           </div>
 
                           {inspectUser.officialIdDocument ? (
-                            <div className="border border-outline-variant rounded-xl overflow-hidden bg-surface-container flex items-center justify-center p-2">
+                            <div className="border border-border rounded-xl overflow-hidden bg-surface-2 flex items-center justify-center p-2">
                               <img
                                 src={inspectUser.officialIdDocument}
                                 alt="Official ID Document"
@@ -1051,7 +1056,7 @@ export function AdminPortal() {
                               />
                             </div>
                           ) : (
-                            <div className="h-36 border border-dashed border-outline-variant rounded-xl flex flex-col items-center justify-center text-on-surface-variant gap-1">
+                            <div className="h-36 border border-dashed border-border rounded-xl flex flex-col items-center justify-center text-muted gap-1">
                               <span className="material-symbols-outlined text-2xl">no_photography</span>
                               <span className="text-xs italic">No official ID image uploaded</span>
                             </div>
@@ -1059,29 +1064,29 @@ export function AdminPortal() {
                         </div>
 
                         {/* UPI QR Code Box */}
-                        <div className="bg-surface p-4 rounded-2xl border border-outline-variant space-y-3">
+                        <div className="bg-surface p-4 rounded-2xl border border-border space-y-3">
                           <div className="flex items-center justify-between">
-                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-on-surface flex items-center gap-1.5">
-                              <span className="material-symbols-outlined text-sm text-teaching-emerald">qr_code_2</span>
+                            <h4 className="text-xs font-extrabold uppercase tracking-wider text-text flex items-center gap-1.5">
+                              <span className="material-symbols-outlined text-sm text-primary">qr_code_2</span>
                               UPI Payment Credentials
                             </h4>
-                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-teaching-emerald/10 text-teaching-emerald uppercase">
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-primary/10 text-primary uppercase">
                               {inspectUser.upiQrImage ? 'Custom QR Uploaded' : 'Dynamic Generated QR'}
                             </span>
                           </div>
 
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-surface-container rounded-xl border border-outline-variant/60">
-                            <div className="text-xs text-on-surface-variant">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 bg-surface-2 rounded-xl border border-border/60">
+                            <div className="text-xs text-muted">
                               <span className="font-bold">UPI ID (VPA):</span>{' '}
-                              <span className="font-mono font-bold text-on-surface">
+                              <span className="font-mono font-bold text-text">
                                 {inspectUser.upiId || 'Not Configured'}
                               </span>
                               {inspectUser.vpaVerified ? (
-                                <span className="ml-2 text-[10px] font-bold text-teaching-emerald bg-teaching-emerald/10 border border-teaching-emerald/20 px-2 py-0.5 rounded">
+                                <span className="ml-2 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded">
                                   Verified
                                 </span>
                               ) : inspectUser.upiId ? (
-                                <span className="ml-2 text-[10px] font-bold text-learning-amber bg-learning-amber/10 border border-learning-amber/20 px-2 py-0.5 rounded">
+                                <span className="ml-2 text-[10px] font-bold text-accent bg-learning-amber/10 border border-accent/25 px-2 py-0.5 rounded">
                                   Unverified
                                 </span>
                               ) : null}
@@ -1105,8 +1110,8 @@ export function AdminPortal() {
                                 }}
                                 className={`px-2.5 py-1 text-[11px] font-bold rounded-lg border transition-all shrink-0 ${
                                   inspectUser.vpaVerified
-                                    ? 'bg-alert-rose/10 text-alert-rose border-alert-rose/20 hover:bg-alert-rose/20'
-                                    : 'bg-teaching-emerald/10 text-teaching-emerald border-teaching-emerald/20 hover:bg-teaching-emerald/20'
+                                    ? 'bg-red-50 dark:bg-red-950/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-900 hover:bg-red-100 dark:bg-red-900/40'
+                                    : 'bg-primary/10 text-primary border-primary/20 hover:bg-primary/20'
                                 }`}
                               >
                                 {inspectUser.vpaVerified ? 'Revoke VPA Verification' : 'Verify Mentor VPA'}
@@ -1115,7 +1120,7 @@ export function AdminPortal() {
                           </div>
 
                           {inspectUser.upiQrImage ? (
-                            <div className="border border-outline-variant rounded-xl overflow-hidden bg-white flex items-center justify-center p-2">
+                            <div className="border border-border rounded-xl overflow-hidden bg-white flex items-center justify-center p-2">
                               <img
                                 src={inspectUser.upiQrImage}
                                 alt="Custom Teacher UPI QR"
@@ -1123,8 +1128,8 @@ export function AdminPortal() {
                               />
                             </div>
                           ) : (
-                            <div className="h-36 border border-dashed border-outline-variant rounded-xl flex flex-col items-center justify-center text-on-surface-variant gap-1">
-                              <span className="material-symbols-outlined text-2xl text-teaching-emerald">qr_code</span>
+                            <div className="h-36 border border-dashed border-border rounded-xl flex flex-col items-center justify-center text-muted gap-1">
+                              <span className="material-symbols-outlined text-2xl text-primary">qr_code</span>
                               <span className="text-xs font-semibold">{inspectUser.upiId ? 'Dynamic Generated QR' : 'UPI Not Configured'}</span>
                             </div>
                           )}
@@ -1137,18 +1142,18 @@ export function AdminPortal() {
             </div>
 
             {/* Modal Footer */}
-            <div className="bg-surface-container-low border-t border-outline-variant p-4 flex items-center justify-between">
+            <div className="bg-surface-2/60 border-t border-border p-4 flex items-center justify-between">
               <div>
                 {inspectUser.role !== 'admin' && inspectUser.id !== 'user-admin' ? (
                   <button
                     onClick={() => handleDeleteUser(inspectUser)}
-                    className="px-4 py-2 bg-alert-rose-container border border-alert-rose/20 text-on-alert-rose-container font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-elevation-1"
+                    className="px-4 py-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 font-extrabold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-xs"
                   >
                     <span className="material-symbols-outlined text-base">delete</span>
                     Delete User Account
                   </button>
                 ) : (
-                  <span className="text-[11px] font-bold text-on-learning-amber-container bg-learning-amber-container border border-learning-amber/20 px-3 py-1 rounded-lg">
+                  <span className="text-[11px] font-bold text-accent-text bg-accent-tint border border-accent/25 px-3 py-1 rounded-lg">
                     Protected Master Admin Account
                   </span>
                 )}
@@ -1163,21 +1168,21 @@ export function AdminPortal() {
 
       {/* CUSTOM PROPER INTERFACE: DELETE USER CONFIRMATION MODAL */}
       {userToDelete && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-surface rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-elevation-3 border border-outline-variant space-y-5 animate-in zoom-in-95 duration-200 select-none text-on-surface">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-surface rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-md border border-border space-y-5 animate-in zoom-in-95 duration-200 select-none text-text">
             {/* Header with Danger Icon */}
             <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-alert-rose-container border border-alert-rose/20 text-on-alert-rose-container flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 text-red-700 dark:text-red-300 flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-2xl">delete_forever</span>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-on-surface tracking-tight">Delete User Account</h3>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">This action will permanently delete this account from Mindroot.</p>
+                <h3 className="text-lg font-bold text-text tracking-tight">Delete User Account</h3>
+                <p className="text-xs text-muted font-medium mt-0.5">This action will permanently delete this account from Mindroot.</p>
               </div>
             </div>
 
             {/* Target User Info Card */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 flex items-center gap-3.5">
+            <div className="bg-surface-2/60 border border-border rounded-2xl p-4 flex items-center gap-3.5">
               <img
                 src={userToDelete.avatar || 'https://i.pravatar.cc/150?img=11'}
                 alt={userToDelete.name}
@@ -1185,20 +1190,20 @@ export function AdminPortal() {
               />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-on-surface truncate">{userToDelete.name}</h4>
-                  <span className="px-2 py-0.5 bg-surface-container text-on-surface-variant rounded-full text-[10px] font-bold uppercase">
+                  <h4 className="text-sm font-bold text-text truncate">{userToDelete.name}</h4>
+                  <span className="px-2 py-0.5 bg-surface-2 text-muted rounded-full text-[10px] font-bold uppercase">
                     {userToDelete.role || 'user'}
                   </span>
                 </div>
-                <p className="text-xs text-on-surface-variant font-medium truncate mt-0.5">{userToDelete.email || `ID: ${userToDelete.id}`}</p>
+                <p className="text-xs text-muted font-medium truncate mt-0.5">{userToDelete.email || `ID: ${userToDelete.id}`}</p>
                 {userToDelete.skillsTaught?.length > 0 && (
-                  <p className="text-[10px] text-teaching-emerald font-bold truncate mt-0.5">Teaches: {userToDelete.skillsTaught.join(', ')}</p>
+                  <p className="text-[10px] text-primary font-bold truncate mt-0.5">Teaches: {userToDelete.skillsTaught.join(', ')}</p>
                 )}
               </div>
             </div>
 
             {/* Warning Callout Box */}
-            <div className="bg-alert-rose-container border border-alert-rose/20 rounded-2xl p-3.5 text-xs text-on-alert-rose-container space-y-1">
+            <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-2xl p-3.5 text-xs text-red-700 dark:text-red-300 space-y-1">
               <div className="flex items-center gap-1.5 font-bold">
                 <span className="material-symbols-outlined text-base">warning</span>
                 <span>Permanent Removal Warning</span>
@@ -1215,7 +1220,7 @@ export function AdminPortal() {
                 variant="secondary"
                 disabled={isDeleting}
                 onClick={() => setUserToDelete(null)}
-                className="font-bold text-xs px-4 py-2.5 rounded-xl shadow-elevation-1"
+                className="font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs"
               >
                 Cancel
               </Button>
@@ -1223,7 +1228,7 @@ export function AdminPortal() {
                 type="button"
                 disabled={isDeleting}
                 onClick={confirmDeleteUser}
-                className="bg-alert-rose hover:bg-alert-rose-hover active:scale-95 text-on-alert-rose font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-elevation-1 flex items-center gap-2 transition-all disabled:opacity-50"
+                className="bg-red-600 hover:bg-red-700 active:scale-95 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 transition-all disabled:opacity-50"
               >
                 {isDeleting ? (
                   <>
@@ -1244,31 +1249,31 @@ export function AdminPortal() {
 
       {/* CUSTOM PROPER INTERFACE: DELETE SESSION CONFIRMATION MODAL */}
       {sessionToDelete && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
-          <div className="bg-surface rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-elevation-3 border border-outline-variant space-y-5 animate-in zoom-in-95 duration-200 select-none text-on-surface">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-surface rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-md border border-border space-y-5 animate-in zoom-in-95 duration-200 select-none text-text">
             {/* Header with Session Icon */}
             <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-learning-amber-container border border-learning-amber/20 text-on-learning-amber-container flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-accent-tint border border-accent/25 text-accent-text flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-2xl">event_busy</span>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-on-surface tracking-tight">Delete / Cancel Session</h3>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">Remove this scheduled lecture from the platform ledger.</p>
+                <h3 className="text-lg font-bold text-text tracking-tight">Delete / Cancel Session</h3>
+                <p className="text-xs text-muted font-medium mt-0.5">Remove this scheduled lecture from the platform ledger.</p>
               </div>
             </div>
 
             {/* Target Session Info Card */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-2">
+            <div className="bg-surface-2/60 border border-border rounded-2xl p-4 space-y-2">
               <div className="flex items-center justify-between">
-                <h4 className="text-sm font-bold text-on-surface truncate">{sessionToDelete.title || 'Tutoring Session'}</h4>
-                <span className="px-2 py-0.5 bg-learning-amber-container text-on-learning-amber-container rounded-full text-[10px] font-bold uppercase">
+                <h4 className="text-sm font-bold text-text truncate">{sessionToDelete.title || 'Tutoring Session'}</h4>
+                <span className="px-2 py-0.5 bg-accent-tint text-accent-text rounded-full text-[10px] font-bold uppercase">
                   {sessionToDelete.status || 'confirmed'}
                 </span>
               </div>
-              <div className="text-xs text-on-surface-variant flex flex-wrap gap-x-4 gap-y-1 pt-1.5 border-t border-outline-variant">
-                <span>Teacher: <b className="text-on-surface">{sessionToDelete.teacher?.name || sessionToDelete.teacherId}</b></span>
-                <span>Student: <b className="text-on-surface">{sessionToDelete.student?.name || sessionToDelete.studentId}</b></span>
-                <span>Duration: <b className="text-on-surface">{sessionToDelete.durationMin || 60} mins</b></span>
+              <div className="text-xs text-muted flex flex-wrap gap-x-4 gap-y-1 pt-1.5 border-t border-border">
+                <span>Teacher: <b className="text-text">{sessionToDelete.teacher?.name || sessionToDelete.teacherId}</b></span>
+                <span>Student: <b className="text-text">{sessionToDelete.student?.name || sessionToDelete.studentId}</b></span>
+                <span>Duration: <b className="text-text">{sessionToDelete.durationMin || 60} mins</b></span>
               </div>
             </div>
 
@@ -1279,7 +1284,7 @@ export function AdminPortal() {
                 variant="secondary"
                 disabled={isDeleting}
                 onClick={() => setSessionToDelete(null)}
-                className="font-bold text-xs px-4 py-2.5 rounded-xl shadow-elevation-1"
+                className="font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs"
               >
                 Cancel
               </Button>
@@ -1287,7 +1292,7 @@ export function AdminPortal() {
                 type="button"
                 disabled={isDeleting}
                 onClick={confirmDeleteSession}
-                className="bg-alert-rose hover:bg-alert-rose-hover active:scale-95 text-on-alert-rose font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-elevation-1 flex items-center gap-2 transition-all disabled:opacity-50"
+                className="bg-red-600 hover:bg-red-700 active:scale-95 text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 transition-all disabled:opacity-50"
               >
                 {isDeleting ? (
                   <>
@@ -1308,35 +1313,35 @@ export function AdminPortal() {
 
       {/* CUSTOM PROPER INTERFACE: EDIT USER PASSWORD MODAL */}
       {editingPasswordUser && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200">
           <form
             onSubmit={(e) => {
               e.preventDefault();
               handleSavePassword();
             }}
-            className="bg-surface rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-elevation-3 border border-outline-variant space-y-5 animate-in zoom-in-95 duration-200 select-none text-on-surface"
+            className="bg-surface rounded-2xl max-w-md w-full p-6 sm:p-7 shadow-md border border-border space-y-5 animate-in zoom-in-95 duration-200 select-none text-text"
           >
             {/* Header with Key Icon */}
             <div className="flex items-start gap-3.5">
-              <div className="w-12 h-12 rounded-2xl bg-learning-amber-container border border-learning-amber/20 text-on-learning-amber-container flex items-center justify-center shrink-0">
+              <div className="w-12 h-12 rounded-2xl bg-accent-tint border border-accent/25 text-accent-text flex items-center justify-center shrink-0">
                 <span className="material-symbols-outlined text-2xl">key</span>
               </div>
               <div>
-                <h3 className="text-lg font-bold text-on-surface tracking-tight">Edit User Password</h3>
-                <p className="text-xs text-on-surface-variant font-medium mt-0.5">
+                <h3 className="text-lg font-bold text-text tracking-tight">Edit User Password</h3>
+                <p className="text-xs text-muted font-medium mt-0.5">
                   Update login password for <b>{editingPasswordUser.name}</b>.
                 </p>
               </div>
             </div>
 
             {/* Password Input Form Fields */}
-            <div className="bg-surface-container-low border border-outline-variant rounded-2xl p-4 space-y-3">
-              <div className="text-xs text-on-surface-variant font-bold flex items-center justify-between">
+            <div className="bg-surface-2/60 border border-border rounded-2xl p-4 space-y-3">
+              <div className="text-xs text-muted font-bold flex items-center justify-between">
                 <span>Target User ID:</span>
-                <span className="text-on-surface font-mono select-all bg-surface px-2 py-0.5 rounded border border-outline-variant">{editingPasswordUser.id}</span>
+                <span className="text-text font-mono select-all bg-surface px-2 py-0.5 rounded border border-border">{editingPasswordUser.id}</span>
               </div>
               <div>
-                <label className="text-[11px] font-extrabold text-on-surface uppercase tracking-wider block mb-1.5">
+                <label className="text-[11px] font-extrabold text-text uppercase tracking-wider block mb-1.5">
                   New Account Password
                 </label>
                 <input
@@ -1345,7 +1350,7 @@ export function AdminPortal() {
                   value={newPasswordValue}
                   onChange={(e) => setNewPasswordValue(e.target.value)}
                   placeholder="Enter new password..."
-                  className="w-full bg-surface border border-outline-variant rounded-xl px-3.5 py-2.5 text-sm font-mono text-on-surface font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
+                  className="w-full bg-surface border border-border rounded-xl px-3.5 py-2.5 text-sm font-mono text-text font-bold outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                 />
               </div>
             </div>
@@ -1357,14 +1362,14 @@ export function AdminPortal() {
                 variant="secondary"
                 disabled={isUpdatingPassword}
                 onClick={() => setEditingPasswordUser(null)}
-                className="font-bold text-xs px-4 py-2.5 rounded-xl shadow-elevation-1"
+                className="font-bold text-xs px-4 py-2.5 rounded-xl shadow-xs"
               >
                 Cancel
               </Button>
               <button
                 type="submit"
                 disabled={isUpdatingPassword || !newPasswordValue.trim()}
-                className="bg-primary hover:bg-primary-hover text-on-primary font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-elevation-1 flex items-center gap-2 transition-all disabled:opacity-50 active:scale-95"
+                className="bg-primary hover:bg-primary-hover text-white font-extrabold text-xs px-5 py-2.5 rounded-xl shadow-xs flex items-center gap-2 transition-all disabled:opacity-50 active:scale-95"
               >
                 {isUpdatingPassword ? (
                   <>

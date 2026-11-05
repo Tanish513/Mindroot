@@ -21,7 +21,7 @@ test.describe('Midnight + Electric Mint Theme Suite', () => {
   test('Theme initialization, toggle, persistence and design tokens verification', async ({ page }) => {
     // 1. Visit dashboard
     await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify data-theme attribute is present on <html>
     const initialTheme = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));
@@ -38,7 +38,7 @@ test.describe('Midnight + Electric Mint Theme Suite', () => {
       document.documentElement.classList.add('dark');
     });
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await page.waitForLoadState('domcontentloaded');
 
     // Verify dark theme is applied
     const darkThemeAttr = await page.evaluate(() => document.documentElement.getAttribute('data-theme'));

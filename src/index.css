@@ -20,8 +20,12 @@
     --accent: #F59E0B;
     --accent-tint: #FFF4DB;
     --accent-text: #B45309;
+    --accent-deep: #B45309;
+    --accent-glow: rgba(217, 119, 6, 0.35);
+    --missed-dot: #94A3B8;
+    --missed-text: #475569;
     --danger: #DC2626;
-    --hero: linear-gradient(135deg, #E3F4EC 0%, #FFF4DB 100%);
+    --hero: var(--surface);
     --shadow: 0 1px 2px rgba(15, 26, 23, 0.06), 0 4px 16px rgba(15, 26, 23, 0.04);
 
     /* Aliases & Fallbacks */
@@ -32,7 +36,7 @@
     --warning: var(--accent);
     --info: var(--primary);
 
-    --sidebar-bg: var(--surface-2);
+    --sidebar-bg: #E3EEEA;
     --sidebar-border: var(--border);
     --sidebar-icon: #37685B;
     --sidebar-icon-hover: var(--primary-text);
@@ -42,7 +46,7 @@
     --sidebar-active-icon: var(--primary-text);
     --sidebar-active-icon-bg: var(--primary-tint);
     --sidebar-active-text: var(--primary-text);
-    --sidebar-logo-tile: #C9DED5;
+    --sidebar-logo-tile: var(--surface);
 
     /* Legacy RGB Fallbacks for backward compatibility */
     --color-primary: 10 124 90;
@@ -148,8 +152,12 @@
     --accent: #FBBF24;
     --accent-tint: rgba(251, 191, 36, 0.12);
     --accent-text: #FCD34D;
+    --accent-deep: #FCD34D;
+    --accent-glow: rgba(251, 191, 36, 0.40);
+    --missed-dot: #475569;
+    --missed-text: #94A3B8;
     --danger: #F87171;
-    --hero: linear-gradient(135deg, #0F2E27 0%, #1F2A1A 100%);
+    --hero: var(--surface);
     --shadow: none;
 
     /* Aliases & Fallbacks */
@@ -160,7 +168,7 @@
     --warning: var(--accent);
     --info: var(--primary);
 
-    --sidebar-bg: var(--surface-2);
+    --sidebar-bg: #142A26;
     --sidebar-border: var(--border);
     --sidebar-icon: #A9C9BE;
     --sidebar-icon-hover: var(--primary-text);
@@ -170,7 +178,7 @@
     --sidebar-active-icon: var(--primary-text);
     --sidebar-active-icon-bg: var(--primary-tint);
     --sidebar-active-text: var(--primary-text);
-    --sidebar-logo-tile: #245044;
+    --sidebar-logo-tile: var(--surface);
 
     /* Legacy RGB Fallbacks for backward compatibility */
     --color-primary: 43 196 138;
@@ -275,6 +283,8 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+    line-height: 1.6;
+    text-rendering: optimizeLegibility;
   }
 
   input,
@@ -331,5 +341,27 @@
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
     background: var(--text-muted);
+  }
+}
+
+@keyframes gentle-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.88;
+  }
+}
+
+.animate-gentle-pulse {
+  animation: gentle-pulse 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-gentle-pulse {
+    animation: none !important;
+    transform: none !important;
   }
 }

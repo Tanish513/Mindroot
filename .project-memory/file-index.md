@@ -31,4 +31,18 @@
 | `server/prisma/migrations/20261020000000_add_notes_model/migration.sql` | Isolated Prisma migration for Notes model | `CREATE TABLE "Note"`, foreign keys, indexes | 2026-10-20 | verified | Zero alterations to existing tables; validated against disposable local PostgreSQL |
 | `server/test/payment_security_fixes.test.ts` | Payment security, price tampering, and handshake rules (3 suites / 11 tests) | Payment broadcasts, swap price tampering, handshake rules | 2026-10-20 | verified | Verifies payment socket isolation, tamper 400 rejection, admin bypass removal, student validation, 12-digit UTR (3/3 pass) |
 | `e2e/theme_toggle.spec.ts` | Playwright E2E suite for Theme Switcher & Design Tokens | Theme toggle, persistence, CSS variable assertions | 2026-10-20 | verified | Validates #0A1612 dark background and #F7FAF9 light background tokens from src/index.css |
+| `src/components/ui/Card.tsx` | Humanized card primitive with interactive hover states | `Card`, `CerebralCard` | 2026-11-04 | verified | Replaces AI-templated CerebralCard with clean rounded-2xl container |
+| `src/components/ui/StatusBadge.tsx` | Accessible status badge with icons | `StatusBadge`, `NeuralChip` | 2026-11-04 | verified | WCAG AA compliant badge for live, confirmed, pending, completed, canceled |
+| `src/components/ui/SkillTag.tsx` | Dual-sided skill tag component | `SkillTag` | 2026-11-04 | verified | Visual distinction for Teaches (Sage) vs Learns (Amber) |
+| `src/components/ui/Skeleton.tsx` | Shimmer placeholder loading primitives | `Skeleton`, `SkeletonCard` | 2026-11-04 | verified | Replaces abrupt circular spinning indicators |
+| `src/components/ui/EmptyState.tsx` | Empathetic zero-state component | `EmptyState` | 2026-11-04 | verified | Supportive messaging with contextual icon and call-to-action button |
+| `src/components/dashboard/DashboardHeroHeader.tsx` | Dashboard hero header with greeting & actions | `DashboardHeroHeader` | 2026-11-04 | verified | Personalized greeting, streak indicator, and quick action buttons |
+| `src/components/dashboard/TodayNoteCard.tsx` | Quick note capture card on dashboard | `TodayNoteCard` | 2026-11-04 | verified | Quick daily study note capture and streak indicator |
+| `src/components/dashboard/PeerMatchCard.tsx` | Dual-sided peer match preview card | `PeerMatchCard` | 2026-11-04 | verified | Recommended peer match with dual-sided skill tags and swap action |
+| `src/components/dashboard/CommunityChampionsWidget.tsx` | Leaderboard podium widget | `CommunityChampionsWidget` | 2026-11-04 | verified | Top mentors and active peer scholars this week |
+| `src/components/dashboard/UpcomingSessionsWidget.tsx` | Upcoming sessions list widget | `UpcomingSessionsWidget` | 2026-11-04 | verified | Live room join action, session countdown, notes modal trigger |
+| `src/pages/Dashboard.tsx` | Student & mentor main dashboard | `Dashboard` | 2026-11-04 | verified | Modularized 1,476-line component into dedicated dashboard sub-modules |
+| `src/pages/MatchFinder.tsx` | Peer skill match finder & exchange hub | `MatchFinder` | 2026-11-04 | verified | Updated with SkillTag dual-sided badges, StatusBadge, and EmptyState |
+| `src/pages/Login.tsx` | Authentication & onboarding page | `Login` | 2026-11-04 | verified | Warm styling, 1-click demo login for Student, Mentor, and Admin |
+| `tailwind.config.js` & `src/index.css` | Design tokens & base styles | Semantic tokens & typography | 2026-11-04 | verified | Calibrated tokens (`teaching`, `learning`, `card`, `surface-elevated`) and 16px body copy |
 

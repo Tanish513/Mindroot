@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { GoogleLogin, useGoogleOneTapLogin } from '@react-oauth/google';
 import { Button } from '../components/ui/Button';
@@ -8,17 +8,6 @@ import { isValidPrice, calculateBatchPricing } from '../lib/pricing';
 
 export function Login() {
   const [activeTab, setActiveTab] = useState<'signin' | 'signup'>('signin');
-  const [demoMode, setDemoMode] = useState<boolean>(false);
-
-  useEffect(() => {
-    let mounted = true;
-    api.getConfig().then(cfg => {
-      if (mounted && cfg) {
-        setDemoMode(Boolean(cfg.demoMode));
-      }
-    }).catch(() => {});
-    return () => { mounted = false; };
-  }, []);
 
   // Sign In states
   const [signInEmail, setSignInEmail] = useState('');
@@ -417,39 +406,39 @@ export function Login() {
   };
 
   return (
-    <div className="min-h-screen w-full bg-background text-on-background flex flex-col items-center justify-center p-4 sm:p-8 font-sans relative overflow-hidden select-none">
+    <div className="min-h-screen w-full bg-bg text-text flex flex-col items-center justify-center p-4 sm:p-8 font-sans relative overflow-hidden select-none">
       <div className="w-full max-w-[500px] space-y-6 relative z-10">
         {/* Brand Header */}
         <div className="text-center space-y-3">
-          <div className="w-14 h-14 rounded-2xl bg-surface-container border border-outline-variant text-primary shadow-elevation-1 flex items-center justify-center mx-auto">
+          <div className="w-14 h-14 rounded-2xl bg-primary-tint border border-primary/20 text-primary shadow-elevation-1 flex items-center justify-center mx-auto">
             <span className="material-symbols-outlined text-3xl">psychology</span>
           </div>
           <div>
-            <h1 className="text-3xl sm:text-4xl font-semibold text-on-surface tracking-tight">Mindroot</h1>
-            <div className="mt-1.5 flex items-center justify-center gap-1.5 flex-wrap">
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-surface-container border border-outline-variant text-on-surface-variant rounded-full text-[11px] font-medium">
-                <span className="material-symbols-outlined text-[13px] text-primary">school</span>
+            <h1 className="text-3xl sm:text-4xl font-bold text-text tracking-tight">Mindroot</h1>
+            <div className="mt-2 flex items-center justify-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-primary-tint border border-primary/20 text-primary-text rounded-full text-xs font-semibold">
+                <span className="material-symbols-outlined text-[14px]">school</span>
                 Peer Skill Exchange
               </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-surface-container border border-outline-variant text-on-surface-variant rounded-full text-[11px] font-medium">
-                <span className="material-symbols-outlined text-[13px] text-primary">verified</span>
-                Live Mentoring
+              <span className="inline-flex items-center gap-1 px-3 py-1 bg-surface-2 border border-border text-muted rounded-full text-xs font-semibold">
+                <span className="material-symbols-outlined text-[14px] text-primary">verified</span>
+                Student-to-Student Mentoring
               </span>
             </div>
           </div>
-          <p className="text-xs sm:text-sm text-on-surface-variant font-medium max-w-sm mx-auto leading-relaxed">
-            Peer-to-peer student skill exchange & collaborative campus learning
+          <p className="text-xs sm:text-sm text-muted font-medium max-w-sm mx-auto leading-relaxed">
+            Exchange skills 1-for-1 with campus peers and master new topics together.
           </p>
         </div>
 
-        {/* Main Card with Layered Shadow & Crisp Border */}
-        <div className="bg-surface rounded-3xl p-7 sm:p-9 border border-outline-variant shadow-elevation-2 space-y-6 relative overflow-hidden text-on-surface">
+        {/* Main Card */}
+        <div className="bg-surface rounded-3xl p-7 sm:p-9 border border-border shadow-elevation-2 space-y-6 relative overflow-hidden text-text">
           
           {/* Top Brand Accent Line */}
           <div className="absolute top-0 left-0 right-0 h-1.5 bg-primary" />
 
           {/* Card Toggle Tabs: Sign In vs Register */}
-          <div className="bg-surface-container p-1.5 rounded-2xl flex gap-1.5 border border-outline-variant">
+          <div className="bg-surface-2 p-1.5 rounded-2xl flex gap-1.5 border border-border">
             <button
               onClick={() => {
                 setActiveTab('signin');
@@ -458,8 +447,8 @@ export function Login() {
               }}
               className={`flex-1 py-2.5 text-center text-sm font-bold rounded-xl transition-all ${
                 activeTab === 'signin' 
-                  ? 'bg-surface text-primary shadow-elevation-1 border border-outline-variant' 
-                  : 'text-on-surface-variant hover:text-on-surface'
+                  ? 'bg-surface text-primary shadow-elevation-1 border border-border' 
+                  : 'text-muted hover:text-text'
               }`}
             >
               Sign In
@@ -472,8 +461,8 @@ export function Login() {
               }}
               className={`flex-1 py-2.5 text-center text-sm font-bold rounded-xl transition-all ${
                 activeTab === 'signup' 
-                  ? 'bg-surface text-primary shadow-elevation-1 border border-outline-variant' 
-                  : 'text-on-surface-variant hover:text-on-surface'
+                  ? 'bg-surface text-primary shadow-elevation-1 border border-border' 
+                  : 'text-muted hover:text-text'
               }`}
             >
               Create Account
@@ -553,38 +542,51 @@ export function Login() {
                 </Button>
               </div>
 
-              {/* Quick Fill Credentials for Fast Testing - strictly gated behind DEMO_MODE, NO public admin button */}
-              {demoMode && (
-                <div className="pt-3 border-t border-outline-variant/60 text-center">
-                  <p className="text-[11px] font-semibold text-on-surface-variant mb-2">Demo Quick Sign-In:</p>
-                  <div className="flex items-center justify-center gap-2 flex-wrap">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSignInEmail('student.demo@mindroot.edu');
-                        setSignInPassword('student123');
-                        setSignInError('');
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-outline-variant bg-surface text-on-surface-variant hover:text-on-surface transition-all flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">school</span>
-                      Demo Student
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSignInEmail('mentor.demo@mindroot.edu');
-                        setSignInPassword('mentor123');
-                        setSignInError('');
-                      }}
-                      className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-teaching-emerald/30 bg-teaching-emerald/10 text-teaching-emerald hover:bg-teaching-emerald/20 transition-all flex items-center gap-1"
-                    >
-                      <span className="material-symbols-outlined text-[14px]">psychology</span>
-                      Demo Mentor
-                    </button>
-                  </div>
+              {/* Quick Fill Credentials for Fast Testing */}
+              <div className="pt-4 border-t border-border text-center space-y-2">
+                <p className="text-xs font-semibold text-muted flex items-center justify-center gap-1">
+                  <span className="material-symbols-outlined text-sm text-primary">bolt</span>
+                  Instant One-Click Demo Access
+                </p>
+                <div className="flex items-center justify-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInEmail('student.demo@mindroot.edu');
+                      setSignInPassword('student123');
+                      setSignInError('');
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-primary/30 bg-primary-tint text-primary-text hover:bg-primary-tint/80 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">school</span>
+                    <span>Demo Student (Alex)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInEmail('mentor.demo@mindroot.edu');
+                      setSignInPassword('mentor123');
+                      setSignInError('');
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-accent/30 bg-accent-tint text-accent-text hover:bg-accent-tint/80 transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[15px]">psychology</span>
+                    <span>Demo Mentor (Dr. Marcus)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSignInEmail('admin@mindroot.com');
+                      setSignInPassword('admin123');
+                      setSignInError('');
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl border border-border bg-surface-2 text-text hover:bg-surface transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[15px] text-primary">admin_panel_settings</span>
+                    <span>Demo Admin</span>
+                  </button>
                 </div>
-              )}
+              </div>
             </form>
           ) : (
             /* Sign Up / Registration Form */

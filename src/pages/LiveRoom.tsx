@@ -6,6 +6,7 @@ import { useAppStore } from '../store/useAppStore';
 import { api, resolveSessionRole, getAuthItem } from '../lib/api';
 import { UpiPaymentModal } from '../components/payment/UpiPaymentModal';
 import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
+import { useLiveRoom } from '../context/LiveRoomContext';
 
 const safeUUID = () => {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -66,9 +67,9 @@ const defaultRtcConfig: RTCConfiguration = {
 };
 
 const toolTabs: { id: Workspace; icon: string; label: string }[] = [
-  { id: 'whiteboard', icon: 'draw', label: 'Whiteboard Canvas' },
-  { id: 'notes', icon: 'note_alt', label: 'Shared Notes & Plan' },
-  { id: 'code', icon: 'code', label: 'Interactive Code Pad' }
+  { id: 'whiteboard', icon: 'draw', label: 'Whiteboard' },
+  { id: 'notes', icon: 'note_alt', label: 'Notes' },
+  { id: 'code', icon: 'code', label: 'Code' }
 ];
 
 import {
@@ -93,27 +94,31 @@ export function LiveRoom() {
   const { sessionId } = useParams();
   const navigate = useNavigate();
   const { currentUser } = useAppStore();
+  const { activeSession, registerActiveSession, leaveActiveSession } = useLiveRoom();
+
+  const isExplicitLeavingRef = useRef(false);
   const roomId = sessionId || 'demo-room';
+  const isReturningToRoom = Boolean(activeSession && activeSession.roomId === roomId);
   const userName = currentUser?.name || 'You';
-  const [currentSession, setCurrentSession] = useState<any | null>(null);
+  const [currentSession, setCurrentSession] = useState<any | null>(() => (isReturningToRoom && activeSession ? activeSession.session : null));
   const userRole = resolveSessionRole(currentSession, currentUser?.id, currentUser?.role);
   const isTeacher = userRole === 'teacher';
 
   // Live Room State Machine & Pre-Join States
-  const [sessionState, setSessionState] = useState<SessionAccessState | 'lobby' | 'picker' | 'empty' | 'loading'>('loading');
-  const [isLobbyJoined, setIsLobbyJoined] = useState(false);
+  const [sessionState, setSessionState] = useState<SessionAccessState | 'lobby' | 'picker' | 'empty' | 'loading'>(() => isReturningToRoom ? 'lobby' : 'loading');
+  const [isLobbyJoined, setIsLobbyJoined] = useState(() => isReturningToRoom ? true : false);
   const [upcomingSessions, setUpcomingSessions] = useState<any[]>([]);
   const [demoMode, setDemoMode] = useState(false);
 
-  const [workspace, setWorkspace] = useState<Workspace>('whiteboard');
-  const [viewMode, setViewMode] = useState<'studio' | 'gallery'>('studio');
+  const [workspace, setWorkspace] = useState<Workspace>(() => (isReturningToRoom && (activeSession?.workspace as Workspace)) || 'whiteboard');
+  const [viewMode, setViewMode] = useState<'studio' | 'gallery'>(() => (isReturningToRoom && activeSession?.viewMode) || 'studio');
   const [isFullscreenWorkspace, setIsFullscreenWorkspace] = useState(false);
   const [showDevOverflow, setShowDevOverflow] = useState(false);
   const [showPipVideos, setShowPipVideos] = useState(true);
   const [showFullscreenChat, setShowFullscreenChat] = useState(false);
 
-  const [micOn, setMicOn] = useState(true);
-  const [cameraOn, setCameraOn] = useState(true);
+  const [micOn, setMicOn] = useState(() => isReturningToRoom && activeSession ? activeSession.micOn : true);
+  const [cameraOn, setCameraOn] = useState(() => isReturningToRoom && activeSession ? activeSession.cameraOn : true);
   const [sharing, setSharing] = useState(false);
   const [displayStream, setDisplayStream] = useState<MediaStream | null>(null);
   const [isPeerScreenSharing, setIsPeerScreenSharing] = useState(false);
@@ -128,7 +133,12 @@ export function LiveRoom() {
   const [isSessionNotesPanelOpen, setIsSessionNotesPanelOpen] = useState(false);
 
   // Live Room Side Panel Notes Tab State
-  const [sidebarTab, setSidebarTab] = useState<'chat' | 'notes'>('chat');
+  const [sidebarTab, setSidebarTab] = useState<'chat' | 'notes' | 'people'>('chat');
+  const [isKickedFromRoom, setIsKickedFromRoom] = useState(false);
+  const [showEndSessionConfirmModal, setShowEndSessionConfirmModal] = useState(false);
+  const [kickConfirmTarget, setKickConfirmTarget] = useState<{ id: string; name: string; peerId?: string } | null>(null);
+  const [bannedStudents, setBannedStudents] = useState<Array<{ id: string; name: string }>>([]);
+  const [hostDisconnectNotice, setHostDisconnectNotice] = useState<string | null>(null);
   const [inlineNoteTitle, setInlineNoteTitle] = useState('');
   const [inlineNoteContent, setInlineNoteContent] = useState('');
   const [isSavingInlineNote, setIsSavingInlineNote] = useState(false);
@@ -188,14 +198,19 @@ export function LiveRoom() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: 'welcome', sender: 'Mindroot System', text: 'Welcome to your live cohort studio! All enrolled batch students and the instructor join and collaborate here together.' }
   ]);
-  const [notes, setNotes] = useState('## 🎯 Cohort Lesson Plan & Objectives\n\n- [x] Topic Introduction & Theory overview\n- [ ] Deep Dive with Interactive Diagrams on Whiteboard\n- [ ] Hands-on Live Code Session & Execution\n- [ ] Student Q&A and Concept Review\n\n> 💡 Tip: Click "Fullscreen Explanation Mode" on the top right for a wide focused workspace!');
-  const [code, setCode] = useState('// 🚀 Live Interactive Cohort Code Pad\n// All students & the teacher can write and execute code together!\n\nfunction calculateCohortProgress(students: string[], topic: string) {\n  return {\n    topic,\n    totalStudents: students.length,\n    batchStatus: "3-Student Cohort Active 🎓",\n    studentList: students,\n    message: `All ${students.length} students are live with the instructor!`\n  };\n}\n\nconst cohort = calculateCohortProgress(["Alex", "Liam", "Sarah"], "React & TypeScript Systems");\nconsole.log("Cohort Session Info:", JSON.stringify(cohort, null, 2));\n');
+  const [notes, setNotes] = useState('## Session Plan & Objectives\n\n- [x] Topic Introduction & Theory overview\n- [ ] Deep dive with interactive whiteboard diagrams\n- [ ] Hands-on live code session\n- [ ] Student Q&A and concept review\n\n> Tip: Switch to Fullscreen for an expanded distraction-free workspace.');
+  const [code, setCode] = useState('// Collaborative Code Workspace\n// Code is shared live between students and instructor.\n\nfunction processItems(items: string[], topic: string) {\n  return {\n    topic,\n    itemCount: items.length,\n    items,\n    processedAt: new Date().toISOString()\n  };\n}\n\nconst result = processItems(["Data Structures", "Algorithms", "Optimization"], "Computer Science Fundamentals");\nconsole.log("Session Data:", JSON.stringify(result, null, 2));\n');
 
   // Verify and resolve session access state
   useEffect(() => {
     let active = true;
 
     const resolveSessionAccess = async () => {
+      if (isReturningToRoom) {
+        setSessionState('lobby');
+        setIsLobbyJoined(true);
+        return;
+      }
       try {
         setSessionState('loading');
         const [configRes, sessionsList] = await Promise.all([
@@ -375,9 +390,9 @@ export function LiveRoom() {
     }
   }, [notes, currentSession?.id]);
 
-  // Post-Session 30-Second Review States
-  const [quickRating, setQuickRating] = useState<number>(5);
-  const [selectedKarmaBadges, setSelectedKarmaBadges] = useState<string[]>(['Clear Explanations', 'Punctual']);
+  // Post-Session Review States (starts unselected)
+  const [quickRating, setQuickRating] = useState<number>(0);
+  const [selectedKarmaBadges, setSelectedKarmaBadges] = useState<string[]>([]);
   const [reviewComment, setReviewComment] = useState('');
   const [isReviewSubmitted, setIsReviewSubmitted] = useState(false);
   const [isSubmittingReview, setIsSubmittingReview] = useState(false);
@@ -452,8 +467,8 @@ export function LiveRoom() {
   // Multi-participant states (Mesh WebRTC)
   type IceStatus = 'Connecting...' | 'Direct P2P' | 'TURNS Relay 443' | 'Connection Failed' | 'SIMULATED PLAYBACK (DEMO)';
   const [iceDiagnostic, setIceDiagnostic] = useState<IceStatus>('Connecting...');
-  const [remoteParticipants, setRemoteParticipants] = useState<Participant[]>([]);
-  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
+  const [remoteParticipants, setRemoteParticipants] = useState<Participant[]>(() => isReturningToRoom && activeSession ? (activeSession.remoteParticipants || []) : []);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(() => isReturningToRoom && activeSession ? activeSession.localStream : null);
 
   // Synchronize simulated stream state to ICE diagnostics
   useEffect(() => {
@@ -467,8 +482,8 @@ export function LiveRoom() {
   const localVideo = useRef<HTMLVideoElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const socketRef = useRef<Socket | null>(null);
-  const peersRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-  const localStreamRef = useRef<MediaStream | null>(null);
+  const peersRef = useRef<Map<string, RTCPeerConnection>>(isReturningToRoom && activeSession?.peers ? activeSession.peers : new Map());
+  const localStreamRef = useRef<MediaStream | null>(isReturningToRoom && activeSession ? activeSession.localStream : null);
   const cameraTrackRef = useRef<MediaStreamTrack | null>(null);
   const micTrackRef = useRef<MediaStreamTrack | null>(null);
   const displayStreamRef = useRef<MediaStream | null>(null);
@@ -526,6 +541,16 @@ export function LiveRoom() {
   const [showVideoMenu, setShowVideoMenu] = useState(false);
   const [showAudioMenu, setShowAudioMenu] = useState(false);
   const [showEndedModal, setShowEndedModal] = useState(false);
+
+  // Close session ended modal on Escape key
+  useEffect(() => {
+    if (!showEndedModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowEndedModal(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [showEndedModal]);
 
   const addMessage = useCallback((message: ChatMessage) => setMessages(previous => [...previous.slice(-49), message]), []);
 
@@ -592,27 +617,28 @@ export function LiveRoom() {
     context.restore();
   }, []);
 
-  // Canvas stroke batching (~30ms throttle using RAF to minimize Socket.io payload frequency)
+  // Canvas stroke batching (~80ms throttle to strictly stay below the 30 events/sec socket limit)
   const strokeBuffer = useRef<{ x: number; y: number; prevX: number; prevY: number; color: string; width: number; tool: DrawingTool }[]>([]);
   const batchRafId = useRef<number | null>(null);
   const lastBatchTime = useRef<number>(0);
 
   const flushStrokeBuffer = useCallback(() => {
     if (strokeBuffer.current.length > 0) {
-      const itemsToEmit = [...strokeBuffer.current];
+      // Pick the most recent sampled point in this batch window
+      const latestPoint = strokeBuffer.current[strokeBuffer.current.length - 1];
       strokeBuffer.current = [];
-      itemsToEmit.forEach(point => {
+      if (latestPoint) {
         emitRoomEvent({
           type: 'canvas',
-          x: point.x,
-          y: point.y,
-          prevX: point.prevX,
-          prevY: point.prevY,
-          color: point.color,
-          width: point.width,
-          tool: point.tool
+          x: latestPoint.x,
+          y: latestPoint.y,
+          prevX: latestPoint.prevX,
+          prevY: latestPoint.prevY,
+          color: latestPoint.color,
+          width: latestPoint.width,
+          tool: latestPoint.tool
         });
-      });
+      }
     }
   }, [emitRoomEvent]);
 
@@ -620,7 +646,7 @@ export function LiveRoom() {
     if (batchRafId.current !== null) return;
     batchRafId.current = requestAnimationFrame((timestamp) => {
       batchRafId.current = null;
-      if (timestamp - lastBatchTime.current >= 30) {
+      if (timestamp - lastBatchTime.current >= 80) {
         lastBatchTime.current = timestamp;
         flushStrokeBuffer();
       } else {
@@ -1267,17 +1293,82 @@ export function LiveRoom() {
       } else if (err?.code === 'TOO_EARLY') {
         setSessionState('confirmed-early');
         setIsLobbyJoined(false);
-      } else if (err?.code === 'SESSION_ENDED') {
+      } else if (err?.code === 'SESSION_ENDED' || err?.code === 'SESSION_COMPLETED') {
         setSessionState('ended');
         setIsLobbyJoined(false);
+      } else if (err?.code === 'BANNED_FROM_SESSION') {
+        setIsKickedFromRoom(true);
+        setIsLobbyJoined(false);
+        setSessionState('ended');
       } else if (err?.code === 'DEMO_ONLY') {
         window.dispatchEvent(new CustomEvent('app-toast', {
           detail: { type: 'reminder', title: 'Demo Only', body: err.error || 'Practice room is only available in demo mode.' }
         }));
         navigate('/schedule', { replace: true });
+      } else if (err?.code === 'RATE_LIMIT_EXCEEDED') {
+        window.dispatchEvent(new CustomEvent('app-toast', {
+          detail: { type: 'reminder', title: 'Drawing quickly', body: 'Whiteboard strokes are being synchronized in batches.' }
+        }));
       } else {
         setNotice(err?.error || 'Classroom access error');
       }
+    });
+
+    // P5.21: Session ended by instructor (ends for everyone)
+    socket.on('session-ended-by-host', (data: any) => {
+      console.log('Session ended by host:', data);
+      isExplicitLeavingRef.current = true;
+      leaveActiveSession({ emitLeave: false });
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      if (displayStreamRef.current) {
+        displayStreamRef.current.getTracks().forEach(track => track.stop());
+        displayStreamRef.current = null;
+      }
+      peersRef.current.forEach(peer => peer.close());
+      peersRef.current.clear();
+
+      if (isTeacher || roomId === 'practice') {
+        window.dispatchEvent(new CustomEvent('app-toast', {
+          detail: { type: 'success', title: 'Session Ended', body: 'Lecture session has ended.' }
+        }));
+        navigate('/dashboard');
+      } else {
+        setShowEndedModal(true);
+      }
+    });
+
+    // P5.20: Student kicked by instructor (D-KICK-1, D-KICK-2)
+    socket.on('kicked-from-room', () => {
+      console.log('Kicked from room by instructor');
+      isExplicitLeavingRef.current = true;
+      leaveActiveSession({ emitLeave: false });
+
+      if (localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach(track => track.stop());
+        localStreamRef.current = null;
+      }
+      if (displayStreamRef.current) {
+        displayStreamRef.current.getTracks().forEach(track => track.stop());
+        displayStreamRef.current = null;
+      }
+      peersRef.current.forEach(peer => peer.close());
+      peersRef.current.clear();
+
+      setIsKickedFromRoom(true);
+      setShowEndedModal(false);
+      setIsLobbyJoined(false);
+    });
+
+    // P5.21: Host disconnect notices (D-END-1)
+    socket.on('host-disconnected-notice', (d: any) => {
+      setHostDisconnectNotice(d?.message || 'Instructor disconnected. Waiting for them to reconnect...');
+    });
+    socket.on('host-reconnected-notice', () => {
+      setHostDisconnectNotice(null);
     });
 
     socket.on('room-participants', (d) => handleSignalData({ type: 'room-participants', ...d }));
@@ -1351,14 +1442,42 @@ export function LiveRoom() {
 
     return () => {
       clearInterval(recoveryInterval);
-      channel.close();
-      socket.emit('leave-room', { roomId, senderId: peerId.current });
-      socket.disconnect();
-      peersRef.current.forEach(peer => peer.close());
-      peersRef.current.clear();
-      pendingIceCandidates.current.clear();
-      localStreamRef.current?.getTracks().forEach(track => track.stop());
-      displayStreamRef.current?.getTracks().forEach(track => track.stop());
+      if (isExplicitLeavingRef.current) {
+        channel.close();
+        socket.emit('leave-room', { roomId, senderId: peerId.current });
+        socket.disconnect();
+        peersRef.current.forEach(peer => peer.close());
+        peersRef.current.clear();
+        pendingIceCandidates.current.clear();
+        localStreamRef.current?.getTracks().forEach(track => track.stop());
+        displayStreamRef.current?.getTracks().forEach(track => track.stop());
+        leaveActiveSession({ emitLeave: true });
+      } else {
+        // Preserving active call session across client navigation!
+        registerActiveSession({
+          roomId,
+          session: currentSession,
+          sessionTitle: currentSession?.title || (roomId === 'practice' ? 'Practice Room (Device Check)' : 'Live Mentoring Session'),
+          peerName: remoteParticipants[0]?.name || (isTeacher ? 'Student' : 'Mentor'),
+          userRole,
+          userName,
+          localStream: localStreamRef.current,
+          micOn,
+          cameraOn,
+          raisedHand,
+          sharing,
+          socket,
+          peers: peersRef.current,
+          remoteParticipants,
+          messages,
+          notes,
+          code,
+          workspace,
+          viewMode,
+          channel,
+          isLobbyJoined: true
+        });
+      }
     };
   }, [addMessage, drawLine, getOrCreatePeerConnection, roomId, loadDevices, broadcastSignal, userName, syncLocalTracksToPeer, isLobbyJoined, sessionState, navigate, userRole]);
 
@@ -1600,7 +1719,9 @@ export function LiveRoom() {
         }
       }; 
     } catch { 
-      setNotice('Screen sharing was cancelled.'); 
+      window.dispatchEvent(new CustomEvent('app-toast', {
+        detail: { type: 'info', title: 'Screen Sharing', body: 'Screen sharing was cancelled.' }
+      }));
     } 
   };
   
@@ -1706,11 +1827,11 @@ export function LiveRoom() {
   // Simulate 3rd / 4th classmates for instant testing
   const addSimulatedBatchStudents = (count: number) => {
     const names = [
-      { name: 'Maya S. (Teacher)', role: 'teacher' },
-      { name: 'Liam K. (Classmate 2)', role: 'student' },
-      { name: 'Sarah M. (Classmate 3)', role: 'student' },
-      { name: 'David R. (Classmate 4)', role: 'student' },
-      { name: 'Emma T. (Classmate 5)', role: 'student' }
+      { name: 'Liam K. (Classmate 1)', role: 'student' as const },
+      { name: 'Sarah M. (Classmate 2)', role: 'student' as const },
+      { name: 'David R. (Classmate 3)', role: 'student' as const },
+      { name: 'Emma T. (Classmate 4)', role: 'student' as const },
+      { name: 'Maya S. (Classmate 5)', role: 'student' as const }
     ];
 
     const currentSimCount = remoteParticipants.filter(p => p.isSimulated).length;
@@ -1747,7 +1868,17 @@ export function LiveRoom() {
     setIsUpiModalOpen(true);
   };
 
+  const handleLeaveOrEndClick = () => {
+    if (isTeacher && roomId !== 'practice') {
+      setShowEndSessionConfirmModal(true);
+    } else {
+      handleEndCall();
+    }
+  };
+
   const handleEndCall = () => {
+    isExplicitLeavingRef.current = true;
+    leaveActiveSession({ emitLeave: true });
     try {
       broadcastSignal('room-event', { event: { type: 'chat', sender: 'System', text: `${userName} left the session.` } });
     } catch {}
@@ -1776,10 +1907,43 @@ export function LiveRoom() {
       socketRef.current = null;
     }
 
-    setShowEndedModal(true);
+    if (isTeacher || roomId === 'practice') {
+      navigate('/dashboard');
+    } else {
+      setShowEndedModal(true);
+    }
   };
 
   const clearBoard = () => { canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height); emitRoomEvent({ type: 'canvas-clear' }); };
+
+  if (isKickedFromRoom) {
+    return (
+      <div className="fixed inset-0 z-50 bg-surface flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200" data-testid="kicked-notice-overlay">
+        <div className="max-w-md w-full bg-surface-2 border border-border rounded-2xl p-6 sm:p-8 shadow-xl space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-full bg-danger/10 text-danger flex items-center justify-center">
+            <span className="material-symbols-outlined text-3xl">person_remove</span>
+          </div>
+          <h2 className="text-xl font-black text-text">Removed from Class</h2>
+          <p className="text-sm text-muted">
+            You have been removed from this lecture session by the instructor. You cannot rejoin this session unless the instructor allows you back.
+          </p>
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                leaveActiveSession({ emitLeave: false });
+                navigate('/dashboard');
+              }}
+              className="w-full py-2.5 px-4 rounded-xl bg-primary text-on-primary font-bold text-sm shadow-xs hover:opacity-95 transition-all cursor-pointer"
+              data-testid="removed-return-dashboard-btn"
+            >
+              Return to Dashboard
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (sessionState === 'loading') {
     return (
@@ -1905,6 +2069,18 @@ export function LiveRoom() {
         localStream={localStream}
         onJoin={() => {
           setIsLobbyJoined(true);
+          registerActiveSession({
+            roomId,
+            session: currentSession,
+            sessionTitle: currentSession?.title || (roomId === 'practice' ? 'Practice Room (Device Check)' : 'Live Mentoring Session'),
+            peerName: isTeacher ? 'Student' : 'Instructor',
+            userRole,
+            userName,
+            localStream: localStreamRef.current,
+            micOn,
+            cameraOn,
+            isLobbyJoined: true
+          });
         }}
       />
     );
@@ -1939,6 +2115,13 @@ export function LiveRoom() {
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-accent-tint text-accent-text px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 border border-accent/20 animate-pulse">
           <span className="material-symbols-outlined text-base animate-spin">sync</span>
           <span>Connection lost — reconnecting...</span>
+        </div>
+      )}
+
+      {hostDisconnectNotice && (
+        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center justify-center gap-2 animate-pulse shrink-0 z-30" data-testid="host-disconnect-banner">
+          <span className="material-symbols-outlined text-sm text-amber-600">wifi_off</span>
+          <span>{hostDisconnectNotice}</span>
         </div>
       )}
 
@@ -2100,22 +2283,12 @@ export function LiveRoom() {
 
             <button
               onClick={handleCopyLink}
-              className="flex items-center gap-1 rounded-xl bg-surface-2 hover:bg-surface-2/80 text-text px-2.5 py-1.5 text-xs font-bold border border-border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+              className="flex items-center gap-1 rounded-xl bg-surface-2 hover:bg-surface-2/80 text-text px-2.5 py-1.5 text-xs font-bold border border-border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer"
               aria-label="Invite link"
               title="Copy Room Invitation Link"
             >
               <span className="material-symbols-outlined text-sm">{copiedLink ? 'check' : 'content_copy'}</span>
               <span>{copiedLink ? 'Copied' : 'Invite'}</span>
-            </button>
-
-            <button
-              onClick={handleEndCall}
-              className="flex items-center gap-1 rounded-xl bg-danger hover:opacity-90 text-white px-3 py-1.5 text-xs font-bold transition-all active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none"
-              aria-label="Leave lecture call"
-              title="Leave Room"
-            >
-              <span className="material-symbols-outlined text-sm">call_end</span>
-              <span className="hidden sm:inline">Leave</span>
             </button>
           </div>
         </header>
@@ -2140,6 +2313,8 @@ export function LiveRoom() {
             onOpenWhiteboardStudio={() => setViewMode('studio')}
             onSimulateStudents={() => addSimulatedBatchStudents(3)}
             isTeacher={isTeacher}
+            isDevOrDemo={isDevOrDemo}
+            onKickParticipant={(p) => setKickConfirmTarget({ id: p.id, name: p.name, peerId: p.id })}
           />
         ) : (
           /* STUDIO VIEW: Compact Video Strip (~120-140px) + Main Workspace + Responsive Sidebar */
@@ -2185,6 +2360,7 @@ export function LiveRoom() {
                     accent={participant.role === 'teacher' ? "bg-primary" : "bg-accent"} 
                     isRemote
                     onUnlockAudio={unlockAudio}
+                    onKick={isTeacher && participant.role !== 'teacher' ? () => setKickConfirmTarget({ id: participant.id, name: participant.name, peerId: participant.id }) : undefined}
                     className="h-full w-full"
                   />
                 ))}
@@ -2327,6 +2503,23 @@ export function LiveRoom() {
                     </span>
                   )}
                 </button>
+                <button
+                  role="tab"
+                  aria-selected={sidebarTab === 'people'}
+                  onClick={() => setSidebarTab('people')}
+                  className={clsx(
+                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                    sidebarTab === 'people'
+                      ? "bg-surface text-primary shadow-xs border border-border"
+                      : "text-muted hover:text-text"
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[15px] shrink-0">groups</span>
+                  <span className="truncate">People</span>
+                  <span className="px-1.5 py-0.5 rounded-full bg-primary-tint text-primary-text text-xs font-black shrink-0 leading-none">
+                    {remoteParticipants.length + 1}
+                  </span>
+                </button>
               </div>
 
               {/* Tab Body */}
@@ -2340,7 +2533,7 @@ export function LiveRoom() {
                     chatOpen={true}
                   />
                 </div>
-              ) : (
+              ) : sidebarTab === 'notes' ? (
                 <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-surface p-3 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-3 box-border">
                   {/* Inline Add Note Section */}
                   <div className="p-3 bg-surface-2 rounded-xl border border-border space-y-2 shrink-0 min-w-0 box-border">
@@ -2443,6 +2636,86 @@ export function LiveRoom() {
                     )}
                   </div>
                 </div>
+              ) : (
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-surface p-3 overflow-y-auto custom-scrollbar space-y-3 box-border">
+                  <div className="text-xs font-bold text-muted uppercase tracking-wider px-1">
+                    In this session ({remoteParticipants.length + 1})
+                  </div>
+                  
+                  {/* You */}
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-2 border border-border">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-xs shrink-0">
+                        {userName.slice(0, 1).toUpperCase()}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-text truncate">{userName} (You)</p>
+                        <p className="text-[10px] text-muted capitalize">{isTeacher ? 'Host / Instructor' : userRole}</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                      Active
+                    </span>
+                  </div>
+
+                  {/* Remote Participants */}
+                  {remoteParticipants.map(p => (
+                    <div key={p.id} className="flex items-center justify-between p-2.5 rounded-xl bg-surface-2 border border-border">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center font-bold text-xs text-text shrink-0">
+                          {p.name.slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-text truncate">{p.name}</p>
+                          <p className="text-[10px] text-muted capitalize">{p.role}</p>
+                        </div>
+                      </div>
+
+                      {isTeacher && p.role !== 'teacher' && (
+                        <button
+                          type="button"
+                          onClick={() => setKickConfirmTarget({ id: p.id, name: p.name, peerId: p.id })}
+                          data-testid="remove-student-btn"
+                          className="px-2.5 py-1 rounded-lg bg-danger/10 hover:bg-danger text-danger hover:text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
+                          title="Remove student from class"
+                        >
+                          Remove
+                        </button>
+                      )}
+                    </div>
+                  ))}
+
+                  {/* Removed Students Section (Host only) */}
+                  {isTeacher && bannedStudents.length > 0 && (
+                    <div className="pt-2 space-y-2 border-t border-border">
+                      <div className="text-xs font-bold text-danger uppercase tracking-wider px-1">
+                        Removed Students ({bannedStudents.length})
+                      </div>
+                      {bannedStudents.map(s => (
+                        <div key={s.id} className="flex items-center justify-between p-2.5 rounded-xl bg-danger/5 border border-danger/20">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="material-symbols-outlined text-danger text-sm shrink-0">person_off</span>
+                            <span className="text-xs font-medium text-text truncate">{s.name}</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              socketRef.current?.emit('unban-student', { roomId, targetUserId: s.id });
+                              setBannedStudents(prev => prev.filter(st => st.id !== s.id));
+                              window.dispatchEvent(new CustomEvent('app-toast', {
+                                detail: { type: 'success', title: 'Student Allowed Back', body: `${s.name} can now rejoin.` }
+                              }));
+                            }}
+                            data-testid="allow-back-btn"
+                            className="px-2.5 py-1 rounded-lg bg-primary-tint hover:bg-primary text-primary-text hover:text-on-primary text-xs font-bold transition-colors cursor-pointer shrink-0"
+                          >
+                            Allow back
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               )}
             </aside>
           </section>
@@ -2450,27 +2723,30 @@ export function LiveRoom() {
 
         {/* Bottom Control Bar in Standard View */}
         <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-xs sm:px-4 shrink-0 z-30 relative text-text">
-          <p className="hidden max-w-[260px] text-xs text-muted xl:block font-medium truncate">{notice}</p>
+          <div className="hidden max-w-[260px] text-xs text-muted xl:flex items-center gap-1.5 font-medium truncate">
+            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
+            <span className="truncate">{notice}</span>
+          </div>
           
           <div className="flex flex-1 items-center justify-center gap-2 sm:gap-2.5">
-            {/* Microphone Pill Control */}
+            {/* Microphone Pill Control (Neutral off state, slash icon) */}
             <div className="relative flex items-center bg-surface border border-border rounded-full shadow-xs hover:border-primary/40 transition duration-200">
               <button
                 onClick={toggleMicWithPermission}
                 title={micOn ? 'Mute microphone' : 'Unmute microphone'}
                 aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}
                 className={clsx(
-                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer',
                   !micOn
-                    ? 'bg-danger text-white shadow-xs'
-                    : 'text-muted hover:bg-surface-2 hover:text-text'
+                    ? 'bg-surface-2 text-text border border-border/70'
+                    : 'text-primary hover:bg-surface-2'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{micOn ? 'mic' : 'mic_off'}</span>
               </button>
               <button
                 onClick={() => setShowAudioMenu(v => !v)}
-                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-muted hover:text-text transition-colors border-l border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-r-full"
+                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-muted hover:text-text transition-colors border-l border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-r-full cursor-pointer"
                 title="Select microphone device"
                 aria-label="Select microphone device"
               >
@@ -2493,8 +2769,8 @@ export function LiveRoom() {
                             key={d.deviceId}
                             onClick={() => changeAudioDevice(d.deviceId)}
                             className={clsx(
-                              "w-full text-left px-2.5 py-1.5 text-xs rounded-xl transition-colors flex items-center justify-between",
-                              selectedAudioId === d.deviceId ? "bg-primary text-on-primary font-bold" : "hover:bg-surface-2 text-text"
+                              "w-full text-left px-2.5 py-1.5 text-xs rounded-xl transition-colors flex items-center justify-between cursor-pointer",
+                              selectedAudioId === d.deviceId ? "bg-primary text-white font-bold" : "hover:bg-surface-2 text-text"
                             )}
                           >
                             <span className="truncate">{d.label || `Microphone ${d.deviceId.slice(0, 5)}`}</span>
@@ -2508,17 +2784,17 @@ export function LiveRoom() {
               )}
             </div>
 
-            {/* Camera Pill Control */}
+            {/* Camera Pill Control (Neutral off state, slash icon) */}
             <div className="relative flex items-center bg-surface border border-border rounded-full shadow-xs hover:border-primary/40 transition duration-200">
               <button
                 onClick={toggleCameraWithPermission}
                 title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 aria-label={cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 className={clsx(
-                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer',
                   !cameraOn
-                    ? 'bg-danger text-white shadow-xs'
-                    : 'text-muted hover:bg-surface-2 hover:text-text'
+                    ? 'bg-surface-2 text-text border border-border/70'
+                    : 'text-primary hover:bg-surface-2'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{cameraOn ? 'videocam' : 'videocam_off'}</span>
@@ -2642,12 +2918,13 @@ export function LiveRoom() {
             )}
           </div>
 
-          {/* Leave Call Button */}
+          {/* Leave / End Call Button */}
           <button
-            onClick={handleEndCall}
-            className="grid h-10 w-12 place-items-center rounded-full bg-danger text-white shadow-xs transition hover:-translate-y-0.5 hover:opacity-90 hover:scale-105 active:translate-y-0 active:scale-95 duration-200 focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none"
-            title="Disconnect call & release devices"
-            aria-label="Leave call"
+            onClick={handleLeaveOrEndClick}
+            data-testid={isTeacher ? "end-session-btn" : "leave-room-btn"}
+            className="grid h-10 w-12 place-items-center rounded-full bg-danger text-white shadow-xs transition hover:-translate-y-0.5 hover:opacity-90 hover:scale-105 active:translate-y-0 active:scale-95 duration-200 focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none cursor-pointer"
+            title={isTeacher ? "End session for everyone" : "Disconnect call & release devices"}
+            aria-label={isTeacher ? "End session" : "Leave call"}
           >
             <span className="material-symbols-outlined text-[20px]">call_end</span>
           </button>
@@ -2656,21 +2933,23 @@ export function LiveRoom() {
 
       {/* FULLSCREEN EXPLANATION WORKSPACE OVERLAY */}
       {isFullscreenWorkspace && (
-        <div className="fixed inset-0 z-50 bg-bg/95 backdrop-blur-md flex flex-col p-2 sm:p-3 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col p-2 sm:p-3 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
           {/* Fullscreen Top Navigation */}
-          <header className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-surface border border-border px-4 py-2.5 text-text shadow-xs">
+          <header className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-slate-950/90 border border-slate-800 px-4 py-2 text-slate-100 shadow-lg">
             <div className="flex items-center gap-3">
               <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary">
                 <span className="material-symbols-outlined text-[19px]">fit_screen</span>
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-black tracking-wide text-text uppercase">Fullscreen Focus Mode</span>
-                  <span className="rounded-full bg-primary-tint border border-primary/30 px-2 py-0.5 text-xs font-extrabold text-primary-text animate-pulse">
-                    ● Live Focus
+                  <span className="text-xs font-bold tracking-tight text-white">Focus mode</span>
+                  <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                    ● Live
                   </span>
                 </div>
-                <p className="text-xs text-muted font-medium">Room: {roomId.slice(0, 14)} · Press <kbd className="bg-surface-2 px-1.5 py-0.5 rounded text-xs border border-border text-text font-mono">ESC</kbd> to exit</p>
+                <p className="text-[11px] text-slate-400 font-medium truncate max-w-xs sm:max-w-md">
+                  {roomId === 'practice' ? 'Practice Room' : (currentSession?.title || 'Live Session')} · Press <kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-[11px] border border-slate-700 text-slate-200 font-mono">ESC</kbd> to exit
+                </p>
               </div>
             </div>
 
@@ -2679,8 +2958,8 @@ export function LiveRoom() {
               <button
                 onClick={() => setShowPipVideos(v => !v)}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
-                  showPipVideos ? "bg-surface-2 border-primary/30 text-primary" : "bg-transparent border-border text-muted hover:bg-surface-2"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
+                  showPipVideos ? "bg-slate-800 border-slate-700 text-primary" : "bg-transparent border-slate-800 text-slate-400 hover:bg-slate-800"
                 )}
                 title="Toggle Floating Video Feeds"
                 aria-label="Toggle floating video feeds"
@@ -2692,8 +2971,8 @@ export function LiveRoom() {
               <button
                 onClick={() => setShowFullscreenChat(v => !v)}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
-                  showFullscreenChat ? "bg-primary border-primary text-on-primary" : "bg-surface-2 border-border text-text hover:bg-surface-2/80"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
+                  showFullscreenChat ? "bg-primary border-primary text-on-primary" : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
                 )}
                 title="Open Chat Drawer"
                 aria-label="Open chat drawer"
@@ -2704,7 +2983,7 @@ export function LiveRoom() {
 
               <button
                 onClick={() => toggleFullscreenMode(false)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-surface-2 hover:bg-surface-2/80 text-text text-xs font-bold border border-border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer"
                 title="Exit Fullscreen Mode"
                 aria-label="Exit Fullscreen Mode"
               >
@@ -2756,24 +3035,25 @@ export function LiveRoom() {
               />
             </div>
 
-            {/* Fullscreen Floating Video PiP Box in Top Right */}
+            {/* Fullscreen Floating Video PiP Box in Bottom Right (never covering top-right editor controls) */}
             {showPipVideos && (
-              <div className="absolute top-4 right-4 z-40 flex flex-col gap-2 p-2.5 bg-slate-950/90 border border-white/20 rounded-2xl shadow-2xl backdrop-blur-md w-72 sm:w-96 animate-in fade-in slide-in-from-right-4 duration-300">
-                <div className="flex items-center justify-between px-1 text-[11px] font-black text-slate-300">
+              <div data-testid="fullscreen-pip-box" className="absolute bottom-4 right-4 z-40 flex flex-col gap-2 p-2 bg-slate-950/95 border border-slate-700 rounded-2xl shadow-2xl backdrop-blur-md w-60 sm:w-64 max-w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-300">
                   <span className="flex items-center gap-1.5">
-                    <span className={clsx("h-2 w-2 rounded-full", totalParticipantsCount > 1 ? "bg-teaching-emerald animate-pulse" : "bg-learning-amber")} />
-                    <span>Live Video Feeds ({totalParticipantsCount} in Class)</span>
+                    <span className={clsx("h-2 w-2 rounded-full", totalParticipantsCount > 1 ? "bg-emerald-400 animate-pulse" : "bg-amber-400")} />
+                    <span>Video Feeds ({totalParticipantsCount})</span>
                   </span>
                   <button 
                     onClick={() => setShowPipVideos(false)}
-                    className="text-slate-400 hover:text-white transition-colors"
+                    className="text-slate-400 hover:text-white transition-colors cursor-pointer"
                     title="Minimize Video Box"
+                    aria-label="Minimize video feeds"
                   >
                     <span className="material-symbols-outlined text-[15px]">close</span>
                   </button>
                 </div>
 
-                <div className={`grid gap-2 ${totalParticipantsCount > 2 ? 'grid-cols-2 max-h-56 overflow-y-auto custom-scrollbar' : 'grid-cols-2'}`}>
+                <div className={`grid gap-1.5 ${totalParticipantsCount > 2 ? 'grid-cols-2 max-h-48 overflow-y-auto custom-scrollbar' : 'grid-cols-2'}`}>
                   {/* Local video tile in PiP */}
                   <VideoTile 
                     stream={localStream} 
@@ -2784,11 +3064,11 @@ export function LiveRoom() {
                     raised={raisedHand} 
                     cameraOff={!cameraOn} 
                     micOff={!micOn}
-                    accent={isTeacher ? "bg-teaching-emerald" : "bg-learning-amber"}
+                    accent={isTeacher ? "bg-primary" : "bg-accent"}
                     onSwitchCamera={cycleNextCamera}
                     hasMultipleCameras={videoDevices.length > 1}
                     isHardware={hardwareInfo.cam}
-                    className="h-28 w-full"
+                    className="h-20 sm:h-24 w-full"
                   />
 
                   {/* Remote participants in PiP (Max 3 Video Mesh Streams) */}
@@ -2802,24 +3082,24 @@ export function LiveRoom() {
                       waiting={false} 
                       raised={p.handRaised} 
                       isSimulated={p.isSimulated}
-                      accent={p.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
+                      accent={p.role === 'teacher' ? "bg-primary" : "bg-accent"} 
                       isRemote
                       onUnlockAudio={unlockAudio}
-                      className="h-28 w-full"
+                      className="h-20 sm:h-24 w-full"
                     />
                   ))}
                   {overflowAudioParticipants.map(p => (
                     <div 
                       key={p.id} 
-                      className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-2 flex flex-col items-center justify-center text-center shadow-sm h-28 w-full"
-                      title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
+                      className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 p-1.5 flex flex-col items-center justify-center text-center shadow-sm h-20 sm:h-24 w-full"
+                      title="Audio-only mode"
                     >
-                      <div className="h-8 w-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs mb-1">
+                      <div className="h-7 w-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs mb-0.5">
                         {p.name.slice(0, 1).toUpperCase()}
                       </div>
-                      <div className="text-[10px] font-bold text-white truncate max-w-[90px]">{p.name}</div>
-                      <span className="text-[8px] text-amber-400 font-bold mt-1 flex items-center gap-0.5 bg-amber-400/10 px-1 py-0.5 rounded-full border border-amber-400/20">
-                        <span className="material-symbols-outlined text-[9px]">volume_up</span> Audio Cap
+                      <div className="text-[10px] font-bold text-white truncate max-w-[80px]">{p.name}</div>
+                      <span className="text-[8px] text-amber-400 font-bold mt-0.5 flex items-center gap-0.5 bg-amber-400/10 px-1 py-0.5 rounded-full border border-amber-400/20">
+                        <span className="material-symbols-outlined text-[9px]">volume_up</span> Audio
                       </span>
                     </div>
                   ))}
@@ -2839,39 +3119,162 @@ export function LiveRoom() {
               />
             )}
           </div>
+
+          {/* Fullscreen Docked Bottom Control Bar */}
+          <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-slate-950/90 border border-slate-800 px-4 py-2 text-slate-100 shadow-xl shrink-0 z-30">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 font-medium">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>In Focus Mode</span>
+            </div>
+
+            <div className="flex flex-1 items-center justify-center gap-2 sm:gap-3">
+              {/* Microphone Toggle */}
+              <button
+                onClick={toggleMicWithPermission}
+                title={micOn ? 'Mute microphone' : 'Unmute microphone'}
+                aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}
+                className={clsx(
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
+                  !micOn
+                    ? 'bg-slate-800 border-slate-700 text-slate-300'
+                    : 'bg-slate-900 border-emerald-500/40 text-emerald-400 hover:bg-slate-800'
+                )}
+              >
+                <span className="material-symbols-outlined text-[19px]">{micOn ? 'mic' : 'mic_off'}</span>
+              </button>
+
+              {/* Camera Toggle */}
+              <button
+                onClick={toggleCameraWithPermission}
+                title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                aria-label={cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                className={clsx(
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
+                  !cameraOn
+                    ? 'bg-slate-800 border-slate-700 text-slate-300'
+                    : 'bg-slate-900 border-emerald-500/40 text-emerald-400 hover:bg-slate-800'
+                )}
+              >
+                <span className="material-symbols-outlined text-[19px]">{cameraOn ? 'videocam' : 'videocam_off'}</span>
+              </button>
+
+              {/* Raise Hand (Students Only) */}
+              {!isTeacher && (
+                <button
+                  onClick={toggleHand}
+                  title={raisedHand ? 'Lower hand' : 'Raise hand'}
+                  aria-label={raisedHand ? 'Lower hand' : 'Raise hand'}
+                  className={clsx(
+                    'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
+                    raisedHand
+                      ? 'bg-amber-500 border-amber-400 text-slate-950 font-bold'
+                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                  )}
+                >
+                  <span className="material-symbols-outlined text-[19px]">pan_tool</span>
+                </button>
+              )}
+
+              {/* Screen Share */}
+              <button
+                onClick={toggleShare}
+                title={sharing ? 'Stop sharing screen' : 'Share screen'}
+                aria-label={sharing ? 'Stop sharing screen' : 'Share screen'}
+                className={clsx(
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
+                  sharing
+                    ? 'bg-primary border-primary text-white'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                )}
+              >
+                <span className="material-symbols-outlined text-[19px]">present_to_all</span>
+              </button>
+
+              {/* Chat Toggle */}
+              <button
+                onClick={() => setShowFullscreenChat(v => !v)}
+                title="Toggle Live Chat"
+                aria-label="Toggle live chat"
+                className={clsx(
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
+                  showFullscreenChat
+                    ? 'bg-primary border-primary text-white'
+                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                )}
+              >
+                <span className="material-symbols-outlined text-[19px]">forum</span>
+              </button>
+            </div>
+
+            {/* Leave / End Call */}
+            <button
+              onClick={handleLeaveOrEndClick}
+              data-testid={isTeacher ? "end-session-btn" : "leave-room-btn"}
+              className="grid h-10 px-4 place-items-center rounded-full bg-danger text-white font-bold text-xs shadow-xs transition hover:opacity-90 active:scale-95 cursor-pointer"
+              title={isTeacher ? "End session for everyone" : "Leave session"}
+              aria-label={isTeacher ? "End session" : "Leave call"}
+            >
+              <span className="flex items-center gap-1.5">
+                <span className="material-symbols-outlined text-[18px]">call_end</span>
+                <span className="hidden sm:inline">{isTeacher ? "End" : "Leave"}</span>
+              </span>
+            </button>
+          </footer>
         </div>
       )}
 
       {/* Session Ended Modal */}
       {showEndedModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
-          <div className="bg-surface text-on-surface rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-elevation-3 border border-outline-variant relative space-y-4">
-            <div className="w-16 h-16 rounded-2xl bg-teaching-emerald-container text-on-teaching-emerald-container flex items-center justify-center mx-auto border border-teaching-emerald/20 shadow-elevation-1">
-              <span className="material-symbols-outlined text-3xl">task_alt</span>
-            </div>
-            
-            <div>
-              <h3 className="text-xl font-black text-on-surface">Lecture Completed!</h3>
-              <p className="text-xs text-on-surface-variant font-medium mt-1">
-                Your live mentoring session has concluded.
-              </p>
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowEndedModal(false);
+          }}
+        >
+          <div 
+            data-testid="session-ended-modal"
+            className="bg-surface text-text rounded-2xl p-5 sm:p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-lg border border-border relative space-y-4 custom-scrollbar text-left"
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => setShowEndedModal(false)}
+              className="absolute top-4 right-4 text-muted hover:text-text p-1.5 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
+              aria-label="Close dialog"
+              title="Close"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 border-b border-border pb-3 pr-8">
+              <div className="w-10 h-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-xl">task_alt</span>
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-text">Session ended</h3>
+                <p className="text-xs text-muted truncate mt-0.5">
+                  {currentSession?.id === 'practice' 
+                    ? 'Practice session device and network check completed.' 
+                    : 'Your live mentoring session has concluded.'}
+                </p>
+              </div>
             </div>
 
-            {/* Post-Lecture Payment Section for Students */}
-            {!isTeacher && currentSession?.paymentStatus !== 'paid' && currentSession?.paymentStatus !== 'confirmed' && currentSession?.type !== 'swap' && (
-              <div className="bg-teaching-emerald-container/50 border border-teaching-emerald/20 rounded-2xl p-4 text-left space-y-2 text-on-teaching-emerald-container">
-                <div className="flex justify-between items-center text-xs font-bold">
-                  <span>Mentor Fee Due:</span>
-                  <span className="text-teaching-emerald text-base font-black">
+            {/* Post-Lecture Payment Section (Strictly gated to real unpaid student sessions) */}
+            {!isTeacher && currentSession && currentSession.id !== 'practice' && currentSession.paymentStatus === 'pending' && currentSession.type !== 'swap' && (
+              <div className="bg-surface-2/60 border border-border rounded-xl p-4 space-y-2">
+                <div className="flex justify-between items-center text-xs font-semibold">
+                  <span className="text-muted">Mentor Fee Due:</span>
+                  <span className="text-primary text-base font-bold">
                     ₹{currentSession?.pricePerStudent || currentSession?.amount || 499}
                   </span>
                 </div>
-                <p className="text-[11px] text-on-surface-variant font-medium leading-relaxed">
-                  As part of our Pay After Lecture guarantee, please complete your fee payment via UPI / Direct Transfer.
+                <p className="text-xs text-muted leading-relaxed">
+                  Pay your mentor directly via UPI to settle this session.
                 </p>
                 <button
                   onClick={handlePayPostLecture}
-                  className="w-full py-2.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-black transition-all shadow-elevation-1 active:scale-95 flex items-center justify-center gap-1.5 mt-1"
+                  className="w-full py-2.5 bg-primary hover:bg-primary-hover text-white rounded-lg text-xs font-semibold transition-colors shadow-xs flex items-center justify-center gap-1.5 cursor-pointer mt-1"
                 >
                   <span className="material-symbols-outlined text-[16px]">qr_code_2</span>
                   <span>Pay ₹{currentSession?.pricePerStudent || currentSession?.amount || 499} via UPI</span>
@@ -2879,86 +3282,92 @@ export function LiveRoom() {
               </div>
             )}
 
-            {/* AI Session Recap Card */}
-            <div className="bg-surface-container-low border border-primary/20 rounded-2xl p-4 text-left space-y-2.5">
+            {/* AI Session Notes Synthesis */}
+            <div className="border border-border rounded-xl p-4 space-y-2.5 bg-surface">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-lg">auto_awesome</span>
-                  <span className="text-xs font-black text-on-surface">AI Study Guide & Session Recap</span>
+                  <span className="material-symbols-outlined text-primary text-base">auto_awesome</span>
+                  <span className="text-xs font-semibold text-text">Session notes synthesis</span>
                 </div>
                 {!aiSummary && (
                   <button
                     onClick={generateAISummary}
                     disabled={isGeneratingSummary}
-                    className="px-2.5 py-1 bg-primary text-on-primary rounded-lg text-[11px] font-bold hover:bg-primary/90 flex items-center gap-1 transition-all"
+                    className="px-2.5 py-1 bg-surface hover:bg-surface-2 border border-border text-text rounded-lg text-xs font-medium flex items-center gap-1 transition-colors cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-xs">{isGeneratingSummary ? 'hourglass_top' : 'psychology'}</span>
-                    {isGeneratingSummary ? 'Generating…' : 'Generate'}
+                    <span>{isGeneratingSummary ? 'Generating…' : 'Synthesize'}</span>
                   </button>
                 )}
               </div>
 
               {aiSummary ? (
                 <div className="space-y-2">
-                  <div className="max-h-48 overflow-y-auto p-3 bg-surface rounded-xl border border-outline-variant text-[11px] font-mono leading-relaxed text-on-surface whitespace-pre-line custom-scrollbar">
+                  <div className="max-h-36 overflow-y-auto p-3 bg-surface-2 rounded-lg border border-border text-xs leading-relaxed text-text whitespace-pre-line custom-scrollbar">
                     {aiSummary}
                   </div>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(aiSummary);
-                      alert('AI Study Guide copied to clipboard!');
+                      window.dispatchEvent(new CustomEvent('app-toast', {
+                        detail: { type: 'reminder', title: 'Copied', body: 'Recap copied to clipboard.' }
+                      }));
                     }}
-                    className="w-full py-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface text-[11px] font-bold rounded-lg flex items-center justify-center gap-1 transition-all"
+                    className="w-full py-1.5 bg-surface hover:bg-surface-2 text-text border border-border text-xs font-medium rounded-lg flex items-center justify-center gap-1 transition-colors cursor-pointer"
                   >
                     <span className="material-symbols-outlined text-xs">content_copy</span>
-                    Copy AI Recap
+                    <span>Copy summary</span>
                   </button>
                 </div>
               ) : (
-                <p className="text-[11px] text-on-surface-variant leading-relaxed">
-                  Synthesize key takeaways, diagrams, and code snippets from this lecture into personalized revision notes.
+                <p className="text-xs text-muted leading-relaxed">
+                  Summarize takeaways and code snippets from this session into revision notes.
                 </p>
               )}
             </div>
 
-            {/* Quick 30-Second Karma & Mentor Rating Card (Students Only) */}
-            {!isTeacher && (
-              <div className="p-4 bg-surface-container/60 rounded-2xl border border-outline-variant/60 space-y-3 text-left">
+            {/* Mentor Rating Card (Students in Real Sessions Only) */}
+            {!isTeacher && currentSession && currentSession.id !== 'practice' && (currentSession.teacherId || currentSession.teacher?.id) && (
+              <div className="p-4 rounded-xl border border-border space-y-3 bg-surface">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-black text-on-surface">
-                    <span className="material-symbols-outlined text-learning-amber text-base">award_star</span>
-                    <span>Rate Mentor: {currentSession?.teacher?.name || 'Instructor'}</span>
-                  </div>
-                  <span className="text-[10px] px-2 py-0.5 bg-learning-amber/15 text-learning-amber rounded-full font-bold">
-                    +15 Karma Pts
+                  <span className="text-xs font-semibold text-text">
+                    Rate Mentor: {currentSession?.teacher?.name || 'Instructor'}
                   </span>
+                  {quickRating > 0 && (
+                    <span className="text-xs font-semibold text-accent">
+                      {quickRating}.0 / 5.0
+                    </span>
+                  )}
                 </div>
 
                 {isReviewSubmitted ? (
-                  <div className="p-3 bg-teaching-emerald-container text-on-teaching-emerald-container rounded-xl text-xs font-bold flex items-center gap-2">
+                  <div className="p-2.5 bg-primary/10 text-primary border border-primary/20 rounded-lg text-xs font-medium flex items-center gap-2">
                     <span className="material-symbols-outlined text-sm">check_circle</span>
-                    <span>Rating submitted! Mentor trust score boosted.</span>
+                    <span>Review submitted. Thank you for your feedback!</span>
                   </div>
                 ) : (
-                  <>
-                    {/* Star Selector */}
-                    <div className="flex items-center gap-1.5">
+                  <div className="space-y-2.5">
+                    {/* Star Selector (Starts unselected) */}
+                    <div className="flex items-center gap-1">
                       {[1, 2, 3, 4, 5].map(star => (
                         <button
                           key={star}
                           type="button"
                           onClick={() => setQuickRating(star)}
-                          className={`p-1 rounded-lg transition-transform hover:scale-110 ${star <= quickRating ? 'text-learning-amber' : 'text-outline-variant'}`}
+                          className={clsx(
+                            "p-1 rounded-lg transition-transform hover:scale-110 cursor-pointer",
+                            star <= quickRating ? "text-accent" : "text-border hover:text-accent/50"
+                          )}
+                          aria-label={`Rate ${star} stars`}
                         >
-                          <span className="material-symbols-outlined text-xl">star</span>
+                          <span className="material-symbols-outlined text-2xl">star</span>
                         </button>
                       ))}
-                      <span className="text-xs font-bold text-on-surface ml-1">{quickRating}.0 / 5.0</span>
                     </div>
 
-                    {/* Quick Karma Badges */}
+                    {/* Feedback Tags (Starts unselected) */}
                     <div className="flex flex-wrap gap-1.5">
-                      {['Clear Explanations', 'Great Code Walkthrough', 'Patient & Friendly', 'Punctual'].map(badge => {
+                      {['Clear explanations', 'Helpful code review', 'Patient & friendly', 'Punctual'].map(badge => {
                         const isSelected = selectedKarmaBadges.includes(badge);
                         return (
                           <button
@@ -2969,11 +3378,12 @@ export function LiveRoom() {
                                 isSelected ? prev.filter(b => b !== badge) : [...prev, badge]
                               );
                             }}
-                            className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-colors ${
+                            className={clsx(
+                              "px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer",
                               isSelected
-                                ? 'bg-primary text-on-primary'
-                                : 'bg-surface border border-outline-variant text-on-surface-variant'
-                            }`}
+                                ? "bg-primary text-white"
+                                : "bg-surface-2 text-muted hover:text-text border border-border"
+                            )}
                           >
                             {isSelected ? '✓ ' : '+ '}{badge}
                           </button>
@@ -2985,82 +3395,59 @@ export function LiveRoom() {
                       type="text"
                       value={reviewComment}
                       onChange={(e) => setReviewComment(e.target.value)}
-                      placeholder="Add brief note (optional)..."
-                      className="w-full px-2.5 py-1.5 text-xs bg-surface border border-outline-variant rounded-lg text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary"
+                      placeholder="Add an optional comment..."
+                      className="w-full px-3 py-1.5 text-xs bg-surface border border-border rounded-lg text-text placeholder:text-muted focus:outline-none focus:border-primary"
                     />
 
                     <button
                       type="button"
                       onClick={handleQuickSubmitReview}
-                      disabled={isSubmittingReview}
-                      className="w-full py-2 bg-teaching-emerald hover:bg-teaching-emerald/90 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
+                      disabled={isSubmittingReview || quickRating === 0}
+                      className="w-full py-2 bg-surface hover:bg-surface-2 border border-border text-text rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-40 cursor-pointer"
                     >
-                      <span className="material-symbols-outlined text-sm">thumb_up</span>
-                      <span>{isSubmittingReview ? 'Submitting...' : 'Submit 30-Sec Review'}</span>
+                      <span>{isSubmittingReview ? 'Submitting...' : 'Submit review'}</span>
                     </button>
-                  </>
+                  </div>
                 )}
               </div>
             )}
 
-            <div className="space-y-2 pt-1">
-              {/* Add notes from this session prompt */}
-              {currentSession && !localStorage.getItem(`mindroot_prompted_notes_${currentSession.id}`) && (
-                <div className="p-3 bg-primary-tint border border-primary/20 rounded-2xl flex items-center justify-between gap-2 text-left">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="material-symbols-outlined text-primary text-base shrink-0">edit_note</span>
-                    <span className="text-xs font-bold text-primary-text truncate">Add notes from this session</span>
-                  </div>
-                  <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={() => {
-                        localStorage.setItem(`mindroot_prompted_notes_${currentSession.id}`, 'true');
-                        setIsSessionNotesPanelOpen(true);
-                      }}
-                      className="px-2.5 py-1 bg-primary text-on-primary rounded-lg text-xs font-bold hover:bg-primary-hover shadow-xs cursor-pointer"
-                    >
-                      Write Notes
-                    </button>
-                    <button
-                      onClick={() => {
-                        localStorage.setItem(`mindroot_prompted_notes_${currentSession.id}`, 'true');
-                        // Force re-render
-                        setCurrentSession({ ...currentSession });
-                      }}
-                      className="p-1 text-muted hover:text-text rounded-md cursor-pointer"
-                      title="Dismiss"
-                      aria-label="Dismiss note prompt"
-                    >
-                      <span className="material-symbols-outlined text-sm">close</span>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={() => navigate('/schedule')}
-                className="w-full py-2.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-extrabold transition-all shadow-elevation-1 active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <span className="material-symbols-outlined text-[17px]">calendar_month</span>
-                Return to Schedule
-              </button>
-
-              {!isTeacher && (
-                <button
-                  onClick={() => navigate('/feedback')}
-                  className="w-full py-2.5 bg-surface-container hover:bg-surface-container-high text-on-surface rounded-xl text-xs font-extrabold transition-all active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-[17px]">star</span>
-                  Leave Session Feedback
-                </button>
-              )}
-
+            {/* Modal Footer Exits */}
+            <div className="space-y-2 pt-2 border-t border-border">
+              {/* Primary or Secondary Back to Dashboard */}
               <button
                 onClick={() => navigate(isTeacher ? '/teacher' : '/dashboard')}
-                className="w-full py-2 bg-transparent hover:bg-surface-container text-on-surface-variant rounded-xl text-xs font-bold transition-all"
+                className={clsx(
+                  "w-full py-2.5 rounded-lg text-xs font-semibold transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-xs",
+                  (!isTeacher && currentSession && currentSession.id !== 'practice' && currentSession.paymentStatus === 'pending' && currentSession.type !== 'swap')
+                    ? "bg-surface hover:bg-surface-2 border border-border text-text"
+                    : "bg-primary hover:bg-primary-hover text-white"
+                )}
               >
-                Back to Dashboard
+                Back to dashboard
               </button>
+
+              <div className="flex items-center justify-center gap-4 text-xs text-muted pt-1">
+                <button
+                  type="button"
+                  onClick={() => navigate('/schedule')}
+                  className="hover:text-text transition-colors cursor-pointer"
+                >
+                  Go to schedule &rarr;
+                </button>
+                {currentSession && currentSession.id !== 'practice' && (
+                  <>
+                    <span>•</span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSessionNotesPanelOpen(true)}
+                      className="hover:text-text transition-colors cursor-pointer"
+                    >
+                      Open session notes
+                    </button>
+                  </>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -3110,6 +3497,138 @@ export function LiveRoom() {
           session={currentSession}
           currentUserId={currentUser?.id}
         />
+      )}
+
+      {/* P5.20: Removed From Room Full-Page Notice (D-KICK-1, D-KICK-2) */}
+      {isKickedFromRoom && (
+        <div className="fixed inset-0 z-50 bg-surface flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-200" data-testid="kicked-notice-overlay">
+          <div className="max-w-md w-full bg-surface-2 border border-border rounded-2xl p-6 sm:p-8 shadow-xl space-y-4">
+            <div className="w-14 h-14 mx-auto rounded-full bg-danger/10 text-danger flex items-center justify-center">
+              <span className="material-symbols-outlined text-3xl">person_remove</span>
+            </div>
+            <h2 className="text-xl font-black text-text">Removed from Class</h2>
+            <p className="text-sm text-muted">
+              You have been removed from this lecture session by the instructor. You cannot rejoin this session unless the instructor allows you back.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  leaveActiveSession({ emitLeave: false });
+                  navigate('/dashboard');
+                }}
+                className="w-full py-2.5 px-4 rounded-xl bg-primary text-on-primary font-bold text-sm shadow-xs hover:opacity-95 transition-all cursor-pointer"
+                data-testid="removed-return-dashboard-btn"
+              >
+                Return to Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P5.21: End Session Confirm Modal (Host only) */}
+      {showEndSessionConfirmModal && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowEndSessionConfirmModal(false);
+          }}
+          data-testid="end-session-modal"
+        >
+          <div className="bg-surface text-text rounded-2xl p-6 max-w-md w-full shadow-xl border border-border space-y-4 text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-danger/10 text-danger flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">call_end</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-text">End session for everyone?</h3>
+                <p className="text-xs text-muted">This will conclude the meeting and disconnect all participants.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setShowEndSessionConfirmModal(false)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-text hover:bg-surface-2 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEndSessionConfirmModal(false);
+                  if (socketRef.current) {
+                    socketRef.current.emit('end-session-room', { roomId });
+                  }
+                  setTimeout(() => {
+                    handleEndCall();
+                  }, 200);
+                }}
+                data-testid="confirm-end-session-for-all-btn"
+                className="px-4 py-2 rounded-xl bg-danger text-white text-xs font-bold shadow-xs hover:bg-danger/90 active:scale-95 transition-all cursor-pointer"
+              >
+                End Session for All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* P5.20: Kick Student Confirm Modal */}
+      {kickConfirmTarget && (
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setKickConfirmTarget(null);
+          }}
+          data-testid="kick-confirm-modal"
+        >
+          <div className="bg-surface text-text rounded-2xl p-6 max-w-md w-full shadow-xl border border-border space-y-4 text-left">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-danger/10 text-danger flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-2xl">person_remove</span>
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-text">Remove student from class?</h3>
+                <p className="text-xs text-muted">
+                  Remove <strong>{kickConfirmTarget.name}</strong> from this session? They cannot rejoin unless you allow them back.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+              <button
+                type="button"
+                onClick={() => setKickConfirmTarget(null)}
+                className="px-3.5 py-2 rounded-xl text-xs font-semibold text-text hover:bg-surface-2 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const target = kickConfirmTarget;
+                  setKickConfirmTarget(null);
+                  if (target) {
+                    socketRef.current?.emit('kick-student', {
+                      roomId,
+                      targetUserId: target.id,
+                      targetPeerId: target.peerId
+                    });
+                    setBannedStudents(prev => [...prev.filter(s => s.id !== target.id), target]);
+                    setRemoteParticipants(prev => prev.filter(p => p.id !== target.id && p.id !== target.peerId));
+                  }
+                }}
+                data-testid="confirm-kick-student-btn"
+                className="px-4 py-2 rounded-xl bg-danger text-white text-xs font-bold shadow-xs hover:bg-danger/90 active:scale-95 transition-all cursor-pointer"
+              >
+                Remove Student
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

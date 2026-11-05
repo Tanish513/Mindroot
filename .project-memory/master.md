@@ -6,7 +6,7 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
 ## Key Modules
 - **Authentication**: JWT & Google OAuth in `server/src/index.ts` and `src/pages/Login.tsx`.
 - **Profiles & Settings**: User preferences, teacher hourly rates, batch pricing tiers, UPI setup, and account lifecycle in `src/pages/Profile.tsx` and `src/pages/TeacherPortal.tsx`.
-- **Marketplace & Booking**: Discover mentors and book sessions with dynamic tiered batch pricing in `src/pages/Marketplace.tsx`.
+- **Marketplace & Discovery Hub**: Unified discovery combining paid 1-on-1 mentors, group cohorts, and reciprocal 1-for-1 skill swaps with dynamic tiered pricing and proposal tracking in `src/pages/Marketplace.tsx` (with `/match-finder` redirect).
 - **Persistence & API**: Express routes in `server/src/index.ts`, Prisma schema in `server/prisma/schema.prisma`, and client in `src/lib/api/index.ts`.
 - **Notes & Journaling**: Daily and regular rich text learning notes with tags, attachments, session association, and mentor-to-student sharing in `server/src/routes/notes.ts` and `src/pages/Notes.tsx`.
 
@@ -82,5 +82,12 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
        - Added tokenVersion to Prisma User schema, JWT payloads, requireAuth, and Socket.io handshake; tokenVersion increments on deletion to revoke all active tokens immediately.
        - Enforced atomic PostgreSQL $transaction for account deletion; deleted user-owned data and sanitized shared records to "Deleted user".
        - Added server/test/account_deletion_run16.test.ts and server/test/mentor_booking_visibility_regression.test.ts.
-- **Latest verification**: All 17 automated backend suites (124/124 tests) and 11 Playwright E2E suites (23/23 tests) passing (147/147 total passing). 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 2.15s.
+   17. UI/UX Platform Humanization & Admin Authentication Hardening:
+       - Design Tokens: Calibrated semantic tokens (`teaching`, `learning`, `card`, `surface-elevated`) in `tailwind.config.js` and `src/index.css`.
+       - Core UI Primitives: Created `Card.tsx` (aliasing `CerebralCard`), `StatusBadge.tsx` and `SkillTag.tsx` (aliasing `NeuralChip`), `Skeleton.tsx`, and `EmptyState.tsx`.
+       - Accessible Buttons: Enhanced `Button.tsx` with explicit `focus-visible:ring-2` keyboard rings.
+       - Modular Dashboard: Decomposed the 1,476-line `Dashboard.tsx` into `DashboardHeroHeader.tsx`, `TodayNoteCard.tsx`, `PeerMatchCard.tsx`, `CommunityChampionsWidget.tsx`, and `UpcomingSessionsWidget.tsx`.
+       - Peer Discovery: Updated `MatchFinder.tsx` with dual-sided skill tags and empty states.
+       - Admin Access & Onboarding: Redesigned `Login.tsx` with instant 1-click demo access for Demo Student, Demo Mentor, and Demo Admin. Configured `ADMIN_EMAIL=admin@mindroot.com`, `ADMIN_PASSWORD=admin123`, and `DEMO_MODE=true` in root and server `.env`.
+- **Latest verification**: All 17 automated backend suites (124/124 tests) and 11 Playwright E2E suites (23/23 tests) passing. 0 server typecheck errors, 0 frontend typecheck errors, production Vite build clean in 1.45s (520 modules), oxlint clean (0 errors across 112 files).
 - **Known Issues**: None. All items fully verified and resolved.

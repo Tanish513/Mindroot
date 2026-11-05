@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AppShell } from './components/layout/AppShell';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { LiveRoomProvider } from './context/LiveRoomContext';
 import { useAppStore } from './store/useAppStore';
 const Dashboard = lazy(() => import('./pages/Dashboard').then(m => ({ default: m.Dashboard })));
 const Marketplace = lazy(() => import('./pages/Marketplace').then(m => ({ default: m.Marketplace })));
@@ -73,9 +74,10 @@ function App() {
   return (
     <ErrorBoundary>
       <BrowserRouter>
-        <AppShell>
-          <Suspense fallback={SuspenseFallback}>
-            <Routes>
+        <LiveRoomProvider>
+          <AppShell>
+            <Suspense fallback={SuspenseFallback}>
+              <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/login" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
@@ -221,6 +223,7 @@ function App() {
           </Routes>
         </Suspense>
       </AppShell>
+      </LiveRoomProvider>
       </BrowserRouter>
     </ErrorBoundary>
   );

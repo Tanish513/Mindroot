@@ -11,7 +11,13 @@ export default defineConfig({
   },
   projects: [
     {
-      name: 'chromium',
+      name: 'acceptance',
+      testIgnore: /capture_.*\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'screenshots',
+      testMatch: /capture_.*\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],

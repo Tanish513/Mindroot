@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
 import { api, onPeersUpdated, onMessagesUpdated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { AISkillMatchBanner } from '../components/chat/AISkillMatchBanner';
@@ -208,44 +209,58 @@ export function Messages() {
   });
 
   return (
-    <div className="max-w-container_max mx-auto h-[calc(100vh-160px)] flex flex-col select-none">
-      <div className="mb-6 shrink-0">
-        <h2 className="text-headline-lg font-headline-lg text-on-surface mb-1">Messages</h2>
-        <p className="text-body-md font-body-md text-on-surface-variant">Chat with peers to coordinate exchanges.</p>
+    <div className="max-w-6xl mx-auto h-[calc(100vh-140px)] flex flex-col space-y-4">
+      <div className="shrink-0 flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-text">Messages & Coordination</h1>
+          <p className="text-xs text-muted mt-0.5">Direct chat with verified peers and mentors to arrange live sessions.</p>
+        </div>
       </div>
 
       {loading ? (
-        <div className="text-center py-16 text-on-surface-variant">Loading conversation channels...</div>
+        <div className="flex-1 flex items-center justify-center text-muted text-xs font-semibold">
+          Loading conversation channels...
+        </div>
       ) : (
-        <div className="flex flex-1 gap-6 min-h-0">
+        <div className="flex flex-1 gap-5 min-h-0">
           {/* Conversations List */}
-          <div className="w-80 shrink-0 bg-surface border border-outline-variant rounded-2xl overflow-hidden flex flex-col shadow-elevation-1">
-            <div className="p-5 border-b border-outline-variant bg-surface-container-low shrink-0">
-              <h3 className="font-black text-base text-on-surface">Conversations</h3>
+          <div className="w-80 shrink-0 bg-surface border border-border rounded-2xl overflow-hidden flex flex-col shadow-xs">
+            <div className="p-4 border-b border-border bg-surface-2 flex items-center justify-between shrink-0">
+              <h2 className="font-bold text-sm text-text">Conversations</h2>
+              <span className="text-[11px] font-semibold text-muted bg-surface px-2 py-0.5 rounded-md border border-border">
+                {filteredPeers.length}
+              </span>
             </div>
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
+            <div className="flex-1 overflow-y-auto custom-scrollbar divide-y divide-border/60">
               {filteredPeers.length === 0 ? (
-                <div className="p-6 text-center text-xs text-on-surface-variant font-bold">No contacts found</div>
+                <div className="p-8 text-center text-xs text-muted font-medium">No contacts found</div>
               ) : (
                 filteredPeers.map((peer, i) => (
                   <button
                     key={peer.id}
                     onClick={() => setActivePeerId(peer.id)}
-                    className={`w-full flex items-center gap-3 p-4 border-b border-outline-variant text-left transition-all duration-200 ${
+                    className={`w-full flex items-center gap-3 p-3.5 text-left transition-all cursor-pointer ${
                       activePeerId === peer.id 
-                        ? 'bg-primary-container border-l-4 border-l-primary text-on-primary-container font-bold' 
-                        : 'hover:bg-surface-container text-on-surface-variant'
+                        ? 'bg-primary-tint/60 border-l-4 border-l-primary text-text font-bold' 
+                        : 'hover:bg-surface-2 text-muted'
                     }`}
                   >
                     <div className="relative shrink-0">
-                      <img src={`https://i.pravatar.cc/150?img=${i + 11}`} alt={`${peer.name}'s profile avatar`} className="w-10 h-10 rounded-full object-cover ring-2 ring-teaching-emerald/30" />
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-teaching-emerald rounded-full ring-2 ring-surface" />
+                      <img 
+                        src={peer.avatar || `https://i.pravatar.cc/150?img=${i + 11}`} 
+                        alt={`${peer.name}'s profile avatar`} 
+                        className="w-10 h-10 rounded-xl object-cover border border-border" 
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-primary rounded-full ring-2 ring-surface" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-center mb-0.5">
-                        <span className="text-xs font-black truncate text-on-surface">{peer.name}</span>
+                        <span className="text-xs font-bold truncate text-text">{peer.name}</span>
+                        {peer.hourlyRate && (
+                          <span className="text-[10px] text-primary font-bold">₹{peer.hourlyRate}/hr</span>
+                        )}
                       </div>
-                      <p className="text-xs text-on-surface-variant truncate font-bold">{getPeerLastMessage(peer.id)}</p>
+                      <p className="text-[11px] text-muted truncate font-normal">{getPeerLastMessage(peer.id)}</p>
                     </div>
                   </button>
                 ))
@@ -254,24 +269,35 @@ export function Messages() {
           </div>
 
           {/* Active Thread */}
-          <div className="flex-1 bg-surface border border-outline-variant rounded-2xl overflow-hidden flex flex-col shadow-elevation-1 min-h-0">
+          <div className="flex-1 bg-surface border border-border rounded-2xl overflow-hidden flex flex-col shadow-xs min-h-0">
             {activePeer ? (
               <>
-                <div className="p-4 border-b border-outline-variant bg-surface-container-low flex items-center justify-between gap-3 shrink-0">
+                <div className="p-3.5 border-b border-border bg-surface-2 flex items-center justify-between gap-3 shrink-0">
                   <div className="flex items-center gap-3">
-                    <div className="relative">
-                      <img src="https://i.pravatar.cc/150?img=12" alt={`${activePeer.name}'s profile avatar`} className="w-10 h-10 rounded-full object-cover ring-2 ring-teaching-emerald/30" />
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-teaching-emerald rounded-full ring-2 ring-surface" />
+                    <div className="relative shrink-0">
+                      <img 
+                        src={activePeer.avatar || "https://i.pravatar.cc/150?img=12"} 
+                        alt={`${activePeer.name}'s profile avatar`} 
+                        className="w-10 h-10 rounded-xl object-cover border border-border" 
+                      />
+                      <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-primary rounded-full ring-2 ring-surface" />
                     </div>
                     <div>
-                      <h4 className="text-sm font-black text-on-surface">{activePeer.name}</h4>
-                      <span className="text-xs text-teaching-emerald flex items-center gap-1 font-bold">
-                        <span className="w-2 h-2 rounded-full bg-teaching-emerald inline-block" /> ₹{activePeer.hourlyRate || 499}/hr • Available
+                      <h3 className="text-sm font-bold text-text flex items-center gap-1.5">
+                        <span>{activePeer.name}</span>
+                        {activePeer.trustScore > 4.8 && (
+                          <span className="material-symbols-outlined text-primary text-sm" title="Verified Peer">verified</span>
+                        )}
+                      </h3>
+                      <span className="text-[11px] text-muted flex items-center gap-1 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" />
+                        ₹{activePeer.hourlyRate || 499}/hr • Available for Mentoring
                       </span>
                     </div>
                   </div>
 
-                  <button
+                  <Button
+                    variant="primary"
                     onClick={() => {
                       setUpiSession({
                         id: `msg-pay-${Date.now()}`,
@@ -284,14 +310,14 @@ export function Messages() {
                       });
                       setIsUpiModalOpen(true);
                     }}
-                    className="px-3.5 py-1.5 bg-teaching-emerald hover:bg-teaching-emerald-hover text-on-teaching-emerald rounded-xl text-xs font-black flex items-center gap-1.5 shadow-elevation-1 transition-all active:scale-95"
+                    className="text-xs py-1.5 px-3 flex items-center gap-1.5 font-bold"
                   >
-                    <span className="material-symbols-outlined text-[15px]">payments</span>
-                    Pay ₹{activePeer.hourlyRate || 499}
-                  </button>
+                    <span className="material-symbols-outlined text-sm">payments</span>
+                    <span>Pay ₹{activePeer.hourlyRate || 499}</span>
+                  </Button>
                 </div>
                 
-                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-surface-container-low/40 custom-scrollbar">
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-surface-2/30 custom-scrollbar">
                   <AISkillMatchBanner
                     currentUser={currentUser}
                     peer={activePeer}
@@ -302,11 +328,11 @@ export function Messages() {
                   />
 
                   {currentConversation.length === 0 ? (
-                    <div className="text-center text-on-surface-variant py-16 text-xs flex flex-col items-center justify-center space-y-2">
-                      <span className="material-symbols-outlined text-3xl text-primary">chat</span>
-                      <p className="font-bold text-on-surface">No messages yet</p>
-                      <p className="text-on-surface-variant font-medium">Send a message to coordinate your exchange!</p>
-                    </div>
+                    <EmptyState
+                      icon="forum"
+                      title="No messages yet"
+                      description="Send a message or propose a skill exchange to coordinate your lecture!"
+                    />
                   ) : (
                     currentConversation.map((msg, i) => {
                       const isMe = msg.senderId === currentUser?.id;
@@ -314,35 +340,35 @@ export function Messages() {
                       const isFailed = msg.status === 'failed';
                       return (
                         <div key={msg.id || i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
-                          <div className={`max-w-[70%] px-4 py-2.5 rounded-2xl text-xs relative ${
+                          <div className={`max-w-[72%] px-4 py-2.5 rounded-2xl text-xs relative leading-relaxed ${
                             isFailed
-                              ? 'bg-alert-rose-container text-on-alert-rose-container border border-alert-rose/20 rounded-tr-none font-medium'
+                              ? 'bg-danger/10 text-danger border border-danger/20 rounded-tr-xs font-medium'
                               : isMe
-                                ? `bg-primary text-on-primary rounded-tr-none font-bold shadow-elevation-1 ${isSending ? 'opacity-70' : ''}`
-                                : 'bg-surface text-on-surface rounded-tl-none shadow-elevation-1 border border-outline-variant font-medium'
+                                ? `bg-primary text-on-primary rounded-tr-xs font-medium shadow-xs ${isSending ? 'opacity-70' : ''}`
+                                : 'bg-surface text-text rounded-tl-xs shadow-xs border border-border font-medium'
                           }`}>
                             <p>{msg.text}</p>
                             {isSending && (
                               <span className="inline-flex items-center gap-1 text-[10px] text-on-primary/80 font-normal mt-1">
-                                <span className="material-symbols-outlined text-[12px] animate-spin">schedule</span> Sending...
+                                <span className="material-symbols-outlined text-xs animate-spin">schedule</span> Sending...
                               </span>
                             )}
                           </div>
                           {isFailed && (
-                            <div className="flex items-center gap-2 mt-1 text-[11px] font-bold text-alert-rose">
+                            <div className="flex items-center gap-2 mt-1 text-[11px] font-bold text-danger">
                               <span className="flex items-center gap-0.5">
                                 <span className="material-symbols-outlined text-xs">error</span> Failed to send
                               </span>
                               <button 
                                 onClick={() => handleSend(msg.text, msg.id)}
-                                className="underline hover:text-alert-rose-hover"
+                                className="underline hover:opacity-80 cursor-pointer"
                               >
                                 Retry
                               </button>
                               <span>•</span>
                               <button 
                                 onClick={() => handleRemoveFailedMsg(msg.id)}
-                                className="underline hover:text-alert-rose-hover"
+                                className="underline hover:opacity-80 cursor-pointer"
                               >
                                 Remove
                               </button>
@@ -355,23 +381,28 @@ export function Messages() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                <div className="p-4 border-t border-outline-variant bg-surface shrink-0 flex gap-3 items-center">
+                <div className="p-3 border-t border-border bg-surface shrink-0 flex gap-2.5 items-center">
                   <input
                     type="text"
                     value={inputText}
                     onChange={e => setInputText(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && handleSend()}
-                    placeholder="Type a message..."
-                    className="flex-1 px-4 py-2.5 bg-surface-container border border-outline-variant rounded-xl text-xs font-medium text-on-surface placeholder:text-neutral-subtle focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all duration-200"
+                    placeholder="Type a message to your peer..."
+                    className="flex-1 px-4 py-2.5 bg-surface-2 border border-border rounded-xl text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all"
                   />
-                  <Button variant="primary" className="px-4 py-2 font-bold" onClick={() => handleSend()}>
+                  <Button variant="primary" className="px-4 py-2 font-bold flex items-center gap-1" onClick={() => handleSend()}>
                     <span className="material-symbols-outlined text-sm">send</span>
+                    <span>Send</span>
                   </Button>
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-on-surface-variant">
-                Select a conversation to start chatting.
+              <div className="flex-1 flex items-center justify-center p-8">
+                <EmptyState
+                  icon="chat"
+                  title="No conversation selected"
+                  description="Choose a peer from the left panel to begin discussing exchanges or live sessions."
+                />
               </div>
             )}
           </div>

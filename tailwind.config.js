@@ -7,12 +7,25 @@ export default {
   darkMode: ["selector", '[data-theme="dark"]'],
   theme: {
     extend: {
+      animation: {
+        "gentle-pulse": "gentle-pulse 2s ease-in-out infinite",
+      },
+      keyframes: {
+        "gentle-pulse": {
+          "0%, 100%": { transform: "scale(1)", opacity: "1" },
+          "50%": { transform: "scale(1.05)", opacity: "0.88" },
+        },
+      },
       colors: {
         // Mindroot Semantic Design Tokens
         bg: "var(--bg)",
         surface: "var(--surface)",
         "surface-2": "var(--surface-2)",
+        "surface-elevated": "var(--surface)",
         border: "var(--border)",
+        "border-subtle": "var(--border)",
+        card: "var(--surface)",
+        "card-border": "var(--border)",
         text: "var(--text)",
         muted: "var(--muted)",
         "text-muted": "var(--muted)",
@@ -28,6 +41,18 @@ export default {
         "accent-soft": "var(--accent-tint)",
         "accent-tint": "var(--accent-tint)",
         "accent-text": "var(--accent-text)",
+        "accent-deep": "var(--accent-deep)",
+        "accent-glow": "var(--accent-glow)",
+        "missed-dot": "var(--missed-dot)",
+        "missed-text": "var(--missed-text)",
+
+        // Peer Learning Dual-Sided Semantic Tokens
+        teaching: "var(--primary)",
+        "teaching-bg": "var(--primary-tint)",
+        "teaching-text": "var(--primary-text)",
+        learning: "var(--accent)",
+        "learning-bg": "var(--accent-tint)",
+        "learning-text": "var(--accent-text)",
 
         danger: "var(--danger)",
 

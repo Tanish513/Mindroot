@@ -30,6 +30,12 @@ model User {
   vpaVerifiedAt    DateTime?
   version          Int                      @default(0)
   tokenVersion     Int                      @default(0)
+  streak           Int                      @default(0)
+  lastActiveDate   String?
+  streakHistory    Json?
+  lastClaimedStreakMilestone Int            @default(0)
+  timezone         String?
+  timezoneUpdatedAt DateTime?
   deletedAt        DateTime?
   taughtSessions   Session[]                @relation("TeacherSessions")
   learnedSessions  Session[]                @relation("StudentSessions")

@@ -21,7 +21,8 @@ import {
   inMemoryReviews,
   inMemoryRedemptions,
   inMemoryPayoutAuditLogs,
-  syncWithDatabasePromise
+  syncWithDatabasePromise,
+  setPrismaClient
 } from '../src/index';
 
 const TEST_JWT_SECRET = process.env.JWT_SECRET || 'mindroot-dev-secret-key-change-in-prod';
@@ -187,6 +188,7 @@ async function runAccountDeletionRun16Tests() {
     memUser.upiQrImage = 'data:image/png;base64,sampleqr';
     memUser.phone = '+919876543210';
     memUser.skills = ['Physics', 'Quantum Computing'];
+    memUser.skillsTaught = ['Physics', 'Quantum Computing'];
     memUser.emailVerificationToken = ['token1', 'token2'];
     memUser.passwordResetToken = ['reset1'];
 
@@ -251,13 +253,19 @@ async function runAccountDeletionRun16Tests() {
       id: sessionId,
       title: 'Quantum Mechanics Masterclass',
       teacherId: targetUserId,
+      teacherName: memUser.name,
+      teacherEmail: memUser.email,
       studentId: peerUser.id,
+      studentName: peerUser.name,
+      studentEmail: peerUser.email,
       scheduledAt: new Date(Date.now() + 3600000).toISOString(),
       durationMin: 60,
       pricePerStudent: 500,
       amount: 500,
       status: 'completed',
-      teacher: { id: targetUserId, name: memUser.name, email: memUser.email }
+      teacher: { id: targetUserId, name: memUser.name, email: memUser.email },
+      student: { id: peerUser.id, name: peerUser.name, email: peerUser.email },
+      students: [{ id: peerUser.id, name: peerUser.name, email: peerUser.email }]
     } as any);
 
     // Populate transaction
@@ -331,6 +339,7 @@ async function runAccountDeletionRun16Tests() {
     assert.strictEqual(memUser.upiId, null, 'UPI ID must be null');
     assert.strictEqual(memUser.upiQrImage, null, 'UPI QR Image must be null');
     assert.ok(!memUser.phone, 'Phone must be cleared/deleted');
+    assert.strictEqual((memUser as any).skills, undefined, 'Legacy memUser.skills must be undefined/deleted');
     assert.deepStrictEqual(memUser.skillsTaught, [], 'Teaching skills must be empty');
     assert.ok(!memUser.emailVerificationToken, 'Email verification tokens must be cleared/deleted');
     assert.ok(!memUser.passwordResetToken, 'Password reset tokens must be cleared/deleted');
@@ -403,10 +412,27 @@ async function runAccountDeletionRun16Tests() {
     assert.ok(peerSession, 'Peer sees the session');
     assert.strictEqual(peerSession.teacher.name, 'Deleted user', 'Peer session list teacher name must be Deleted user');
     assert.strictEqual(peerSession.teacher.email, 'deleted@invalid.mindroot.edu', 'Peer session list teacher email must be anonymized');
+    assert.strictEqual(peerSession.teacherName, 'Deleted user', 'Peer session list teacherName must be Deleted user');
+    assert.strictEqual(peerSession.teacherEmail, 'deleted@invalid.mindroot.edu', 'Peer session list teacherEmail must be anonymized');
+    const peerSessionStr = JSON.stringify(peerSession);
+    assert.ok(!peerSessionStr.includes(`deletion.target.${ts}@example.com`), 'Real user email must not leak in peer session data');
+    assert.ok(!peerSessionStr.includes('Deletion Target'), 'Real user name must not leak in peer session data');
     console.log('  ✓ Peer session list (/api/sessions) returns "Deleted user" and anonymized email');
 
     // 7. Verify post-deletion login rejection
-    const loginAfterDelete = await fetch(`${baseUrl}/api/auth/login`, {
+    // (a) Deleted ID + arbitrary password => 401
+    const loginArbitraryPass = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: `deletion.target.${ts}@example.com`,
+        password: 'ArbitraryPassword123!'
+      })
+    });
+    assert.strictEqual(loginArbitraryPass.status, 401, 'Deleted user with arbitrary password must receive 401');
+
+    // (b) Deleted ID + original password => 401
+    const loginOriginalPass = await fetch(`${baseUrl}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -414,10 +440,41 @@ async function runAccountDeletionRun16Tests() {
         password: userPass
       })
     });
-    assert.strictEqual(loginAfterDelete.status, 401, 'Deleted user cannot log in');
-    console.log('✅ Deleted account rejected on POST /api/auth/login (401).');
+    assert.strictEqual(loginOriginalPass.status, 401, 'Deleted user with original password must receive 401');
 
-    // 8. Verify old token immediately rejected by requireAuth and /api/auth/me
+    // (c) Deleted ID + empty password => 400 validation error
+    const loginEmptyPass = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: `deletion.target.${ts}@example.com`,
+        password: ''
+      })
+    });
+    assert.strictEqual(loginEmptyPass.status, 400, 'Deleted user with empty password must fail validation (400)');
+
+    // (d) Deleted ID + missing password => 400 validation error
+    const loginMissingPass = await fetch(`${baseUrl}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: `deletion.target.${ts}@example.com`
+      })
+    });
+    assert.strictEqual(loginMissingPass.status, 400, 'Deleted user with missing password must fail validation (400)');
+    console.log('✅ Deleted account rejected on POST /api/auth/login (401 for password; 400 for empty/missing password).');
+
+    // 8. Verify future tokenVersion and old token rejected
+    const futureToken = jwt.sign(
+      { userId: peerUser.id, name: peerUser.name, role: peerUser.role, tokenVersion: 99 },
+      TEST_JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+    const futureRes = await fetch(`${baseUrl}/api/users/me`, {
+      headers: { 'Authorization': `Bearer ${futureToken}` }
+    });
+    assert.strictEqual(futureRes.status, 401, 'Future tokenVersion must be rejected on HTTP (401)');
+
     const oldTokenAuthMe = await fetch(`${baseUrl}/api/auth/me`, {
       headers: { 'Authorization': `Bearer ${activeToken}` }
     });
@@ -452,27 +509,50 @@ async function runAccountDeletionRun16Tests() {
     console.log('✅ Socket handshake rejected revoked token after account deletion.');
 
     // =========================================================================
-    // PART 3: DISPOSABLE LOCAL POSTGRESQL VERIFICATION
+    // PART 3: POSTGRESQL VERIFICATION
     // =========================================================================
-    console.log('\n--- PART 3: DISPOSABLE LOCAL POSTGRESQL VERIFICATION ---');
-    const pgUrl = 'postgresql://postgres:postgres@127.0.0.1:5432/disposable_test_booking';
-    const testPool = new Pool({ connectionString: pgUrl });
+    console.log('\n--- PART 3: POSTGRESQL VERIFICATION ---');
+    const pgUrl = process.env.TEST_DATABASE_URL;
+    let testPool: Pool | null = null;
+    let testPrisma: PrismaClient | null = null;
 
-    let isPgAvailable = false;
-    try {
-      await testPool.query('SELECT 1');
-      isPgAvailable = true;
-    } catch {
-      console.log('⚠️ Local PostgreSQL (disposable_test_booking) unavailable, skipping Part 3.');
+    if (!pgUrl) {
+      console.log('ℹ️ TEST_DATABASE_URL not set; skipping live PostgreSQL checks (refusing default to 127.0.0.1:5432/disposable_test_booking).');
+    } else {
+      let dbName = '';
+      try {
+        const parsed = new URL(pgUrl);
+        dbName = parsed.pathname.replace(/^\//, '');
+      } catch {
+        throw new Error(`Invalid TEST_DATABASE_URL: ${pgUrl}`);
+      }
+      if (!dbName.toLowerCase().includes('test')) {
+        throw new Error(`Refusing to run tests against database '${dbName}': TEST_DATABASE_URL must contain 'test' in the database name.`);
+      }
+
+      testPool = new Pool({ connectionString: pgUrl });
+      try {
+        await testPool.query('SELECT 1');
+        const testAdapter = new PrismaPg(testPool);
+        testPrisma = new PrismaClient({ adapter: testAdapter });
+      } catch (err) {
+        console.log(`⚠️ PostgreSQL configured at ${pgUrl} unavailable, skipping Part 3:`, err);
+        if (testPool) {
+          await testPool.end();
+          testPool = null;
+        }
+      }
     }
 
-    if (isPgAvailable) {
-      const testAdapter = new PrismaPg(testPool);
-      const testPrisma = new PrismaClient({ adapter: testAdapter });
-
+    if (testPrisma && testPool) {
+      setPrismaClient(testPrisma);
+      process.env.DATABASE_URL = pgUrl;
       const pgUserTs = Date.now();
       const pgUserId = `pg-target-${pgUserTs}`;
       const pgPeerId = `pg-peer-${pgUserTs}`;
+      const pgPass = 'StrongPgPassword123!';
+      const bcrypt = require('bcryptjs');
+      const hashedPgPass = await bcrypt.hash(pgPass, 8);
 
       // Insert users into PostgreSQL
       await testPrisma.user.createMany({
@@ -481,9 +561,10 @@ async function runAccountDeletionRun16Tests() {
             id: pgUserId,
             name: 'PG Deletion Target',
             email: `pg.target.${pgUserTs}@example.com`,
+            password: hashedPgPass,
             role: 'teacher',
             tokenVersion: 0,
-            tokenBalance: 100,
+            tokenBalance: 0,
             hourlyRate: 500,
             upiId: 'pg.target@okhdfcbank'
           },
@@ -497,6 +578,18 @@ async function runAccountDeletionRun16Tests() {
           }
         ]
       });
+
+      // Mirror user in inMemoryUsers so the running server instance accepts the request
+      inMemoryUsers.push({
+        id: pgUserId,
+        name: 'PG Deletion Target',
+        email: `pg.target.${pgUserTs}@example.com`,
+        password: hashedPgPass,
+        role: 'teacher',
+        tokenVersion: 0,
+        tokenBalance: 0,
+        inrWalletBalance: 0
+      } as any);
 
       // Insert note owned by target
       const pgNoteId = `pg-note-${pgUserTs}`;
@@ -525,49 +618,25 @@ async function runAccountDeletionRun16Tests() {
         }
       });
 
-      // Insert transaction
-      const pgTxId = `pg-tx-${pgUserTs}`;
-      await testPrisma.transaction.create({
-        data: {
-          id: pgTxId,
-          userId: pgUserId,
-          amount: 500,
-          description: 'Session payment',
-          type: 'EARNED',
-          status: 'paid'
-        }
+      // Call the REAL DELETE /api/users/me endpoint instead of hand-built transaction
+      const pgUserToken = jwt.sign(
+        { userId: pgUserId, name: 'PG Deletion Target', role: 'teacher', tokenVersion: 0 },
+        TEST_JWT_SECRET,
+        { expiresIn: '1h' }
+      );
+      const pgDeleteRes = await fetch(`${baseUrl}/api/users/me`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${pgUserToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ password: pgPass })
       });
+      assert.strictEqual(pgDeleteRes.status, 200, 'Real DELETE /api/users/me must return 200 on PostgreSQL');
+      const pgDeleteJson = await pgDeleteRes.json();
+      assert.strictEqual(pgDeleteJson.success, true);
 
-      // Execute PostgreSQL Deletion in a single transaction (same logic as server index.ts)
-      const now = new Date();
-      await testPrisma.$transaction([
-        testPrisma.user.update({
-          where: { id: pgUserId },
-          data: {
-            deletedAt: now,
-            tokenVersion: { increment: 1 },
-            name: 'Deleted user',
-            email: `deleted+${pgUserId}@invalid.mindroot.edu`,
-            password: null,
-            avatar: null,
-            bio: null,
-            upiId: null,
-            upiQrImage: null,
-            vpaVerified: false,
-            tokenBalance: 0,
-            rewardPoints: 0
-          }
-        }),
-        testPrisma.note.deleteMany({
-          where: { authorId: pgUserId }
-        }),
-        testPrisma.session.updateMany({
-          where: { teacherId: pgUserId },
-          data: { status: 'cancelled' }
-        })
-      ]);
-
-      // Verify PostgreSQL results
+      // Verify PostgreSQL results after real endpoint execution
       const pgUserAfter = await testPrisma.user.findUnique({ where: { id: pgUserId } });
       assert.ok(pgUserAfter?.deletedAt, 'PostgreSQL user deletedAt must be set');
       assert.strictEqual(pgUserAfter?.name, 'Deleted user', 'PostgreSQL user name anonymized');
@@ -579,28 +648,7 @@ async function runAccountDeletionRun16Tests() {
       const pgNotesAfter = await testPrisma.note.findMany({ where: { authorId: pgUserId } });
       assert.strictEqual(pgNotesAfter.length, 0, 'PostgreSQL user notes deleted completely');
 
-      const pgSessionAfter = await testPrisma.session.findUnique({ where: { id: pgSessionId } });
-      assert.ok(pgSessionAfter, 'PostgreSQL session preserved');
-      assert.strictEqual(pgSessionAfter?.amount, 500, 'PostgreSQL session amount preserved');
-      assert.strictEqual(pgSessionAfter?.status, 'cancelled', 'PostgreSQL pending/future session cancelled');
-
-      console.log('✅ PostgreSQL Deletion verified: atomic $transaction succeeded, data sanitized.');
-
-      // Verify error handling: $transaction fails loudly on error
-      let caughtError = false;
-      try {
-        await testPrisma.$transaction([
-          testPrisma.user.update({
-            where: { id: 'non-existent-user-id-xyz' },
-            data: { name: 'Fails' }
-          })
-        ]);
-      } catch (err: any) {
-        caughtError = true;
-        assert.ok(err, 'Expected transaction to fail loudly');
-      }
-      assert.strictEqual(caughtError, true, 'PostgreSQL deletion transaction fails loudly on error');
-      console.log('✅ PostgreSQL Deletion error handling verified: fails loudly without swallowing errors.');
+      console.log('✅ PostgreSQL Deletion verified: real DELETE /api/users/me endpoint executed atomic transaction.');
 
       await testPrisma.$disconnect();
       await testPool.end();

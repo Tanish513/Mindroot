@@ -13,6 +13,12 @@ dist-ssr
 *.local
 db.json
 server/db.json
+server/uploads/
+.codex-run19-clean-archive/
+
+# Python
+__pycache__/
+*.py[cod]
 
 # Environment variables & secrets
 .env

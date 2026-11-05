@@ -8,33 +8,51 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'amber' | 'mint' | 'ghost' | 'danger';
+export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
+  variant?: 'primary' | 'secondary' | 'amber' | 'mint' | 'ghost' | 'danger' | 'outline';
+  size?: 'sm' | 'md' | 'lg';
+  isLoading?: boolean;
 }
 
 export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant = 'primary', ...props }, ref) => {
-    const baseStyles = "inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ease-in-out focus:outline-none select-none";
+  ({ className, variant = 'primary', size = 'md', isLoading = false, disabled, children, ...props }, ref) => {
+    const baseStyles = "inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-all duration-150 select-none cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
     
+    const sizeStyles = {
+      sm: "px-3 py-1.5 text-xs font-medium rounded-lg",
+      md: "px-4 py-2.5 text-sm",
+      lg: "px-5 py-3 text-base"
+    };
+
     const variants = {
-      primary: "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-hover shadow hover:shadow-md focus:ring-2 focus:ring-primary/20 focus:ring-offset-2 focus:ring-offset-bg",
-      secondary: "bg-surface text-text border border-border shadow hover:bg-surface-2 hover:text-text hover:border-border focus:ring-2 focus:ring-primary/20",
-      amber: "bg-accent text-on-primary hover:opacity-90 shadow hover:shadow-md focus:ring-2 focus:ring-accent/20",
-      mint: "bg-primary-tint text-primary-text border border-primary/20 hover:bg-primary-tint/80 shadow",
-      ghost: "bg-transparent text-primary-text hover:bg-primary-tint hover:text-primary-text focus:ring-2 focus:ring-primary/20",
-      danger: "bg-danger text-white hover:opacity-90 shadow hover:shadow-md focus:ring-2 focus:ring-danger/20"
+      primary: "bg-primary text-on-primary hover:bg-primary-hover active:bg-primary-hover shadow-sm hover:shadow",
+      secondary: "bg-surface text-text border border-border shadow-sm hover:bg-surface-2 hover:border-border/80",
+      outline: "bg-transparent text-text border border-border hover:bg-surface-2 hover:border-text/30",
+      amber: "bg-accent text-on-primary hover:opacity-90 shadow-sm",
+      mint: "bg-primary-tint text-primary-text border border-primary/20 hover:bg-primary-tint/80",
+      ghost: "bg-transparent text-text hover:bg-surface-2 hover:text-primary-text",
+      danger: "bg-danger text-white hover:opacity-90 shadow-sm"
     };
 
     return (
       <motion.button
         ref={ref}
-        whileHover={{ scale: 1.03, y: -1 }}
-        whileTap={{ scale: 0.96 }}
-        transition={{ type: "spring", stiffness: 400, damping: 25 }}
-        className={cn(baseStyles, variants[variant], className)}
+        whileHover={disabled || isLoading ? undefined : { y: -1 }}
+        whileTap={disabled || isLoading ? undefined : { y: 0, scale: 0.99 }}
+        transition={{ duration: 0.12 }}
+        disabled={disabled || isLoading}
+        className={cn(baseStyles, sizeStyles[size], variants[variant], className)}
         {...(props as any)}
-      />
+      >
+        {isLoading && (
+          <span className="material-symbols-outlined text-[16px] animate-spin">
+            progress_activity
+          </span>
+        )}
+        {children}
+      </motion.button>
     );
   }
 );
+
 Button.displayName = 'Button';

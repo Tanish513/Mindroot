@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, onTransactionsUpdated, onSessionsUpdated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
 import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
 
 
@@ -1166,7 +1167,13 @@ export function Wallet() {
         </div>
         <div className="divide-y divide-border">
           {filteredTransactions.length === 0 ? (
-            <div className="p-8 text-center text-xs text-muted font-semibold">No payment transactions recorded in this view.</div>
+            <div className="p-6">
+              <EmptyState 
+                icon="receipt_long" 
+                title="No payment transactions recorded" 
+                description="Completed sessions and peer settlements will appear in this ledger." 
+              />
+            </div>
           ) : (
             filteredTransactions.map((tx, i) => (
             <div 

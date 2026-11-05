@@ -1,24 +1,26 @@
-import { motion } from 'framer-motion';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Button } from '../components/ui/Button';
 import { useAppStore } from '../store/useAppStore';
 import { api, onSessionsUpdated, onTransactionsUpdated, onPeersUpdated, getSessionApproverId } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 import { SessionNotesPanel } from '../components/notes/SessionNotesPanel';
+import { DashboardHeroHeader } from '../components/dashboard/DashboardHeroHeader';
+import { SuggestedPeersCard } from '../components/dashboard/SuggestedPeersCard';
+import { UpcomingSessionsWidget } from '../components/dashboard/UpcomingSessionsWidget';
+import { OnboardingChecklistCard } from '../components/dashboard/OnboardingChecklistCard';
 
 export function Dashboard() {
   const { currentUser, setCurrentUser, searchQuery, setSearchQuery, role, loginRole, addNotification } = useAppStore();
   const [sessions, setSessions] = useState<any[]>([]);
   const [peers, setPeers] = useState<any[]>([]);
+  const [peerReviewsMap, setPeerReviewsMap] = useState<Record<string, { count: number; avgRating: number }>>({});
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [champions, setChampions] = useState<any[]>([]);
-  const [loadingChampions, setLoadingChampions] = useState<boolean>(true);
   const [actingSessionId, setActingSessionId] = useState<string | null>(null);
+  const [hasVisitedMatchFinder, setHasVisitedMatchFinder] = useState(() => {
+    return localStorage.getItem('mindroot_onboarding_matched') === 'true';
+  });
   const navigate = useNavigate();
 
-  // Today's Note Dashboard Card State
-  const [todayNote, setTodayNote] = useState<any | null>(null);
-  const [isAnimatingToday, setIsAnimatingToday] = useState(false);
   const visitRecordedRef = useRef<string | null>(null);
 
   // Dedicated daily visit recording effect (runs once per authenticated user session)
@@ -31,29 +33,11 @@ export function Dashboard() {
     api.recordVisit(userTz).then((res: any) => {
       if (res?.success && res.user) {
         setCurrentUser(res.user);
-        const today = res.todayStr || getLocalDateStr(new Date());
-        const animKey = `mindroot_streak_anim_${currentUser.id}_${today}`;
-        const animAlreadyPlayed = localStorage.getItem(animKey) === 'true';
-        const prefersReducedMotion = typeof window !== 'undefined' &&
-          window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-        if (res.isFirstVisitToday && !animAlreadyPlayed) {
-          localStorage.setItem(animKey, 'true');
-          if (!prefersReducedMotion) {
-            setIsAnimatingToday(true);
-            setTimeout(() => {
-              setIsAnimatingToday(false);
-            }, 750);
-          }
-        }
       }
     }).catch(() => {
       // Fail closed: keep non-visited state
     });
   }, [currentUser?.id, setCurrentUser]);
-  const [todayNoteInput, setTodayNoteInput] = useState('');
-  const [isSavingTodayNote, setIsSavingTodayNote] = useState(false);
-  const [noteStreak, setNoteStreak] = useState(0);
 
   // Session Notes Panel State & Counts
   const [sessionNoteCounts, setSessionNoteCounts] = useState<Record<string, number>>({});
@@ -64,27 +48,11 @@ export function Dashboard() {
       api.getMe().then(setCurrentUser).catch(console.error);
     }
     api.getSessions().then(setSessions).catch(console.error);
-    api.getPeers().then(setPeers).catch(console.error);
+    api.getPeers().then(data => {
+      console.log('[DASHBOARD] getPeers loaded count:', Array.isArray(data) ? data.length : typeof data);
+      setPeers(data);
+    }).catch(err => console.error('[DASHBOARD] getPeers error:', err));
     api.getTransactions().then(setTransactions).catch(console.error);
-    api.getCommunityChampions().then(data => {
-      setChampions(data || []);
-      setLoadingChampions(false);
-    }).catch(() => setLoadingChampions(false));
-
-    const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
-
-    // Load today's daily note and note streak
-    api.getTodayNote(userTz).then(res => {
-      if (res?.note) {
-        setTodayNote(res.note);
-      }
-    }).catch(() => {});
-
-    api.getDailyStreak(userTz).then(res => {
-      if (typeof res?.noteStreak === 'number') {
-        setNoteStreak(res.noteStreak);
-      }
-    }).catch(() => {});
 
     // Fetch notes to compute session notes counts
     api.getNotes().then((notesData: any[]) => {
@@ -109,10 +77,10 @@ export function Dashboard() {
       api.getTransactions().then(setTransactions).catch(console.error);
     });
     const unsubPeers = onPeersUpdated(() => {
-      api.getPeers().then(setPeers).catch(console.error);
-      api.getCommunityChampions().then(data => {
-        if (data && data.length) setChampions(data);
-      }).catch(console.error);
+      api.getPeers().then(data => {
+        console.log('[DASHBOARD] getPeers loaded count:', Array.isArray(data) ? data.length : typeof data);
+        setPeers(data);
+      }).catch(err => console.error('[DASHBOARD] getPeers error:', err));
     });
     return () => {
       unsubSessions();
@@ -120,6 +88,32 @@ export function Dashboard() {
       unsubPeers();
     };
   }, [currentUser, setCurrentUser]);
+
+  // Load reviews for peers to display truthful ratings / "New" badge
+  useEffect(() => {
+    if (!peers || peers.length === 0) return;
+    const peerIds = peers.slice(0, 15).map((p: any) => p.id).filter(Boolean);
+    Promise.all(
+      peerIds.map(async (id: string) => {
+        try {
+          const reviews = await api.getReviews(id);
+          if (Array.isArray(reviews) && reviews.length > 0) {
+            const sum = reviews.reduce((acc: number, r: any) => acc + (Number(r.rating) || 5), 0);
+            return { id, count: reviews.length, avgRating: sum / reviews.length };
+          }
+          return { id, count: 0, avgRating: 0 };
+        } catch {
+          return { id, count: 0, avgRating: 0 };
+        }
+      })
+    ).then((results) => {
+      const map: Record<string, { count: number; avgRating: number }> = {};
+      for (const res of results) {
+        if (res) map[res.id] = { count: res.count, avgRating: res.avgRating };
+      }
+      setPeerReviewsMap(map);
+    });
+  }, [peers]);
 
   // Live Daily Streak & Weekly Calendar Calculation
   const [currentDate, setCurrentDate] = useState(() => new Date());
@@ -168,7 +162,6 @@ export function Dashboard() {
   const currentMilestone = Math.floor(currentStreak / 7);
   const lastClaimedMilestone = currentUser?.lastClaimedStreakMilestone || 0;
   const canClaimBonus = currentStreak >= 7 && lastClaimedMilestone < currentMilestone;
-  const daysUntilBonus = 7 - (currentStreak % 7);
 
   // Weekly calendar days (Monday to Sunday)
   const weeklyTrackerDays = useMemo(() => {
@@ -353,6 +346,62 @@ export function Dashboard() {
     return scoredPeers[0] || null;
   }, [currentUser, peers, sessions]);
 
+  // Fallback to top community members if no personalized recommendations exist
+  const suggestedPeersList = useMemo(() => {
+    if (!currentUser || !peers || peers.length === 0) return [];
+
+    const otherPeers = peers.filter(p => p && p.id && p.id !== currentUser.id && p.role !== 'admin');
+    if (otherPeers.length === 0) return [];
+
+    const formatRating = (peerId: string) => {
+      const info = peerReviewsMap[peerId];
+      if (info && info.count > 0) {
+        return { rating: info.avgRating.toFixed(1), isNew: false, reviewCount: info.count };
+      }
+      return { rating: 'New', isNew: true, reviewCount: 0 };
+    };
+
+    const result: any[] = [];
+    if (recommendedPeerMatch) {
+      const rInfo = formatRating(recommendedPeerMatch.peer.id);
+      result.push({
+        id: recommendedPeerMatch.peer.id,
+        name: recommendedPeerMatch.peer.name || 'Peer Scholar',
+        avatar: recommendedPeerMatch.peer.avatar,
+        role: `Teaches ${recommendedPeerMatch.teachStr} • Learns ${recommendedPeerMatch.learnStr}`,
+        rating: rInfo.rating,
+        isNew: rInfo.isNew,
+        reviewCount: rInfo.reviewCount,
+        matchScore: recommendedPeerMatch.matchScore,
+        isAvailableNow: recommendedPeerMatch.peer.isAvailableNow
+      });
+    }
+
+    for (const p of otherPeers) {
+      if (result.some(r => r.id === p.id)) continue;
+      const teaches = Array.isArray(p.skillsTaught) && p.skillsTaught.length > 0 
+        ? p.skillsTaught.slice(0, 2).join(' & ') 
+        : (Array.isArray(p.userSkills) 
+          ? p.userSkills.filter((s: any) => s.type === 'teaches').map((s: any) => s.skill?.name).filter(Boolean).slice(0, 2).join(' & ') 
+          : 'Peer Mentoring');
+      const roleStr = p.role === 'teacher' ? `Mentor • Teaches ${teaches}` : `Student • Teaches ${teaches}`;
+      const rInfo = formatRating(p.id);
+      result.push({
+        id: p.id,
+        name: p.name || 'Peer Scholar',
+        avatar: p.avatar,
+        role: roleStr,
+        rating: rInfo.rating,
+        isNew: rInfo.isNew,
+        reviewCount: rInfo.reviewCount,
+        isAvailableNow: p.isAvailableNow
+      });
+      if (result.length >= 3) break;
+    }
+
+    return result;
+  }, [currentUser, peers, recommendedPeerMatch, peerReviewsMap]);
+
   if (!currentUser) return <div className="p-8 text-center text-on-surface-variant font-bold animate-pulse text-sm">Loading dashboard...</div>;
 
   const isBothRole = loginRole === 'both' || currentUser?.role === 'both';
@@ -430,24 +479,6 @@ export function Dashboard() {
   );
   const totalEarned = teacherEarnedTransactions.reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-  // Pending payment due for student sessions (unpaid enrolled sessions)
-  const pendingStudentSessions = sessions.filter(s => {
-    const studentEntry = Array.isArray(s.students) ? s.students.find((st: any) => st.id === currentUser.id) : null;
-    if (studentEntry) {
-      return studentEntry.paymentStatus !== 'paid';
-    }
-    const isDirectStudent = s.studentId === currentUser.id;
-    return isDirectStudent && s.paymentStatus !== 'paid';
-  });
-
-  const pendingPaymentDue = pendingStudentSessions.reduce((sum, s) => {
-    const studentEntry = Array.isArray(s.students) ? s.students.find((st: any) => st.id === currentUser.id) : null;
-    if (studentEntry && typeof studentEntry.amountDue === 'number' && studentEntry.amountDue >= 0) {
-      return sum + studentEntry.amountDue;
-    }
-    return sum + (Number(s.pricePerStudent) || Number(s.amount) || 499);
-  }, 0);
-
   // Hours calculation
   const studentSessions = sessions.filter(s => 
     s.studentId === currentUser.id || (Array.isArray(s.students) && s.students.some((st: any) => st.id === currentUser.id))
@@ -469,7 +500,6 @@ export function Dashboard() {
 
   const activeSkillsList = isTeacherRole ? teachSkills : (learnSkills.length ? learnSkills : teachSkills);
   const activeTopicsCount = activeSkillsList.length.toString();
-  const activeTopicTags = activeSkillsList.slice(0, 2);
 
   // Contextual time greeting
   const getGreeting = () => {
@@ -546,56 +576,49 @@ export function Dashboard() {
     ? 'Student & Peer Mentor' 
     : (isTeacherRole ? 'Teacher & Mentor' : 'Student Learner');
 
-  const roleSubtitle = isTeacherRole 
-    ? `You have ${confirmedSessions.length} active lecture${confirmedSessions.length !== 1 ? 's' : ''} scheduled with student payments enabled.`
-    : `You have ${confirmedSessions.length} active learning session${confirmedSessions.length !== 1 ? 's' : ''} scheduled.`;
+  const roleSubtitle = confirmedSessions.length === 0
+    ? "Let's get your first session booked."
+    : isTeacherRole 
+      ? `You have ${confirmedSessions.length} active lecture${confirmedSessions.length !== 1 ? 's' : ''} scheduled with student payments enabled.`
+      : `You have ${confirmedSessions.length} active learning session${confirmedSessions.length !== 1 ? 's' : ''} scheduled.`;
 
-  // Build Stat Cards dynamically per role
+  // Onboarding status checks
+  const isProfileComplete = Boolean(
+    (currentUser?.skillsTaught && currentUser.skillsTaught.length > 0) ||
+    (currentUser?.skillsLearned && currentUser.skillsLearned.length > 0) ||
+    (currentUser?.userSkills && currentUser.userSkills.length > 0)
+  );
+  const hasBookedSession = confirmedSessions.length > 0 || sessions.length > 0;
+  const showOnboarding = sessions.length === 0 || (!isProfileComplete || !hasVisitedMatchFinder || !hasBookedSession);
+
+  // Build Stat Cards dynamically per role for slim strip
   const statCards = isTeacherRole ? [
     { 
       label: 'Mentoring Revenue', 
       value: `₹${totalEarned.toLocaleString('en-IN')}`, 
       unit: 'earned',
-      icon: 'payments', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      sub: `${teacherEarnedTransactions.length} student payout${teacherEarnedTransactions.length !== 1 ? 's' : ''} received`, 
+      icon: 'payments',
       path: '/wallet' 
     },
     { 
       label: 'Hours Taught', 
-      value: hoursTaught > 0 ? hoursTaught.toString() : '24', 
+      value: hoursTaught.toString(), 
       unit: 'hrs',
-      icon: 'school', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      sub: 'Across active lectures', 
-      progress: Math.min(100, Math.round(((hoursTaught || 24) / 40) * 100)),
+      icon: 'schedule',
       path: '/teacher' 
     },
     { 
       label: 'Teaching Skills', 
       value: teachSkills.length.toString(), 
       unit: 'skills',
-      icon: 'workspace_premium', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      tags: teachSkills.slice(0, 2), 
+      icon: 'school',
       path: '/profile' 
     },
     { 
       label: 'Trust Rating', 
       value: trustScoreNum.toFixed(2), 
       unit: '/ 5.0',
-      icon: 'verified', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      sub: 'Top 5% mentor rating',
-      progress: (trustScoreNum / 5.0) * 100, 
+      icon: 'star',
       path: '/feedback' 
     }
   ] : [
@@ -603,92 +626,48 @@ export function Dashboard() {
       label: 'Mentoring Payments', 
       value: `₹${totalSpent.toLocaleString('en-IN')}`, 
       unit: 'spent',
-      icon: 'shopping_cart', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      sub: pendingPaymentDue > 0 ? `₹${pendingPaymentDue.toLocaleString('en-IN')} pending due` : (isBothRole && totalEarned > 0 ? `₹${totalEarned.toLocaleString('en-IN')} earned as mentor` : 'Payment history'), 
+      icon: 'payments',
       path: '/wallet' 
     },
     { 
       label: 'Hours Learned', 
       value: hoursLearned.toString(), 
       unit: 'hrs',
-      icon: 'schedule', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      sub: '+2 hours this week', 
-      progress: Math.min(100, Math.round((hoursLearned / 20) * 100)),
+      icon: 'schedule',
       path: '/schedule' 
     },
     { 
       label: isBothRole ? 'Active Skills' : 'Learning Goals', 
       value: activeTopicsCount, 
       unit: 'skills',
-      icon: 'school', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      tags: activeTopicTags, 
+      icon: 'psychology',
       path: '/marketplace' 
     },
     { 
       label: 'Reliability Score', 
       value: `${Math.min(100, Math.round(trustScoreNum * 20))}%`, 
-      unit: 'punctual',
-      icon: 'verified_user', 
-      bgColor: 'bg-primary-tint',
-      iconColor: 'text-primary-text',
-      borderColor: 'border-primary/20',
-      sub: '100% Session Attendance & Etiquette',
-      progress: Math.min(100, Math.round(trustScoreNum * 20)), 
+      unit: 'score',
+      icon: 'verified_user',
       path: '/feedback' 
     }
   ];
 
   return (
-    <div className="max-w-container_max mx-auto space-y-6 select-none">
-      {/* Existing Teacher UPI & ID Setup Reminder Banner */}
-      {(role === 'teacher' || currentUser?.role === 'teacher' || currentUser?.role === 'both') && !currentUser?.upiId && (
-        <div className="bg-accent-tint border border-accent/30 rounded-2xl p-4 sm:p-5 flex items-center justify-between gap-4 shadow animate-in fade-in duration-200">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl bg-surface border border-accent/20 text-accent flex items-center justify-center shrink-0">
-              <span className="material-symbols-outlined text-2xl">qr_code_2</span>
-            </div>
-            <div>
-              <h4 className="text-xs font-black text-text flex items-center gap-1.5">
-                <span>Payments Not Set Up</span>
-                <span className="px-1.5 py-0.5 rounded-full bg-accent text-on-accent text-[9px] font-extrabold uppercase">Action Required</span>
-              </h4>
-              <p className="text-[11px] text-muted font-medium mt-0.5">
-                Add your UPI ID & official College ID in your profile to start accepting direct student payments.
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => navigate('/profile')}
-            className="px-3.5 py-1.5 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold transition-all shrink-0 shadow-xs flex items-center gap-1"
-          >
-            <span>Set Up Now</span>
-            <span className="material-symbols-outlined text-sm">arrow_forward</span>
-          </button>
-        </div>
-      )}
+    <div className="max-w-[1200px] mx-auto space-y-6 px-6 pb-20 select-none">
 
       {/* Search Results Banner when search query is active */}
       {query && (
-        <div className="bg-primary-tint border border-primary/20 rounded-2xl p-5 shadow space-y-4 animate-in fade-in duration-200">
+        <div className="bg-surface border border-primary/30 rounded-xl p-5 shadow-xs space-y-4 animate-in fade-in duration-200">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-primary text-xl">search</span>
-              <h2 className="text-sm font-bold text-text">
-                Search Results for "<span className="text-primary font-extrabold">{searchQuery}</span>"
+              <h2 className="text-sm font-semibold text-text">
+                Search Results for "<span className="text-primary font-bold">{searchQuery}</span>"
               </h2>
             </div>
             <button
               onClick={() => setSearchQuery('')}
-              className="text-xs font-bold text-muted hover:text-text flex items-center gap-1"
+              className="text-xs font-semibold text-muted hover:text-text flex items-center gap-1 cursor-pointer"
             >
               <span className="material-symbols-outlined text-sm">close</span>
               <span>Clear Search</span>
@@ -700,21 +679,20 @@ export function Dashboard() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
               {matchingPeers.map(peer => (
-                <div key={peer.id} className="bg-surface border border-border rounded-xl p-3 flex items-center justify-between gap-3 shadow">
+                <div key={peer.id} className="bg-surface border border-border rounded-lg p-3 flex items-center justify-between gap-3 shadow-xs">
                   <div className="flex items-center gap-2.5 min-w-0">
                     <img src={peer.avatar || 'https://i.pravatar.cc/150?img=11'} alt={peer.name} className="w-8 h-8 rounded-full object-cover border border-border" />
                     <div className="min-w-0">
-                      <p className="text-xs font-bold text-text truncate">{peer.name}</p>
-                      <p className="text-[10px] text-muted truncate">Teaches: {Array.isArray(peer.skillsTaught) ? peer.skillsTaught.join(', ') : 'Tech & Design'}</p>
+                      <p className="text-xs font-semibold text-text truncate">{peer.name}</p>
+                      <p className="text-xs text-muted truncate">Teaches: {Array.isArray(peer.skillsTaught) ? peer.skillsTaught.join(', ') : 'Tech & Design'}</p>
                     </div>
                   </div>
-                  <Button
-                    variant="secondary"
-                    className="py-1 px-2 text-[11px] font-bold bg-primary-tint text-primary-text border-primary/20 shrink-0"
+                  <button
                     onClick={() => navigate('/marketplace')}
+                    className="py-1 px-2.5 text-xs font-medium bg-primary/10 text-primary-text border border-primary/20 rounded-md hover:bg-primary/20 transition-colors shrink-0 cursor-pointer"
                   >
                     View Mentor
-                  </Button>
+                  </button>
                 </div>
               ))}
             </div>
@@ -722,79 +700,74 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Clean Dashboard Header Banner */}
-      <div 
-        className="relative overflow-hidden bg-hero border border-border rounded-2xl p-6 sm:p-7 shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4"
-      >
-        <div className="space-y-1 relative z-10">
-          <div className="flex items-center gap-2">
-            <span className={`w-2 h-2 rounded-full ${isTeacherRole ? 'bg-primary' : 'bg-primary'}`} />
-            <span className="text-xs font-semibold text-muted">{roleBadgeLabel}</span>
-          </div>
-          <h1 className="text-xl sm:text-2xl font-bold text-text tracking-tight">
-            {getGreeting()}, {currentUser?.name?.split(' ')[0] || 'Peer'}
-          </h1>
-          <p className="text-xs sm:text-sm text-muted font-medium">
-            {roleSubtitle}
-          </p>
-        </div>
+      {/* Clean Dashboard Header (Directly on page background) */}
+      <DashboardHeroHeader
+        greeting={getGreeting()}
+        userName={currentUser?.name?.split(' ')[0] || 'Peer'}
+        roleBadgeLabel={roleBadgeLabel}
+        roleSubtitle={roleSubtitle}
+        isTeacherRole={isTeacherRole}
+        onFindMatch={() => navigate('/match-finder')}
+        onSchedule={() => navigate('/schedule')}
+        streakCount={currentStreak}
+        isTodayCompleted={isTodayCompleted}
+        weeklyTrackerDays={weeklyTrackerDays}
+        canClaimBonus={canClaimBonus}
+        isClaimingStreak={isClaimingStreak}
+        streakClaimSuccess={streakClaimSuccess}
+        onClaimBonus={handleClaimStreakReward}
+      />
 
-        <div className="flex items-center gap-2.5 shrink-0 relative z-10">
-          <Button
-            variant="secondary"
-            className="text-xs font-semibold px-3.5 py-2"
-            onClick={() => navigate('/match-finder')}
+      {(role === 'teacher' || currentUser?.role === 'teacher' || currentUser?.role === 'both') && !currentUser?.upiId && (
+        <div className="bg-surface border border-border rounded-xl p-4 shadow-xs flex items-center justify-between gap-3 text-sm">
+          <p className="text-muted min-w-0 text-xs">
+            Payments are not set up. Add a UPI ID in your profile to accept student payments.
+          </p>
+          <button
+            onClick={() => navigate('/profile')}
+            className="text-xs font-semibold text-primary hover:text-primary-hover shrink-0 cursor-pointer"
           >
-            <span className="material-symbols-outlined text-sm text-muted">search</span>
-            Find Peer Match
-          </Button>
-          <Button
-            variant="primary"
-            className="text-xs font-semibold px-3.5 py-2"
-            onClick={() => navigate('/schedule')}
-          >
-            <span className="material-symbols-outlined text-sm">add</span>
-            Schedule Session
-          </Button>
+            Set up
+          </button>
         </div>
-      </div>
+      )}
 
       {/* Pending Student Booking Requests Alert for Mentors */}
       {pendingRequestsForMe.length > 0 && (
-        <div className="bg-surface border-2 border-primary/40 rounded-2xl p-5 shadow space-y-3 animate-in fade-in slide-in-from-top-2">
+        <div className="bg-surface border border-primary/30 rounded-xl p-5 shadow-xs space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-primary text-xl animate-pulse">mark_email_unread</span>
-              <h3 className="text-sm font-black text-text">
+              <span className="material-symbols-outlined text-primary text-xl">mark_email_unread</span>
+              <h3 className="text-sm font-semibold text-text">
                 Pending Student Booking Requests ({pendingRequestsForMe.length})
                 {isBothRole && role === 'student' && (
-                  <span className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-amber-500/30">
+                  <span className="bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs font-semibold px-2 py-0.5 rounded-full border border-amber-500/30 ml-2">
                     Mentor Action Required
                   </span>
                 )}
               </h3>
             </div>
-            <span className="text-[11px] font-bold text-muted">Review & approve to unlock live classroom</span>
+            <span className="text-xs text-muted">Review & approve to unlock live classroom</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {pendingRequestsForMe.map(req => (
-              <div key={req.id} className="bg-surface-2 rounded-xl p-4 border border-border flex flex-col justify-between gap-3">
+              <div key={req.id} className="bg-surface rounded-lg p-4 border border-border flex flex-col justify-between gap-3">
                 <div className="flex items-start gap-3">
                   <img
                     src={req.student?.avatar || `https://i.pravatar.cc/150?img=11`}
                     alt={req.student?.name || 'Student'}
-                    className="w-10 h-10 rounded-full object-cover border border-border shrink-0 ring-1 ring-primary/20"
+                    className="w-10 h-10 rounded-full object-cover border border-border shrink-0"
                   />
                   <div className="min-w-0 flex-1">
-                    <h4 className="text-xs font-bold text-text truncate">{req.title}</h4>
-                    <p className="text-[11px] text-muted font-medium mt-0.5">
-                      Student: <strong className="text-text">{req.student?.name || 'Learner'}</strong>
+                    <h4 className="text-xs font-semibold text-text truncate">{req.title}</h4>
+                    <p className="text-xs text-muted mt-0.5">
+                      Student: <strong className="text-text font-medium">{req.student?.name || 'Learner'}</strong>
                     </p>
-                    <div className="flex items-center gap-2 text-[10px] text-muted mt-1">
+                    <div className="flex items-center gap-2 text-xs text-muted mt-1">
                       <span>📅 {req.scheduledAt ? new Date(req.scheduledAt).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'Flexible'}</span>
                       {req.paymentStatus === 'held' && (
-                        <span className="px-1.5 py-0.5 rounded bg-accent-tint text-accent-text font-bold border border-accent/20">
+                        <span className="px-1.5 py-0.5 rounded bg-accent/10 text-accent-text font-semibold border border-accent/20 text-xs">
                           Tokens Held
                         </span>
                       )}
@@ -802,12 +775,12 @@ export function Dashboard() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1 border-t border-border/40">
+                <div className="flex items-center gap-2 pt-2 border-t border-border">
                   <Button
                     variant="primary"
                     disabled={actingSessionId === req.id}
                     onClick={() => handleAcceptBooking(req.id)}
-                    className="flex-1 py-1.5 text-xs font-bold flex items-center justify-center gap-1 shadow-xs"
+                    className="flex-1 py-1.5 text-xs font-medium flex items-center justify-center gap-1 shadow-xs"
                   >
                     <span className="material-symbols-outlined text-sm">check_circle</span>
                     <span>{actingSessionId === req.id ? 'Confirming...' : 'Accept Request'}</span>
@@ -816,7 +789,7 @@ export function Dashboard() {
                     variant="secondary"
                     disabled={actingSessionId === req.id}
                     onClick={() => handleDeclineBooking(req.id)}
-                    className="flex-1 py-1.5 text-xs font-bold text-danger hover:bg-danger/10 flex items-center justify-center gap-1 border border-border"
+                    className="flex-1 py-1.5 text-xs font-medium text-danger hover:bg-danger/10 flex items-center justify-center gap-1 border border-border"
                   >
                     <span className="material-symbols-outlined text-sm">cancel</span>
                     <span>Decline</span>
@@ -828,599 +801,127 @@ export function Dashboard() {
         </div>
       )}
 
-      {/* Daily Streak & Community Momentum Banner */}
-      <div 
-        className="border border-border rounded-2xl p-4 sm:p-5 shadow flex flex-col md:flex-row items-start md:items-center justify-between gap-4 bg-accent-tint"
-      >
-        <div className="flex items-center gap-3.5">
-          <div className="w-12 h-12 rounded-2xl border border-accent/20 bg-surface text-accent flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-2xl text-accent" style={{ fontVariationSettings: "'FILL' 1" }}>
-              local_fire_department
-            </span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-semibold text-text">
-                {currentStreak > 0 ? `${currentStreak}-Day Learning Streak` : 'Start Your Learning Streak'}
-              </h2>
-              {isTodayCompleted ? (
-                <span className="px-2 py-0.5 rounded-full bg-primary-tint border border-primary/20 text-primary-text font-semibold text-[10px] uppercase flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                  Active Today
-                </span>
-              ) : currentStreak > 0 ? (
-                <span className="px-2 py-0.5 rounded-full bg-surface border border-accent/30 text-accent-text font-semibold text-[10px] uppercase flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-accent"></span>
-                  Action Needed Today
-                </span>
-              ) : (
-                <span className="px-2 py-0.5 rounded-full bg-surface-2 border border-border text-muted font-semibold text-[10px] uppercase">
-                  Inactive
-                </span>
-              )}
-            </div>
-            <p className="text-xs text-muted font-medium mt-0.5">
-              {isTodayCompleted
-                ? <>🔥 Great job! You completed today's learning goal. {daysUntilBonus > 0 && daysUntilBonus < 7 ? <span className="text-accent-text font-bold">{daysUntilBonus} day(s) until your next +20 Bonus Points!</span> : <span className="text-accent-text font-bold">Reach your 7-day milestone to claim +20 Bonus Points!</span>}</>
-                : <>Keep learning every day. Complete 1 session or answer a discussion question to reach 7 days and claim <span className="text-accent-text font-bold">+20 Bonus Points!</span></>}
-            </p>
-          </div>
-        </div>
-
-        {/* 7-Day Streak & Weekly Calendar Tracker */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2.5 self-stretch sm:self-auto justify-between sm:justify-start">
-          <div className="relative flex items-center gap-1.5" data-testid="streak-tracker-container">
-            {/* Connecting track line behind circles */}
-            <div 
-              className="absolute top-3.5 left-3.5 right-3.5 h-0.5 bg-border pointer-events-none" 
-              aria-hidden="true"
-              data-testid="streak-track-line"
-            />
-            {/* Filled connecting line up to last visited day */}
-            {(() => {
-              const lastVisitedIdx = weeklyTrackerDays
-                .map((d, i) => (d.isVisited ? i : -1))
-                .reduce((max, i) => Math.max(max, i), -1);
-              if (lastVisitedIdx < 0) return null;
-              return (
-                <div 
-                  className="absolute top-3.5 left-3.5 h-0.5 bg-accent transition-all duration-500 pointer-events-none"
-                  style={{
-                    width: `calc((100% - 28px) * ${lastVisitedIdx / 6})`
-                  }}
-                  aria-hidden="true"
-                  data-testid="streak-filled-line"
-                />
-              );
-            })()}
-
-            {weeklyTrackerDays.map((item, idx) => {
-              const isToday = item.isToday;
-              const isGift = item.isGift;
-              const isVisited = item.isVisited;
-              const isMissed = item.isMissed;
-              const days1To6Visited = weeklyTrackerDays.slice(0, 6).every(d => d.isVisited);
-              const isGiftClaimable = isGift && (days1To6Visited || canClaimBonus);
-
-              // Determine classes based on visual states spec
-              let circleClasses = 'bg-surface text-muted border-border';
-              if (isGift) {
-                circleClasses = isGiftClaimable
-                  ? 'bg-accent text-white border-accent shadow-md animate-bounce cursor-pointer'
-                  : isVisited
-                    ? 'bg-accent text-white border-accent shadow-xs'
-                    : 'bg-surface text-accent-text border-border';
-              } else if (isToday) {
-                circleClasses = isVisited
-                  ? 'bg-accent text-white border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface shadow-xs'
-                  : 'bg-surface text-accent border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface animate-pulse';
-              } else if (item.isPast) {
-                circleClasses = isVisited
-                  ? 'bg-accent text-white border-accent shadow-xs'
-                  : 'bg-surface/50 text-muted/40 border-border/60';
-              }
-
-              return (
-                <div 
-                  key={idx} 
-                  className="flex flex-col items-center gap-1 group cursor-default relative z-10" 
-                  title={`${item.full} (${item.dateStr}): ${isVisited ? 'Visited ✓' : isToday ? 'Today: Not yet visited 🔥' : isMissed ? 'Missed ✕' : isGift ? '+20 Bonus Points on Day 7 🎁' : 'Upcoming'}`}
-                  data-testid={`streak-day-container-${item.num}`}
-                >
-                  {isToday && isAnimatingToday ? (
-                    <motion.div
-                      key="today-animating"
-                      initial={{ scale: 1 }}
-                      animate={{
-                        scale: [1, 1.25, 0.95, 1.08, 1],
-                        rotate: [0, -6, 6, -3, 0],
-                        boxShadow: [
-                          '0 0 0 0px var(--accent)',
-                          '0 0 0 8px rgba(245, 158, 11, 0.35)',
-                          '0 0 0 0px rgba(245, 158, 11, 0)'
-                        ]
-                      }}
-                      transition={{ duration: 0.75, ease: 'easeOut' }}
-                      className="w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all bg-accent text-white border-accent ring-2 ring-accent ring-offset-1 ring-offset-surface shadow-xs"
-                      data-testid="streak-day-today"
-                    >
-                      <motion.span
-                        initial={{ scale: 0.8, opacity: 0 }}
-                        animate={{ scale: [0.8, 1.3, 1], opacity: 1 }}
-                        transition={{ duration: 0.75 }}
-                        className="text-white font-bold text-xs"
-                      >
-                        ✓
-                      </motion.span>
-                    </motion.div>
-                  ) : (
-                    <div
-                      className={`w-7 h-7 rounded-xl flex items-center justify-center text-[11px] font-bold border transition-all ${circleClasses}`}
-                      data-testid={isToday ? 'streak-day-today' : `streak-day-${item.num}`}
-                      onClick={isGiftClaimable ? handleClaimStreakReward : undefined}
-                    >
-                      {isGift ? (
-                        '🎁'
-                      ) : isToday ? (
-                        isVisited ? (
-                          <span className="text-white font-bold text-xs">✓</span>
-                        ) : (
-                          <span className="material-symbols-outlined text-[15px]" style={{ fontVariationSettings: "'FILL' 1" }}>
-                            local_fire_department
-                          </span>
-                        )
-                      ) : isVisited ? (
-                        <span className="text-white font-bold text-xs">✓</span>
-                      ) : isMissed ? (
-                        <span className="text-muted/40 text-[10px] font-medium">✕</span>
-                      ) : (
-                        item.num
-                      )}
-                    </div>
-                  )}
-                  <div className="flex flex-col items-center leading-none">
-                    <span className={`text-[9px] ${isToday ? 'text-accent-text font-bold' : 'text-muted font-medium'}`}>
-                      Day {item.num}
-                    </span>
-                    <span className={`text-[8px] mt-0.5 ${isToday ? 'text-accent-text font-extrabold' : 'text-muted'}`}>
-                      {item.day}
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Interactive Claim Bonus Button when eligible */}
-          {canClaimBonus && (
-            <Button
-              variant="primary"
-              disabled={isClaimingStreak}
-              onClick={handleClaimStreakReward}
-              className="text-xs font-bold py-1.5 px-3 bg-accent hover:opacity-90 text-on-primary shadow animate-pulse shrink-0"
-            >
-              {isClaimingStreak ? 'Claiming...' : '🎁 Claim +20 Pts'}
-            </Button>
-          )}
-          {streakClaimSuccess && (
-            <span className="text-xs font-bold text-accent-text animate-fade-in shrink-0">
-              ✓ +20 Pts Claimed!
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Today's Note Compact Card */}
-      <div className="bg-surface border border-border rounded-2xl p-4 sm:p-5 shadow flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3.5 min-w-0 flex-1">
-          <div className="w-11 h-11 rounded-2xl bg-primary-tint text-primary flex items-center justify-center shrink-0 border border-primary/20">
-            <span className="material-symbols-outlined text-2xl">edit_note</span>
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h3 className="text-sm font-bold text-text">Today's Note</h3>
-              {noteStreak > 0 && (
-                <span className="px-2 py-0.5 rounded-full bg-accent-tint text-accent-text font-bold text-[10px] flex items-center gap-1">
-                  <span className="material-symbols-outlined text-xs">local_fire_department</span>
-                  <span>{noteStreak}-day note streak</span>
-                </span>
-              )}
-            </div>
-            {todayNote ? (
-              <p className="text-xs text-muted truncate mt-0.5">
-                <strong className="text-text">{todayNote.title || 'Today’s Note'}:</strong> {(todayNote.content || '').replace(/<[^>]*>/g, ' ').slice(0, 80)}...
-              </p>
-            ) : (
-              <p className="text-xs text-muted mt-0.5">
-                Start your daily learning log or jot down a quick takeaway.
-              </p>
-            )}
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 self-stretch md:self-auto shrink-0">
-          {!todayNote ? (
-            <div className="flex items-center gap-1.5 flex-1 md:flex-initial">
-              <input
-                type="text"
-                value={todayNoteInput}
-                onChange={e => setTodayNoteInput(e.target.value)}
-                onKeyDown={async e => {
-                  if (e.key === 'Enter' && todayNoteInput.trim()) {
-                    setIsSavingTodayNote(true);
-                    try {
-                      const saved = await api.saveNote({
-                        type: 'daily',
-                        title: `Quick Note • ${todayStr}`,
-                        content: `<p>${todayNoteInput.trim()}</p>`,
-                        tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
-                      });
-                      setTodayNote(saved);
-                      setTodayNoteInput('');
-                      addNotification({
-                        type: 'session',
-                        title: 'Note Saved',
-                        body: 'Today’s daily note has been initialized.'
-                      });
-                    } catch (err: any) {
-                      alert(err.message || 'Failed to save note');
-                    } finally {
-                      setIsSavingTodayNote(false);
-                    }
-                  }
-                }}
-                placeholder="Jot down a quick thought..."
-                className="bg-surface-2 text-text border border-border rounded-xl px-3 py-1.5 text-xs focus:border-primary focus:outline-hidden min-w-[200px]"
-              />
-              <Button
-                variant="primary"
-                disabled={!todayNoteInput.trim() || isSavingTodayNote}
-                onClick={async () => {
-                  if (!todayNoteInput.trim()) return;
-                  setIsSavingTodayNote(true);
-                  try {
-                    const saved = await api.saveNote({
-                      type: 'daily',
-                      title: `Quick Note • ${todayStr}`,
-                      content: `<p>${todayNoteInput.trim()}</p>`,
-                      tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata'
-                    });
-                    setTodayNote(saved);
-                    setTodayNoteInput('');
-                    addNotification({
-                      type: 'session',
-                      title: 'Note Saved',
-                      body: 'Today’s daily note has been initialized.'
-                    });
-                  } catch (err: any) {
-                    alert(err.message || 'Failed to save note');
-                  } finally {
-                    setIsSavingTodayNote(false);
-                  }
-                }}
-                className="text-xs font-bold py-1.5 px-3"
-              >
-                {isSavingTodayNote ? 'Saving...' : 'Save'}
-              </Button>
-            </div>
-          ) : (
-            <button
-              onClick={() => navigate('/notes/daily')}
-              className="px-3.5 py-1.5 bg-primary-tint text-primary-text hover:bg-primary hover:text-on-primary rounded-xl text-xs font-bold transition-all cursor-pointer shadow-xs flex items-center gap-1"
-            >
-              <span>Continue writing</span>
-              <span className="material-symbols-outlined text-sm">arrow_forward</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => navigate('/notes/daily')}
-            className="text-xs font-semibold text-muted hover:text-text px-2 py-1.5 rounded-lg hover:bg-surface-2 transition-colors cursor-pointer"
-          >
-            Open full note →
-          </button>
-        </div>
-      </div>
-
-      {/* Stat Cards Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* Slim Stats Strip - Single white card divided by vertical hairlines */}
+      <div className="bg-surface border border-border rounded-xl shadow-xs grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-border overflow-hidden">
         {statCards.map((stat, i) => (
           <div 
             key={i} 
             onClick={() => navigate(stat.path)}
-            className="bg-surface border border-border rounded-2xl p-5 shadow hover:border-primary/40 hover:shadow-md cursor-pointer transition-all flex flex-col justify-between"
+            className="p-4 sm:px-5 sm:py-3.5 flex items-center gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150"
           >
-            <div className="flex justify-between items-start mb-2">
-              <div>
-                <p className="text-[11px] uppercase tracking-wider font-semibold text-muted mb-0.5">{stat.label}</p>
-                <div className="flex items-baseline gap-1.5">
-                  <span className="text-2xl font-bold text-text">{stat.value}</span>
-                  <span className="text-xs font-semibold text-muted">{stat.unit}</span>
-                </div>
-              </div>
-              <div className={`w-10 h-10 rounded-xl ${stat.bgColor} ${stat.iconColor} ${stat.borderColor} border flex items-center justify-center`}>
-                <span className="material-symbols-outlined text-xl">{stat.icon}</span>
+            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                {stat.icon}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-muted font-medium truncate">{stat.label}</p>
+              <div className="flex items-baseline mt-0.5">
+                <span className="text-2xl font-bold text-text leading-tight tracking-tight tabular-nums">
+                  {stat.value}
+                </span>
+                <span className="text-xs text-muted font-normal ml-1">
+                  {stat.unit}
+                </span>
               </div>
             </div>
-
-            {stat.progress !== undefined && (
-              <div className="mt-2 space-y-1">
-                <div className="w-full h-1.5 bg-surface-2 rounded-full overflow-hidden">
-                  <div 
-                    className="h-full rounded-full transition-all duration-300 bg-primary" 
-                    style={{ width: `${stat.progress}%` }} 
-                  />
-                </div>
-              </div>
-            )}
-
-            {stat.sub && (
-              <p className="text-[11px] mt-2 text-muted hover:text-primary transition-colors flex items-center gap-1 font-medium">
-                {stat.sub.includes('pending due') ? (
-                  <span className="text-accent-text font-semibold">{stat.sub}</span>
-                ) : (
-                  stat.sub
-                )} <span className="material-symbols-outlined text-xs">arrow_forward</span>
-              </p>
-            )}
-
-            {stat.tags && (
-              <div className="flex gap-1 mt-2">
-                {stat.tags.map((t: string) => (
-                  <span key={t} className="px-2 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-md text-[10px] font-semibold truncate max-w-[80px]">{t}</span>
-                ))}
-              </div>
-            )}
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Recommended Match Preview */}
-        <div className="lg:col-span-2 space-y-6">
-          <section className="bg-surface rounded-2xl p-6 shadow border border-border">
-            <div className="flex justify-between items-center mb-5">
-              <div>
-                <h3 className="text-base font-bold text-text flex items-center gap-2">
-                  <span className="material-symbols-outlined text-primary text-xl">recommend</span> Recommended Peer Match
-                </h3>
-                <p className="text-xs text-muted font-medium mt-0.5">Top peer recommendation based on your skill interests</p>
-              </div>
-              <button 
-                onClick={() => navigate('/match-finder')} 
-                className="text-xs px-3 py-1.5 text-primary-text hover:underline font-semibold cursor-pointer"
-              >
-                Browse All Matches →
-              </button>
-            </div>
-            
-            {recommendedPeerMatch ? (
-              <div 
-                onClick={() => navigate('/match-finder')}
-                className="bg-surface-2 rounded-xl p-5 flex flex-col md:flex-row gap-5 items-start md:items-center hover:bg-surface-2/80 transition-colors cursor-pointer border border-border"
-              >
-                <div className="relative shrink-0">
-                  <img 
-                    className="w-12 h-12 rounded-full object-cover border border-border" 
-                    src={recommendedPeerMatch.peer.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'} 
-                    alt={`${recommendedPeerMatch.peer.name || 'Peer'} profile avatar`} 
-                  />
-                  <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-primary rounded-full ring-2 ring-surface" />
+      {/* Main Row 1: Your Next Step (8 cols) & Upcoming Sessions (4 cols) - Equal Height Stretch */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-stretch">
+        {/* Left Column (8 cols): Your next step */}
+        <div className="lg:col-span-8 flex flex-col">
+          {showOnboarding ? (
+            <OnboardingChecklistCard
+              isProfileComplete={isProfileComplete}
+              isMatched={hasVisitedMatchFinder}
+              hasBookedSession={hasBookedSession}
+              onEditProfile={() => navigate('/profile')}
+              onFindMatch={() => {
+                localStorage.setItem('mindroot_onboarding_matched', 'true');
+                setHasVisitedMatchFinder(true);
+                navigate('/match-finder');
+              }}
+              onSchedule={() => navigate('/schedule')}
+            />
+          ) : filteredSessions.length > 0 ? (
+            <div className="bg-surface border border-border rounded-xl p-5 shadow-xs flex items-center justify-between gap-4 h-full">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-xl">event</span>
                 </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1 flex-wrap">
-                    <h4 className="text-sm font-bold text-text">{recommendedPeerMatch.peer.name || 'Peer Scholar'}</h4>
-                    <span className="px-2 py-0.5 bg-primary-tint text-primary-text rounded-md text-[10px] font-bold">
-                      {recommendedPeerMatch.matchScore}% Match
-                    </span>
-                    <span className="text-[11px] text-muted font-medium">
-                      • {recommendedPeerMatch.peer.isAvailableNow ? 'Available Today' : 'Available for Booking'}
-                    </span>
-                  </div>
-                  
-                  <p className="text-xs text-muted mb-2">
-                    Can teach <strong className="text-text font-semibold">{recommendedPeerMatch.teachStr}</strong> • Wants to learn <strong className="text-text font-semibold">{recommendedPeerMatch.learnStr}</strong>
+                <div className="min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary">Your Next Step</span>
+                  <h4 className="text-sm font-semibold text-text truncate mt-0.5">
+                    {filteredSessions[0].title}
+                  </h4>
+                  <p className="text-xs text-muted truncate">
+                    {filteredSessions[0].scheduledAt ? new Date(filteredSessions[0].scheduledAt).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Scheduled'}
                   </p>
-
-                  <div className="flex items-center gap-3 text-[11px] text-muted font-medium">
-                    <span className="flex items-center gap-1">
-                      <span className="material-symbols-outlined text-[13px] text-accent">star</span> 
-                      {(recommendedPeerMatch.peer.trustScore || 5.0).toFixed(2)} ({recommendedPeerMatch.sessionCount} session{recommendedPeerMatch.sessionCount !== 1 ? 's' : ''})
-                    </span>
-                    <span>•</span>
-                    <span>₹{recommendedPeerMatch.peer.hourlyRate || 499}/hr</span>
-                  </div>
                 </div>
-                <div className="w-full md:w-auto mt-2 md:mt-0 flex gap-2 shrink-0">
-                  <Button 
-                    variant="secondary" 
-                    className="flex-1 md:flex-none py-1.5 px-3.5 text-xs font-semibold"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/messages?peerId=${recommendedPeerMatch.peer.id}`, { state: { peerId: recommendedPeerMatch.peer.id } });
-                    }}
-                  >
-                    Message
-                  </Button>
-                  <Button 
-                    variant="primary" 
-                    className="flex-1 md:flex-none py-1.5 px-3.5 text-xs font-semibold"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate('/match-finder');
-                    }}
-                  >
-                    Propose Exchange
-                  </Button>
-                </div>
-              </div>
-            ) : (
-              <div className="p-6 text-center bg-surface-2 rounded-xl border border-border space-y-2">
-                <span className="material-symbols-outlined text-3xl text-muted">person_search</span>
-                <p className="text-xs font-bold text-text">No Peer Recommendations Available Yet</p>
-                <p className="text-[11px] text-muted max-w-sm mx-auto">
-                  As peers join the platform and register their skill interests, your top matching study partners will automatically appear here.
-                </p>
-                <div className="pt-2">
-                  <Button variant="secondary" onClick={() => navigate('/match-finder')} className="text-xs py-1 px-3">
-                    Explore Match Finder
-                  </Button>
-                </div>
-              </div>
-            )}
-          </section>
-
-          {/* Community Champions Leaderboard */}
-          <section className="bg-surface rounded-2xl p-6 shadow border border-border space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-text flex items-center gap-2">
-                  <span className="material-symbols-outlined text-accent text-xl">military_tech</span>
-                  Community Champions
-                </h3>
-                <p className="text-xs text-muted font-medium mt-0.5">
-                  Top mentors & active peer scholars this week
-                </p>
               </div>
               <button
-                onClick={() => navigate('/discussions')}
-                className="text-xs px-3 py-1.5 text-primary-text hover:underline font-semibold cursor-pointer"
+                onClick={() => navigate(`/live/${filteredSessions[0].id}`)}
+                className="px-4 py-2 text-xs font-semibold text-white bg-primary hover:bg-primary-hover rounded-lg shadow-xs transition-colors shrink-0 cursor-pointer flex items-center gap-1.5"
               >
-                Join Discussions →
+                <span className="material-symbols-outlined text-base">videocam</span>
+                <span>Enter Room</span>
               </button>
             </div>
-
-            {loadingChampions ? (
-              <div className="p-4 text-center text-xs text-muted font-medium animate-pulse">
-                Loading community rankings...
-              </div>
-            ) : champions.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {champions.map((champion, idx) => (
-                  <div key={champion.id || idx} className="p-3.5 rounded-xl border border-border bg-surface-2 flex items-center gap-3">
-                    <img 
-                      src={champion.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'} 
-                      alt={champion.name} 
-                      className="w-10 h-10 rounded-full object-cover border border-border shrink-0" 
-                    />
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-bold text-text truncate">{champion.name}</span>
-                        <span className="text-[10px] font-extrabold text-accent-text shrink-0">{champion.badge}</span>
-                      </div>
-                      <p className="text-[10px] text-muted truncate">{champion.role}</p>
-                      <div className="flex items-center gap-2 text-[10px] font-bold text-primary mt-0.5">
-                        <span>★ {champion.rating}</span>
-                        <span>•</span>
-                        <span>{champion.score}</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="p-5 text-center bg-surface-2 rounded-xl border border-border space-y-1">
-                <span className="material-symbols-outlined text-2xl text-accent">emoji_events</span>
-                <p className="text-xs font-bold text-text">Leaderboard Opening Soon</p>
-                <p className="text-[11px] text-muted">
-                  Participate in sessions and community discussions to claim your place on the podium!
-                </p>
-              </div>
-            )}
-          </section>
-        </div>
-
-        {/* Upcoming Sessions Card */}
-        <div className="space-y-6">
-          <section className="bg-surface rounded-2xl shadow border border-border overflow-hidden flex flex-col h-full">
-            <div className="p-4 sm:p-5 bg-surface-2 border-b border-border flex items-center justify-between">
-              <h3 className="text-sm font-bold text-text flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-lg">calendar_today</span> Upcoming Sessions
-              </h3>
-              <span className="text-[11px] font-semibold text-primary-text hover:underline cursor-pointer" onClick={() => navigate('/schedule')}>Calendar</span>
-            </div>
-            <div className="p-4 sm:p-5 flex-1 flex flex-col gap-3">
-              {filteredSessions.length === 0 ? (
-                <div className="text-center py-8 text-muted flex flex-col items-center justify-center space-y-2">
-                  <span className="material-symbols-outlined text-3xl text-muted">event_available</span>
-                  <p className="font-semibold text-text text-xs sm:text-sm">No scheduled sessions</p>
-                  <p className="text-[11px] text-muted">Match with a peer to schedule your next session.</p>
-                  <Button variant="primary" className="text-xs font-semibold py-1.5 px-3.5 mt-2" onClick={() => navigate('/match-finder')}>
-                    Find a Match
-                  </Button>
+          ) : (
+            <div className="bg-surface border border-border rounded-xl p-5 shadow-xs flex items-center justify-between gap-4 h-full">
+              <div className="flex items-center gap-3.5 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-xl">school</span>
                 </div>
-              ) : (
-                filteredSessions.map(session => {
-                  const isLive = isSessionLiveNow(session.scheduledAt);
-                  const countdown = getCountdownLabel(session.scheduledAt);
-                  return (
-                    <div key={session.id} className="bg-surface rounded-xl p-4 border border-border shadow hover:border-primary/40 transition-colors space-y-3">
-                      <div className="flex justify-between items-start">
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase flex items-center gap-1 ${
-                          isLive 
-                            ? 'bg-primary text-on-primary animate-pulse shadow-xs' 
-                            : 'bg-primary-tint border border-primary/20 text-primary-text'
-                        }`}>
-                          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-on-primary animate-ping" />}
-                          {countdown}
-                        </span>
-                        <span className="text-xs text-muted font-bold">
-                          {new Date(session.scheduledAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
-                        </span>
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-bold text-text mb-0.5">{session.title}</h4>
-                        <p className="text-[11px] text-muted flex items-center gap-1">
-                          <span className="material-symbols-outlined text-xs text-muted">person</span> 
-                          {session.teacherId === currentUser?.id ? `Teaching ${session.student?.name || 'Student'}` : `Learning from ${session.teacher?.name || 'Teacher'}`}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-1.5 pt-1">
-                        <button
-                          onClick={() => setSelectedSessionForNotes(session)}
-                          title="Session Notes"
-                          className="flex-1 py-1.5 px-2 bg-surface-2 hover:bg-surface text-text rounded-lg text-[10px] font-bold border border-border transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-xs text-primary">edit_note</span>
-                          <span>Notes</span>
-                          {(sessionNoteCounts[session.id] || 0) > 0 && (
-                            <span className="px-1.5 py-0.2 rounded-full bg-primary-tint text-primary-text text-[9px] font-extrabold border border-primary/20">
-                              {sessionNoteCounts[session.id]}
-                            </span>
-                          )}
-                        </button>
-                        <button
-                          onClick={() => window.open(getGoogleCalendarUrl(session), '_blank')}
-                          title="Add to Google Calendar"
-                          className="py-1.5 px-2 bg-surface-2 hover:bg-surface text-text rounded-lg text-[10px] font-bold border border-border transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-xs text-primary">calendar_month</span>
-                          <span>Cal</span>
-                        </button>
-                        <button
-                          onClick={() => handleDownloadIcs(session)}
-                          title="Download .ics event file"
-                          className="py-1.5 px-2 bg-surface-2 hover:bg-surface text-text rounded-lg text-[10px] font-bold border border-border transition-colors flex items-center justify-center cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-xs">download</span>
-                          <span className="text-[9px] font-extrabold uppercase">.ics</span>
-                        </button>
-                      </div>
-                      <Button 
-                        variant={isLive ? "primary" : "secondary"} 
-                        className="w-full flex items-center justify-center gap-1.5 font-bold text-xs py-2" 
-                        onClick={() => navigate(`/live/${session.id}`)}
-                      >
-                        <span className="material-symbols-outlined text-sm">videocam</span> 
-                        {isLive ? 'Join Live Classroom' : 'Enter Classroom'}
-                      </Button>
-                    </div>
-                  );
-                })
-              )}
+                <div className="min-w-0">
+                  <span className="text-xs font-bold uppercase tracking-wider text-primary">Your Next Step</span>
+                  <h4 className="text-sm font-semibold text-text truncate mt-0.5">
+                    Find your next study partner or mentor
+                  </h4>
+                  <p className="text-xs text-muted truncate">
+                    Explore peer topics and schedule a 1-on-1 collaborative exchange
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate('/marketplace')}
+                className="px-4 py-2 text-xs font-semibold text-white bg-primary hover:bg-primary-hover rounded-lg shadow-xs transition-colors shrink-0 cursor-pointer"
+              >
+                Find Peers
+              </button>
             </div>
-          </section>
+          )}
         </div>
+
+        {/* Right Column (4 cols): Upcoming Sessions Widget */}
+        <div className="lg:col-span-4 flex flex-col">
+          <UpcomingSessionsWidget
+            sessions={filteredSessions}
+            currentUserId={currentUser?.id}
+            sessionNoteCounts={sessionNoteCounts}
+            isSessionLiveNow={isSessionLiveNow}
+            getCountdownLabel={getCountdownLabel}
+            getGoogleCalendarUrl={getGoogleCalendarUrl}
+            onDownloadIcs={handleDownloadIcs}
+            onSelectSessionForNotes={(session) => setSelectedSessionForNotes(session)}
+            onJoinRoom={(sessionId) => navigate(`/live/${sessionId}`)}
+            onFindMatch={() => navigate('/match-finder')}
+            onOpenSchedule={() => navigate('/schedule')}
+          />
+        </div>
+      </div>
+
+      {/* Main Row 2: Suggested Peers (12 cols full-width 3-card grid with 0 gap) */}
+      <div className="w-full">
+        <SuggestedPeersCard
+          peers={suggestedPeersList}
+          loading={peers.length === 0}
+          onBrowseAll={() => navigate('/match-finder')}
+          onConnect={(peerId) => navigate(`/messages?peerId=${peerId}`, { state: { peerId } })}
+        />
       </div>
 
       {/* Session Notes Modal Panel */}

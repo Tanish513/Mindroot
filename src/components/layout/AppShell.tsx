@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AIAssistant } from './AIAssistant';
+import { InSessionFloatingBar } from '../liveroom/InSessionFloatingBar';
 import { NotificationManager } from '../NotificationManager';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { isBackendConfigMissing } from '../../lib/env';
@@ -71,6 +72,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           {children}
         </main>
       </div>
+      <InSessionFloatingBar />
       <AIAssistant />
     </div>
   );

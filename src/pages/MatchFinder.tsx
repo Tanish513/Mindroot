@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
+import { SkillTag } from '../components/ui/SkillTag';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { EmptyState } from '../components/ui/EmptyState';
 import { api, onPeersUpdated, onSessionsUpdated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { useDebounce } from '../hooks/useDebounce';
@@ -9,7 +12,11 @@ import { clsx } from 'clsx';
 
 const categories = ['All', 'Software & AI', 'Design & 3D', 'Languages', 'Business'];
 
-export function MatchFinder() {
+interface MatchFinderProps {
+  embedded?: boolean;
+}
+
+export function MatchFinder({ embedded = false }: MatchFinderProps) {
   const navigate = useNavigate();
   const [peers, setPeers] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
@@ -338,53 +345,91 @@ export function MatchFinder() {
   });
 
   return (
-    <div className="max-w-container_max mx-auto relative select-none">
+    <div className={clsx("relative select-none", !embedded ? "max-w-container_max mx-auto" : "w-full")}>
       {/* Top Header & Navigation Tabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
-        <div>
-          <h2 className="text-headline-lg font-headline-lg text-on-surface mb-1">Skill Exchange & Match Finder</h2>
-          <p className="text-body-md font-body-md text-on-surface-variant">Trade skills 1-for-1 with peers, accept swap proposals, and track your exchange requests.</p>
-        </div>
+      {!embedded ? (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+          <div>
+            <h2 className="text-headline-lg font-headline-lg text-on-surface mb-1">Skill Exchange & Match Finder</h2>
+            <p className="text-body-md font-body-md text-on-surface-variant">Trade skills 1-for-1 with peers, accept swap proposals, and track your exchange requests.</p>
+          </div>
 
-        {/* Tab Switcher */}
-        <div className="flex p-1 bg-surface-container rounded-2xl border border-outline-variant shadow-xs self-start sm:self-auto">
-          <button
-            onClick={() => setActiveMainTab('matches')}
-            className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
-              activeMainTab === 'matches'
-                ? "bg-surface text-primary shadow-elevation-1"
-                : "text-on-surface-variant hover:text-on-surface"
-            )}
-          >
-            <span className="material-symbols-outlined text-base">group</span>
-            <span>Explore Matches</span>
-          </button>
+          {/* Tab Switcher */}
+          <div className="flex p-1 bg-surface-container rounded-2xl border border-outline-variant shadow-xs self-start sm:self-auto">
+            <button
+              onClick={() => setActiveMainTab('matches')}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all",
+                activeMainTab === 'matches'
+                  ? "bg-surface text-primary shadow-elevation-1"
+                  : "text-on-surface-variant hover:text-on-surface"
+              )}
+            >
+              <span className="material-symbols-outlined text-base">group</span>
+              <span>Explore Matches</span>
+            </button>
 
-          <button
-            onClick={() => setActiveMainTab('swaps')}
-            className={clsx(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all relative",
-              activeMainTab === 'swaps'
-                ? "bg-surface text-primary shadow-elevation-1"
-                : "text-on-surface-variant hover:text-on-surface"
-            )}
-          >
-            <span className="material-symbols-outlined text-base">swap_horiz</span>
-            <span>My Swaps</span>
-            {incomingOffers.length > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-alert-rose text-white shadow-xs animate-pulse">
-                {incomingOffers.length}
-              </span>
-            )}
-            {activeSwaps.length > 0 && incomingOffers.length === 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20">
-                {activeSwaps.length}
-              </span>
-            )}
-          </button>
+            <button
+              onClick={() => setActiveMainTab('swaps')}
+              className={clsx(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all relative",
+                activeMainTab === 'swaps'
+                  ? "bg-surface text-primary shadow-elevation-1"
+                  : "text-on-surface-variant hover:text-on-surface"
+              )}
+            >
+              <span className="material-symbols-outlined text-base">swap_horiz</span>
+              <span>My Swaps</span>
+              {incomingOffers.length > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-alert-rose text-white shadow-xs animate-pulse">
+                  {incomingOffers.length}
+                </span>
+              )}
+              {activeSwaps.length > 0 && incomingOffers.length === 0 && (
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-teaching-emerald-container text-on-teaching-emerald-container border border-teaching-emerald/20">
+                  {activeSwaps.length}
+                </span>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-5 p-3.5 bg-surface-2 rounded-xl border border-border">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="material-symbols-outlined text-primary text-base">handshake</span>
+            <span className="text-muted">
+              <strong className="text-text font-semibold">1-for-1 Skill Swaps:</strong> Reciprocal learning with no money or tokens required.
+            </span>
+          </div>
+          <div className="flex p-1 bg-surface rounded-lg border border-border self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('matches')}
+              className={clsx(
+                "px-3 py-1 rounded text-xs font-bold transition-all cursor-pointer",
+                activeMainTab === 'matches' ? "bg-primary text-white shadow-xs" : "text-muted hover:text-text"
+              )}
+            >
+              Explore Matches
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveMainTab('swaps')}
+              className={clsx(
+                "px-3 py-1 rounded text-xs font-bold transition-all relative cursor-pointer flex items-center gap-1.5",
+                activeMainTab === 'swaps' ? "bg-primary text-white shadow-xs" : "text-muted hover:text-text"
+              )}
+            >
+              <span>My Swaps</span>
+              {incomingOffers.length > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-danger text-white">
+                  {incomingOffers.length}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Global Feedback Banner */}
       {feedbackNotice && (
@@ -464,11 +509,14 @@ export function MatchFinder() {
               )}
 
               {filteredPeers.length === 0 && searchQuery.trim() === '' && (
-                <div className="text-on-surface-variant p-12 text-center border border-dashed border-outline rounded-2xl bg-surface shadow-elevation-1">
-                  <span className="material-symbols-outlined text-4xl mb-2 text-outline">search_off</span>
-                  <p className="font-bold text-on-surface text-sm">No matched peers found</p>
-                  <p className="text-xs text-on-surface-variant mt-1">Try updating your learning skills in your profile to discover more matches.</p>
-                </div>
+                <EmptyState
+                  icon="person_search"
+                  title="No matched peers found"
+                  description="Try updating your learning skills in your profile or clearing category filters to discover more peers."
+                  actionLabel="Update My Profile"
+                  actionIcon="edit"
+                  onAction={() => navigate('/profile')}
+                />
               )}
 
               {filteredPeers.map((peer) => {
@@ -479,48 +527,66 @@ export function MatchFinder() {
                 return (
                   <div 
                     key={peer.id} 
-                    className="flex flex-col md:flex-row items-start md:items-center gap-5 p-5 bg-surface rounded-xl border border-outline-variant shadow-elevation-1 hover:border-outline hover:shadow-elevation-2 transition-all group"
+                    className="flex flex-col md:flex-row items-start md:items-center gap-5 p-5 bg-surface rounded-2xl border border-border shadow-elevation-1 hover:border-primary/40 hover:shadow-elevation-2 transition-all group"
                   >
                     <div className="relative shrink-0">
-                      <img src={peer.avatar || `https://i.pravatar.cc/150?u=${peer.id}`} alt={`${peer.name}'s avatar`} className="w-12 h-12 rounded-full object-cover border border-outline-variant" />
-                      <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-teaching-emerald rounded-full ring-2 ring-surface" />
+                      <img src={peer.avatar || `https://i.pravatar.cc/150?u=${peer.id}`} alt={`${peer.name}'s avatar`} className="w-13 h-13 rounded-full object-cover border border-border" />
+                      <span className="absolute bottom-0 right-0 w-3 h-3 bg-primary rounded-full ring-2 ring-surface" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2.5 mb-1 flex-wrap">
-                        <h4 className="text-sm font-bold text-on-surface group-hover:text-primary transition-colors">{peer.name}</h4>
-                        <span className="px-2 py-0.5 bg-primary-container text-on-primary-container rounded-md text-[10px] font-bold">
-                          {matchScore}% MATCH
-                        </span>
+                      <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                        <h4 className="text-sm font-bold text-text group-hover:text-primary transition-colors">{peer.name}</h4>
+                        <StatusBadge label={`${matchScore}% Match`} status="confirmed" size="sm" />
                         {peer.trustScore > 4.8 && (
-                          <span className="material-symbols-outlined text-primary text-sm">verified</span>
+                          <span className="material-symbols-outlined text-primary text-sm" title="Verified Peer Mentor" aria-hidden="true">verified</span>
                         )}
                       </div>
-                      <p className="text-xs text-on-surface-variant mb-2 leading-relaxed">
-                        {teaches.length > 0 && <>Teaches: <strong className="text-on-surface font-semibold">{teaches.join(', ')}</strong></>}
-                        {teaches.length > 0 && learns.length > 0 && <span className="mx-1.5 text-outline">•</span>}
-                        {learns.length > 0 && <>Wants: <strong className="text-on-surface font-semibold">{learns.join(', ')}</strong></>}
-                      </p>
-                      <div className="flex gap-2 flex-wrap">
-                        <span className="px-2.5 py-0.5 bg-surface-container-low border border-outline-variant rounded-md text-[11px] font-semibold text-on-surface-variant flex items-center gap-1">
-                          <span className="material-symbols-outlined text-learning-amber text-xs">star</span>
+                      
+                      {/* Dual-Sided Skills */}
+                      <div className="flex flex-wrap items-center gap-2 text-xs mb-2.5">
+                        {teaches.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-semibold text-muted">Teaches:</span>
+                            {teaches.slice(0, 3).map((t: string) => (
+                              <SkillTag key={t} label={t} type="teaching" size="sm" />
+                            ))}
+                          </div>
+                        )}
+                        {teaches.length > 0 && learns.length > 0 && <span className="text-muted/40">•</span>}
+                        {learns.length > 0 && (
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[11px] font-semibold text-muted">Learns:</span>
+                            {learns.slice(0, 3).map((l: string) => (
+                              <SkillTag key={l} label={l} type="learning" size="sm" />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2 flex-wrap items-center">
+                        <span className="px-2.5 py-0.5 bg-surface-2 border border-border rounded-md text-[11px] font-semibold text-muted flex items-center gap-1">
+                          <span className="material-symbols-outlined text-accent text-xs" aria-hidden="true">star</span>
                           {peer.trustScore.toFixed(2)} Rating
                         </span>
-                        <span className="px-2.5 py-0.5 bg-teaching-emerald-container border border-teaching-emerald/20 rounded-md text-[11px] font-semibold text-on-teaching-emerald-container flex items-center gap-1">
-                          <span className="material-symbols-outlined text-teaching-emerald text-xs">swap_horiz</span>
-                          Free Skill Swap Available
-                        </span>
+                        <StatusBadge label="Skill Swap Available" status="live" size="sm" />
                       </div>
                     </div>
                     <div className="flex gap-2 w-full md:w-auto shrink-0 self-stretch md:self-center justify-end">
                       <Button 
                         variant="secondary" 
-                        className="font-semibold text-xs py-1.5 px-4"
+                        size="sm"
+                        className="py-1.5 px-4"
                         onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
                       >
                         Chat
                       </Button>
-                      <Button variant="primary" className="font-semibold text-xs py-1.5 px-4 flex items-center gap-1.5" onClick={() => handleOpenProposal(peer)}>
-                        <span className="material-symbols-outlined text-sm">swap_horiz</span>
+                      <Button 
+                        variant="primary" 
+                        size="sm"
+                        className="py-1.5 px-4 flex items-center gap-1.5" 
+                        onClick={() => handleOpenProposal(peer)}
+                      >
+                        <span className="material-symbols-outlined text-sm" aria-hidden="true">swap_horiz</span>
                         <span>Propose Swap</span>
                       </Button>
                     </div>

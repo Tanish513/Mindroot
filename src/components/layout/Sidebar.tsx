@@ -5,20 +5,31 @@ import { api } from '../../lib/api';
 import clsx from 'clsx';
 import { usePendingApprovals } from '../../hooks/usePendingApprovals';
 
-const navItems = [
-  { path: '/dashboard', icon: 'dashboard', label: 'Dashboard', shortcut: '⌘D', roles: ['student'] },
-  { path: '/teacher', icon: 'school', label: 'Teacher Portal', shortcut: '⌘T', roles: ['teacher'] },
-  { path: '/discussions', icon: 'forum', label: 'Community', shortcut: '⌘U', roles: ['student', 'teacher'] },
-  { path: '/marketplace', icon: 'storefront', label: 'Marketplace', shortcut: '⌘M', roles: ['student'] },
-  { path: '/rewards', icon: 'stars', label: 'Rewards Store', shortcut: '⌘R', roles: ['student'] },
-  { path: '/match-finder', icon: 'search_check', label: 'Match Finder', shortcut: '⌘F', roles: ['student'] },
-  { path: '/schedule', icon: 'calendar_today', label: 'Schedule', shortcut: '⌘S', roles: ['student', 'teacher'] },
-  { path: '/notes', icon: 'edit_note', label: 'Notes', shortcut: '⌘N', roles: ['student', 'teacher'] },
-  { path: '/messages', icon: 'chat_bubble', label: 'Messages', shortcut: '⌘E', roles: ['student', 'teacher'] },
-  { path: '/live-room', icon: 'video_chat', label: 'Live Room', shortcut: '⌘L', roles: ['student', 'teacher'] },
-  { path: '/wallet', icon: 'account_balance_wallet', label: 'Wallet', shortcut: '⌘W', roles: ['student', 'teacher'] },
-  { path: '/feedback', icon: 'rate_review', label: 'Feedback', shortcut: '⌘K', roles: ['student', 'teacher'] },
-  { path: '/admin', icon: 'admin_panel_settings', label: 'Admin', shortcut: '⌘A', roles: ['admin'] },
+interface NavItem {
+  path: string;
+  icon: string;
+  label: string;
+  ariaLabel: string;
+  shortcut: string;
+  roles?: string[];
+}
+
+const primaryNavItems: NavItem[] = [
+  { path: '/dashboard', icon: 'dashboard', label: 'Home', ariaLabel: 'Dashboard', shortcut: '⌘D' },
+  { path: '/marketplace', icon: 'storefront', label: 'Find Peers', ariaLabel: 'Find Peers & Mentors', shortcut: '⌘M' },
+  { path: '/schedule', icon: 'calendar_today', label: 'Schedule', ariaLabel: 'Schedule', shortcut: '⌘S' },
+  { path: '/live-room', icon: 'video_chat', label: 'Live Room', ariaLabel: 'Live Room', shortcut: '⌘L' },
+  { path: '/messages', icon: 'chat_bubble', label: 'Messages', ariaLabel: 'Messages', shortcut: '⌘E' },
+  { path: '/wallet', icon: 'account_balance_wallet', label: 'Wallet', ariaLabel: 'Payments & Wallet', shortcut: '⌘W' },
+];
+
+const secondaryNavItems: NavItem[] = [
+  { path: '/discussions', icon: 'forum', label: 'Community', ariaLabel: 'Community', shortcut: '⌘U', roles: ['student', 'teacher', 'admin'] },
+  { path: '/notes', icon: 'edit_note', label: 'Notes', ariaLabel: 'Notes', shortcut: '⌘N', roles: ['student', 'teacher', 'admin'] },
+  { path: '/rewards', icon: 'stars', label: 'Rewards Store', ariaLabel: 'Rewards Store', shortcut: '⌘R', roles: ['student', 'teacher', 'admin'] },
+  { path: '/feedback', icon: 'rate_review', label: 'Feedback', ariaLabel: 'Feedback', shortcut: '⌘K', roles: ['student', 'teacher', 'admin'] },
+  { path: '/teacher', icon: 'school', label: 'Teacher Portal', ariaLabel: 'Teacher Portal', shortcut: '⌘T', roles: ['teacher'] },
+  { path: '/admin', icon: 'admin_panel_settings', label: 'Admin', ariaLabel: 'Admin', shortcut: '⌘A', roles: ['admin'] },
 ];
 
 interface SidebarProps {
@@ -38,11 +49,40 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
   const toggleSidebarCollapsed = useAppStore(state => state.toggleSidebarCollapsed);
 
   const [isHovered, setIsHovered] = useState(false);
+  const [moreExpanded, setMoreExpanded] = useState(false);
+  const [flyoutOpen, setFlyoutOpen] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const leaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Check for currently joinable session to display pulsing dot on Live Room icon
   const [hasJoinableSession, setHasJoinableSession] = useState(false);
+
+  const { pendingCount } = usePendingApprovals();
+  const canSwitchRole = loginRole === 'both' || currentUser?.role === 'both';
+  const activeRole = canSwitchRole
+    ? role
+    : (currentUser?.role === 'teacher' || loginRole === 'teacher' ? 'teacher' : 'student');
+
+  // Filter secondary items based on role
+  const filteredSecondaryItems = secondaryNavItems.filter(item => {
+    if (!item.roles) return true;
+    if (item.path === '/teacher') {
+      return activeRole === 'teacher' || (canSwitchRole && pendingCount > 0);
+    }
+    if (item.path === '/admin') {
+      return currentUser?.role === 'admin';
+    }
+    return item.roles.includes(activeRole);
+  });
+
+  const isSecondaryActive = filteredSecondaryItems.some(item => location.pathname === item.path);
+
+  // Auto-expand "More" in expanded view if on a secondary route
+  useEffect(() => {
+    if (isSecondaryActive) {
+      setMoreExpanded(true);
+    }
+  }, [location.pathname, isSecondaryActive]);
 
   useEffect(() => {
     let active = true;
@@ -73,7 +113,6 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
           if (ended) return false;
 
           if (isT) return true; // Teacher may join anytime before end + grace
-          // Student join window: 10 mins before start until end + grace
           return now >= start - 10 * 60 * 1000;
         });
 
@@ -81,7 +120,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
           setHasJoinableSession(joinable);
         }
       } catch {
-        // Ignore network / offline errors
+        // Ignore network errors
       }
     };
 
@@ -117,10 +156,12 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
     } else {
       setIsHovered(false);
     }
+    setFlyoutOpen(false);
   };
 
   const handleNavClick = () => {
     setMobileOpen?.(false);
+    setFlyoutOpen(false);
     if (isHovered) {
       setIsHovered(false);
     }
@@ -128,16 +169,6 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
 
   const isExpanded = !isSidebarCollapsed || isHovered;
   const isFloatingOverlay = isSidebarCollapsed && isHovered;
-
-  const { pendingCount } = usePendingApprovals();
-  const canSwitchRole = loginRole === 'both' || currentUser?.role === 'both';
-  const activeRole = canSwitchRole
-    ? role
-    : (currentUser?.role === 'teacher' || loginRole === 'teacher' ? 'teacher' : 'student');
-  const filteredItems = navItems.filter(item => {
-    if (item.path === '/teacher' && canSwitchRole && pendingCount > 0) return true;
-    return item.roles.includes(activeRole);
-  });
 
   const handleLogout = () => {
     logout();
@@ -172,7 +203,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
             <h1 className="text-base font-black tracking-tight text-sidebar-active-text leading-none truncate">
               Mindroot
             </h1>
-            <span className="inline-block text-[10px] font-bold text-sidebar-icon opacity-80 mt-0.5 tracking-wider uppercase truncate">
+            <span className="inline-block text-xs font-bold text-sidebar-icon opacity-80 mt-0.5 tracking-wider uppercase truncate">
               Skill Exchange
             </span>
           </div>
@@ -208,9 +239,10 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
         )}
       </div>
 
-      {/* Nav Links */}
+      {/* Nav Links - Exactly 7 Top-Level Items */}
       <nav className="flex-1 flex flex-col gap-1 overflow-y-auto custom-scrollbar overflow-x-hidden pt-1">
-        {filteredItems.map((item) => {
+        {/* 1 to 6: Core Primary Navigation Items */}
+        {primaryNavItems.map((item) => {
           const isActive = location.pathname === item.path || 
             (location.pathname === '/' && item.path === '/dashboard') ||
             (item.path === '/live-room' && (location.pathname.startsWith('/live') || location.pathname.startsWith('/room') || location.pathname.startsWith('/classroom')));
@@ -219,7 +251,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               key={item.path}
               to={item.path}
               onClick={handleNavClick}
-              aria-label={item.label}
+              aria-label={item.ariaLabel}
               className={clsx(
                 "group relative flex items-center h-11 w-full rounded-xl font-semibold text-xs transition-colors duration-150 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg",
                 isActive 
@@ -227,7 +259,6 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                   : "text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
               )}
             >
-              {/* Stationary Anchor Icon with soft rounded background when active */}
               <div className="w-11 h-11 flex items-center justify-center shrink-0 relative">
                 <div className={clsx(
                   "w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-150",
@@ -247,11 +278,6 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                 </div>
 
                 {/* Pulsing joinable session dot on Live Room icon */}
-                {item.path === '/teacher' && pendingCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 min-w-4 h-4 px-1 flex items-center justify-center rounded-full bg-amber-500 text-white text-[9px] font-black ring-2 ring-sidebar-bg" title={`${pendingCount} pending requests`}>
-                    {pendingCount > 9 ? '9+' : pendingCount}
-                  </span>
-                )}
                 {item.label === 'Live Room' && hasJoinableSession && (
                   <span className="absolute top-2.5 right-2.5 flex h-2.5 w-2.5" title="Live lecture joinable now">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
@@ -268,12 +294,9 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                   isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
                 )}
               >
-                <span>{item.label}</span>
-                {item.path === '/teacher' && pendingCount > 0 && (
-                  <span className="ml-1 text-[10px] text-amber-500 font-bold">({pendingCount})</span>
-                )}
+                <span>{item.ariaLabel}</span>
                 {item.shortcut && (
-                  <span className="ml-1.5 text-muted font-mono text-[10px] bg-surface-2 px-1 py-0.5 rounded border border-border">
+                  <span className="ml-1.5 text-muted font-mono text-xs bg-surface-2 px-1.5 py-0.5 rounded border border-border">
                     {item.shortcut}
                   </span>
                 )}
@@ -296,14 +319,14 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                     {item.label}
                   </span>
                   {item.label === 'Live Room' && hasJoinableSession && (
-                    <span className="px-1.5 py-0.5 text-[9px] uppercase font-bold bg-primary text-on-primary rounded-full animate-pulse shrink-0">
+                    <span className="px-1.5 py-0.5 text-xs uppercase font-bold bg-primary text-on-primary rounded-full animate-pulse shrink-0">
                       LIVE
                     </span>
                   )}
                 </div>
                 <span
                   className={clsx(
-                    "text-[10px] font-mono px-1.5 py-0.5 rounded transition-all duration-150 shrink-0 ml-2",
+                    "text-xs font-mono px-1.5 py-0.5 rounded transition-all duration-150 shrink-0 ml-2",
                     "bg-surface border border-border text-muted opacity-0 [@media(hover:hover)]:group-hover:opacity-100 group-focus-visible:opacity-100"
                   )}
                 >
@@ -313,6 +336,142 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
             </Link>
           );
         })}
+
+        {/* 7th Item: More (with Collapsible Sub-Items & Flyout) */}
+        <div className="relative">
+          <button
+            type="button"
+            onClick={() => {
+              if (isCollapsed) {
+                setFlyoutOpen(prev => !prev);
+              } else {
+                setMoreExpanded(prev => !prev);
+              }
+            }}
+            aria-label="More navigation items"
+            aria-expanded={isCollapsed ? flyoutOpen : moreExpanded}
+            className={clsx(
+              "group relative flex items-center h-11 w-full rounded-xl font-semibold text-xs transition-colors duration-150 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg",
+              isSecondaryActive 
+                ? "bg-primary-tint/70 text-primary-text font-bold" 
+                : "text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
+            )}
+          >
+            <div className="w-11 h-11 flex items-center justify-center shrink-0">
+              <div className={clsx(
+                "w-8 h-8 rounded-lg flex items-center justify-center transition-colors duration-150",
+                isSecondaryActive ? "bg-sidebar-active-icon-bg shadow-xs" : ""
+              )}>
+                <span
+                  className={clsx(
+                    "material-symbols-outlined text-xl transition-colors duration-150",
+                    isSecondaryActive ? "text-primary-text" : "text-sidebar-icon [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text"
+                  )}
+                >
+                  more_horiz
+                </span>
+              </div>
+            </div>
+
+            {/* Collapsed Tooltip */}
+            <div 
+              role="tooltip" 
+              className={clsx(
+                "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
+                isCollapsed && !flyoutOpen ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
+              )}
+            >
+              <span>More ({filteredSecondaryItems.length} items)</span>
+            </div>
+
+            {/* Expanded Label & Expand Icon */}
+            <div
+              className={clsx(
+                "flex-1 flex items-center justify-between min-w-0 pr-3 pl-1 transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] overflow-hidden whitespace-nowrap",
+                isCollapsed ? "max-w-0 opacity-0 -translate-x-2 pointer-events-none" : "max-w-[180px] opacity-100 translate-x-0"
+              )}
+            >
+              <span className={clsx(
+                "truncate transition-colors duration-150",
+                isSecondaryActive ? "text-primary-text" : "text-sidebar-icon [@media(hover:hover)]:group-hover:text-text group-focus-visible:text-text"
+              )}>
+                More
+              </span>
+              <span className="material-symbols-outlined text-base text-muted transition-transform duration-200">
+                {moreExpanded ? 'expand_less' : 'expand_more'}
+              </span>
+            </div>
+          </button>
+
+          {/* Expanded Inline Sub-Items Accordion */}
+          {!isCollapsed && moreExpanded && (
+            <div className="pl-4 pr-1 py-1 space-y-0.5 border-l border-sidebar-border ml-5 mt-0.5 animate-in fade-in duration-150">
+              {filteredSecondaryItems.map((item) => {
+                const isSubActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={handleNavClick}
+                    aria-label={item.ariaLabel}
+                    className={clsx(
+                      "flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors",
+                      isSubActive 
+                        ? "bg-primary-tint text-primary-text font-bold" 
+                        : "text-sidebar-icon hover:bg-nav-hover hover:text-text"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="material-symbols-outlined text-base shrink-0">{item.icon}</span>
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    {item.path === '/teacher' && pendingCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-xs font-black bg-amber-500 text-white shrink-0">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Collapsed Mode Flyout Popover */}
+          {isCollapsed && flyoutOpen && (
+            <div className="absolute left-full ml-2.5 top-0 w-48 bg-surface border border-border rounded-xl shadow-lg z-50 p-1.5 space-y-0.5 animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-2 py-1 text-xs font-bold text-muted uppercase tracking-wider border-b border-border mb-1">
+                More Features
+              </div>
+              {filteredSecondaryItems.map((item) => {
+                const isSubActive = location.pathname === item.path;
+                return (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    onClick={handleNavClick}
+                    aria-label={item.ariaLabel}
+                    className={clsx(
+                      "flex items-center justify-between px-2.5 py-2 rounded-lg text-xs font-medium transition-colors",
+                      isSubActive 
+                        ? "bg-primary-tint text-primary-text font-bold" 
+                        : "text-text hover:bg-surface-2"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="material-symbols-outlined text-base shrink-0">{item.icon}</span>
+                      <span className="truncate">{item.label}</span>
+                    </div>
+                    {item.path === '/teacher' && pendingCount > 0 && (
+                      <span className="px-1.5 py-0.2 rounded-full text-xs font-black bg-amber-500 text-white shrink-0">
+                        {pendingCount}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </nav>
 
       {/* User Info & Footer Controls */}
@@ -375,7 +534,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
                     {currentUser.name}
                   </p>
                   <p className={clsx(
-                    "text-[10px] capitalize font-medium truncate transition-colors duration-150",
+                    "text-xs capitalize font-medium truncate transition-colors duration-150",
                     isProfileActive ? "text-primary-text/80" : "text-muted"
                   )}>
                     {activeRole} • {activeRole === 'student' ? `${Math.min(100, Math.round((currentUser.trustScore || 5) * 20))}%` : `${currentUser.trustScore || '4.95'}⭐`}
@@ -419,12 +578,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
             >
               <span>Switch to {activeRole === 'student' ? 'Teacher' : 'Student'}</span>
               {activeRole === 'student' && pendingCount > 0 && (
-                <span className="ml-auto px-1.5 py-0.2 rounded-full text-[9px] font-black bg-amber-500 text-white shrink-0">
-                  {pendingCount}
-                </span>
-              )}
-              {activeRole === 'student' && pendingCount > 0 && (
-                <span className="ml-1 text-[10px] text-amber-500 font-bold">({pendingCount})</span>
+                <span className="ml-1 text-xs text-amber-500 font-bold">({pendingCount})</span>
               )}
             </div>
 
@@ -453,7 +607,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
           <div 
             role="tooltip" 
             className={clsx(
-                "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
+              "pointer-events-none absolute left-full ml-2.5 z-50 items-center px-2.5 py-1 text-xs font-semibold text-text bg-surface rounded-lg shadow border border-border whitespace-nowrap transition-opacity duration-150",
               isCollapsed ? "hidden group-hover:flex group-focus-visible:flex" : "hidden"
             )}
           >
@@ -482,7 +636,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
         className={clsx(
           "hidden md:block h-full fixed left-0 top-0 border-r border-sidebar-border bg-sidebar-bg transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] will-change-[width] overflow-hidden",
           isFloatingOverlay
-            ? "w-[260px] z-50 shadow-2xl border-r-sidebar-border bg-sidebar-bg/95 backdrop-blur-md"
+            ? "w-[260px] z-[70] shadow-2xl border-r border-sidebar-border bg-sidebar-bg"
             : (isSidebarCollapsed 
                 ? "w-[72px] z-40 shadow-elevation-1" 
                 : "w-[260px] z-40 shadow-elevation-1")
@@ -514,4 +668,3 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
     </>
   );
 }
-

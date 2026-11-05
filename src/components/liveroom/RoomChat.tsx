@@ -88,51 +88,42 @@ export function RoomChat({
   }
 
   return (
-    <aside className={clsx(
-      'min-h-0 shrink-0 overflow-hidden rounded-2xl border border-outline-variant bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-on-surface',
+    <div className={clsx(
+      'min-h-0 flex-1 h-full overflow-hidden transition-all duration-300 flex flex-col bg-surface text-text',
       chatOpen ? 'flex' : 'hidden lg:flex'
     )}>
-      <div className="flex items-center justify-between border-b border-outline-variant px-3.5 py-2.5 bg-surface-container-low shrink-0">
-        <div>
-          <h2 className="text-xs font-black text-on-surface">Live Cohort Chat</h2>
-          <p className="text-[10px] text-on-surface-variant font-bold">Encrypted in-session messaging</p>
-        </div>
-        <div className="flex items-center gap-1.5">
-          <span className="grid h-7 w-7 place-items-center rounded-xl bg-primary-container text-on-primary-container border border-primary/20 shadow-elevation-1">
-            <span className="material-symbols-outlined text-[15px]">forum</span>
-          </span>
-          {onClose && (
-            <button onClick={onClose} className="lg:hidden text-on-surface-variant hover:text-on-surface p-1">
-              <span className="material-symbols-outlined text-sm">close</span>
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="flex-1 space-y-2.5 overflow-y-auto p-3 custom-scrollbar bg-surface-container-low/30">
-        {messages.map(message => (
-          <div
-            key={message.id}
-            className={clsx(
-              'max-w-[90%] rounded-2xl px-3 py-1.5 text-xs leading-4 shadow-elevation-1 transition-all',
-              message.own 
-                ? 'ml-auto bg-primary text-on-primary font-bold rounded-tr-none' 
-                : 'bg-surface-container border border-outline-variant text-on-surface rounded-tl-none font-medium'
-            )}
-          >
-            <div className="flex items-center justify-between gap-1 mb-0.5">
-              <p className={clsx('text-[9px] font-extrabold truncate', message.own ? 'text-on-primary/80' : 'text-primary')}>
-                {message.sender}
-              </p>
-              {message.role && (
-                <span className={clsx("text-[8px] uppercase tracking-wider px-1 rounded", message.own ? "bg-black/20" : "bg-primary/10 text-primary")}>
-                  {message.role}
-                </span>
-              )}
-            </div>
-            <p className="whitespace-pre-wrap break-words">{message.text}</p>
+      <div className="flex-1 space-y-2.5 overflow-y-auto p-3 custom-scrollbar bg-surface-2/20">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-center p-4 text-muted space-y-1 select-none">
+            <span className="material-symbols-outlined text-2xl text-muted/60">chat_bubble_outline</span>
+            <p className="text-xs font-medium">No messages yet</p>
+            <p className="text-[11px] text-muted/80">Send a message to your cohort</p>
           </div>
-        ))}
+        ) : (
+          messages.map(message => (
+            <div
+              key={message.id}
+              className={clsx(
+                'max-w-[90%] rounded-xl px-3 py-1.5 text-xs leading-4 shadow-xs transition-all',
+                message.own 
+                  ? 'ml-auto bg-primary text-white font-medium rounded-tr-none' 
+                  : 'bg-surface border border-border text-text rounded-tl-none font-medium'
+              )}
+            >
+              <div className="flex items-center justify-between gap-1 mb-0.5">
+                <p className={clsx('text-[10px] font-bold truncate', message.own ? 'text-white/80' : 'text-primary')}>
+                  {message.sender}
+                </p>
+                {message.role && (
+                  <span className={clsx("text-[9px] uppercase tracking-wider px-1 rounded", message.own ? "bg-black/20" : "bg-primary/10 text-primary")}>
+                    {message.role}
+                  </span>
+                )}
+              </div>
+              <p className="whitespace-pre-wrap break-words">{message.text}</p>
+            </div>
+          ))
+        )}
       </div>
 
       <form
@@ -140,21 +131,22 @@ export function RoomChat({
           event.preventDefault();
           sendChat();
         }}
-        className="flex gap-1.5 border-t border-outline-variant p-2.5 bg-surface shrink-0"
+        className="flex gap-1.5 border-t border-border p-2.5 bg-surface shrink-0"
       >
         <input
           value={chatText}
           onChange={event => setChatText(event.target.value)}
           placeholder="Type a message…"
-          className="min-w-0 flex-1 rounded-xl border border-outline-variant bg-surface-container-low px-3 py-1.5 text-xs text-on-surface outline-none placeholder:text-neutral-subtle transition-all focus:border-primary focus:ring-2 focus:ring-primary/20 font-medium"
+          className="min-w-0 flex-1 rounded-xl border border-border bg-surface-2/60 px-3 py-2 text-xs text-text outline-none placeholder:text-muted transition-all focus:border-primary focus:ring-1 focus:ring-primary/20 font-medium"
         />
         <button
           type="submit"
-          className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary hover:bg-primary-hover active:scale-95 transition-all shadow-elevation-1 shrink-0"
+          disabled={!chatText.trim()}
+          className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-white hover:bg-primary-hover active:scale-95 transition-all shadow-xs shrink-0 cursor-pointer disabled:opacity-40"
         >
           <span className="material-symbols-outlined text-[15px]">send</span>
         </button>
       </form>
-    </aside>
+    </div>
   );
 }

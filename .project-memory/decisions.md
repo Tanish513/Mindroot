@@ -51,3 +51,6 @@
   - Decision: Real-time payment notifications (`session-payment-received`, `session-payment-confirmed`, `network-sessions-updated`) and note events (`note-created`, `note-updated`, `note-deleted`) are delivered exclusively to participant user rooms (`user:${studentId}`, `user:${teacherId}`, or `user:${authorId}`). Global emissions are completely eliminated.
   - Reason: Protects student and teacher privacy by ensuring financial records, UTRs, and personal learning notes are never broadcast to unrelated connected sockets.
 
+- **DEC-018: Unified Discovery Hub (Consolidating Match Finder & Marketplace)**:
+  - Decision: Consolidate the two separate discovery pages (`/marketplace` and `/match-finder`) into a single cohesive Discovery Hub under `/marketplace` with clear segmented tabs (`mentors`, `group_batches`, `swaps`, and `proposals`). In the primary navigation, replace the two competing items with a single item ("Explore & Mentors"). Maintain `/match-finder` as an automatic redirect to `/marketplace?tab=swaps` for 100% backward compatibility.
+  - Reason: Eliminates user confusion, cleans up the sidebar visual hierarchy, and presents a professional, cohesive experience for students and evaluators without losing any underlying functionality.

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
+import { EmptyState } from '../components/ui/EmptyState';
 import { api, getSessionApproverId, onSessionsUpdated, onSessionRequestCreated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { isValidPrice, calculateBatchPricing } from '../lib/pricing';
@@ -510,11 +511,11 @@ export function TeacherPortal() {
           </div>
           <div className="p-4 flex-1 space-y-3 overflow-y-auto max-h-[420px] custom-scrollbar">
             {filteredPending.length === 0 ? (
-              <div className="text-center py-10 text-on-surface-variant text-xs">
-                <span className="material-symbols-outlined text-3xl text-outline mb-1">task_alt</span>
-                <p className="font-semibold text-on-surface">No pending student requests</p>
-                <p className="text-[11px] text-on-surface-variant mt-0.5">New session bookings will appear here.</p>
-              </div>
+              <EmptyState
+                icon="task_alt"
+                title="No pending student requests"
+                description="New lesson bookings will appear here for your confirmation."
+              />
             ) : (
               filteredPending.map((session, idx) => {
                 const studentAvatar = session.student?.avatar || avatars[idx % avatars.length];

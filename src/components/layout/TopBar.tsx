@@ -28,6 +28,8 @@ const NAVIGATION_PAGES = [
 
 export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   const role = useAppStore(state => state.role);
+  const loginRole = useAppStore(state => state.loginRole);
+  const toggleRole = useAppStore(state => state.toggleRole);
   const theme = useAppStore(state => state.theme);
   const setTheme = useAppStore(state => state.setTheme);
   const searchQuery = useAppStore(state => state.searchQuery);
@@ -47,8 +49,13 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   const [incomingPaymentAlert, setIncomingPaymentAlert] = useState<any>(null);
   const [seedingDemo, setSeedingDemo] = useState(false);
   const [demoMessage, setDemoMessage] = useState<string | null>(null);
+  const [demoMode, setDemoMode] = useState(false);
   const { pendingCount } = usePendingApprovals();
   const [socketConnected, setSocketConnected] = useState<boolean>(isSocketConnected());
+
+  const isAdmin = currentUser?.role === 'admin';
+  const showDemoAndSpecs = isAdmin || demoMode;
+  const canSwitchRole = loginRole === 'both' || currentUser?.role === 'both';
 
   useEffect(() => {
     const unsub = onSocketConnectionChange((connected) => {
@@ -72,6 +79,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
     }
     api.getPeers().then(setPeers).catch(console.error);
     api.getSessions().then(setSessions).catch(console.error);
+    api.getConfig().then(cfg => setDemoMode(Boolean(cfg?.demoMode))).catch(() => setDemoMode(false));
   }, [currentUser, setCurrentUser]);
 
   // Global keyboard shortcut: Cmd+K / Ctrl+K
@@ -270,7 +278,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   return (
     <>
       {!socketConnected && currentUser && (
-        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 z-50 shrink-0">
+        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 z-30 shrink-0">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-base text-amber-600 animate-pulse">cloud_off</span>
             <span>
@@ -280,7 +288,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           <button
             type="button"
             onClick={() => updateSocketAuth()}
-            className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-[11px] border border-amber-500/30 transition-colors cursor-pointer"
+            className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-xs border border-amber-500/30 transition-colors cursor-pointer"
           >
             Reconnect
           </button>
@@ -323,7 +331,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                 <span className="material-symbols-outlined text-sm">close</span>
               </button>
             ) : (
-              <span className="hidden sm:inline-flex items-center gap-0.5 absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-muted bg-surface-2 border border-border rounded pointer-events-none">
+              <span className="hidden sm:inline-flex items-center gap-0.5 absolute right-2.5 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-xs font-mono text-muted bg-surface-2 border border-border rounded pointer-events-none">
                 ⌘K
               </span>
             )}
@@ -460,111 +468,107 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         </div>
       </div>
       <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-        <Link 
-          to="/wallet"
-          className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-primary-tint hover:bg-primary-tint/80 rounded-xl border border-primary/20 text-primary-text transition-colors cursor-pointer"
-          title="Open Payments & Earnings Wallet"
-        >
-          <span className="material-symbols-outlined text-primary-text text-base">payments</span>
-          <span className="text-xs font-bold">Payments & Wallet</span>
-        </Link>
-        <Link 
-          to="/wallet"
-          className="flex sm:hidden items-center gap-1 px-2.5 py-1 bg-primary-tint hover:bg-primary-tint/80 rounded-lg border border-primary/20 text-[11px] font-bold text-primary-text shrink-0"
-        >
-          <span className="material-symbols-outlined text-primary-text text-sm">payments</span>
-          <span>Wallet</span>
-        </Link>
-        <div className="hidden sm:block px-3 py-1 bg-surface hover:bg-primary-tint hover:text-primary-text rounded-xl border border-border text-text transition-colors">
-          <span className="text-xs font-semibold capitalize">{role} Mode</span>
-        </div>
-
-        {/* 5th-Sem / Hackathon Demo Suite Dropdown */}
-        <div ref={demoContainerRef} className="relative">
+        {/* Role Mode Switch: Only shown if user has 'both' role */}
+        {canSwitchRole && (
           <button
-            onClick={() => setShowDemoMenu(prev => !prev)}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            title="Switch Demo Persona or Seed 1-Minute Live Demo"
+            onClick={toggleRole}
+            className="hidden sm:block px-3 py-1 bg-surface hover:bg-primary-tint hover:text-primary-text rounded-xl border border-border text-text transition-colors cursor-pointer"
+            title="Switch between Student and Teacher Mode"
           >
-            <span className="material-symbols-outlined text-base">bolt</span>
-            <span className="hidden md:inline">Demo Suite</span>
-            <span className="material-symbols-outlined text-xs">arrow_drop_down</span>
+            <span className="text-xs font-semibold capitalize">{role} Mode</span>
           </button>
+        )}
 
-          {showDemoMenu && (
-            <div className="absolute right-0 mt-2 w-64 bg-surface border border-border rounded-2xl shadow-lg z-50 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-2 py-1 border-b border-border/60">
-                <p className="text-[10px] font-black uppercase tracking-wider text-primary">5th-Sem Presentation Suite</p>
-                <p className="text-[11px] text-muted font-medium">Switch persona or seed 1-min live demo</p>
-              </div>
+        {/* Demo Suite: Only shown for admin or when DEMO_MODE is true */}
+        {showDemoAndSpecs && (
+          <div ref={demoContainerRef} className="relative">
+            <button
+              onClick={() => setShowDemoMenu(prev => !prev)}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              title="Switch Demo Persona or Seed 1-Minute Live Demo"
+            >
+              <span className="material-symbols-outlined text-base">bolt</span>
+              <span className="hidden md:inline">Demo Suite</span>
+              <span className="material-symbols-outlined text-xs">arrow_drop_down</span>
+            </button>
 
-              <div className="space-y-0.5">
-                <button
-                  onClick={() => handleQuickSwitchRole('student')}
-                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base text-primary">school</span>
-                    <div>
-                      <p className="leading-tight">Aarav Patel</p>
-                      <p className="text-[10px] text-muted font-normal">Student Persona</p>
+            {showDemoMenu && (
+              <div className="absolute right-0 mt-2 w-64 bg-surface border border-border rounded-2xl shadow-lg z-50 p-2 space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
+                <div className="px-2 py-1 border-b border-border/60">
+                  <p className="text-xs font-black uppercase tracking-wider text-primary">Demo Suite</p>
+                  <p className="text-xs text-muted font-medium">Switch persona or seed 1-min live demo</p>
+                </div>
+
+                <div className="space-y-0.5">
+                  <button
+                    onClick={() => handleQuickSwitchRole('student')}
+                    className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-base text-primary">school</span>
+                      <div>
+                        <p className="leading-tight">Aarav Patel</p>
+                        <p className="text-xs text-muted font-normal">Student Persona</p>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-primary-tint text-primary-text rounded font-mono">Learner</span>
-                </button>
+                    <span className="text-xs px-1.5 py-0.5 bg-primary-tint text-primary-text rounded font-mono">Learner</span>
+                  </button>
 
-                <button
-                  onClick={() => handleQuickSwitchRole('teacher')}
-                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base text-primary">workspace_premium</span>
-                    <div>
-                      <p className="leading-tight">Dr. Priya Sharma</p>
-                      <p className="text-[10px] text-muted font-normal">Verified Mentor (Faculty ID)</p>
+                  <button
+                    onClick={() => handleQuickSwitchRole('teacher')}
+                    className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-base text-primary">workspace_premium</span>
+                      <div>
+                        <p className="leading-tight">Dr. Priya Sharma</p>
+                        <p className="text-xs text-muted font-normal">Verified Mentor (Faculty ID)</p>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-primary-tint text-primary-text rounded font-mono">Mentor</span>
-                </button>
+                    <span className="text-xs px-1.5 py-0.5 bg-primary-tint text-primary-text rounded font-mono">Mentor</span>
+                  </button>
 
-                <button
-                  onClick={() => handleQuickSwitchRole('admin')}
-                  className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="material-symbols-outlined text-base text-muted">admin_panel_settings</span>
-                    <div>
-                      <p className="leading-tight">System Admin</p>
-                      <p className="text-[10px] text-muted font-normal">Approvals & Disputes</p>
+                  <button
+                    onClick={() => handleQuickSwitchRole('admin')}
+                    className="w-full flex items-center justify-between p-2 rounded-xl text-xs font-bold text-text hover:bg-surface-2 transition-colors text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="material-symbols-outlined text-base text-muted">admin_panel_settings</span>
+                      <div>
+                        <p className="leading-tight">System Admin</p>
+                        <p className="text-xs text-muted font-normal">Approvals & Disputes</p>
+                      </div>
                     </div>
-                  </div>
-                  <span className="text-[10px] px-1.5 py-0.5 bg-surface-2 text-muted rounded font-mono">Admin</span>
-                </button>
-              </div>
+                    <span className="text-xs px-1.5 py-0.5 bg-surface-2 text-muted rounded font-mono">Admin</span>
+                  </button>
+                </div>
 
-              <div className="pt-1 border-t border-border/60">
-                <button
-                  onClick={handleSeedDemo}
-                  disabled={seedingDemo}
-                  className="w-full py-2 px-3 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
-                >
-                  <span className="material-symbols-outlined text-sm">rocket_launch</span>
-                  <span>{seedingDemo ? 'Seeding Demo...' : '⚡ Seed 1-Min Live Demo'}</span>
-                </button>
+                <div className="pt-1 border-t border-border/60">
+                  <button
+                    onClick={handleSeedDemo}
+                    disabled={seedingDemo}
+                    className="w-full py-2 px-3 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50 transition-all"
+                  >
+                    <span className="material-symbols-outlined text-sm">rocket_launch</span>
+                    <span>{seedingDemo ? 'Seeding Demo...' : '⚡ Seed 1-Min Live Demo'}</span>
+                  </button>
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
 
-        {/* Project Specs & Architecture Button for Professor Q&A */}
-        <button
-          onClick={() => setShowArchitectureModal(true)}
-          className="hidden md:flex items-center gap-1 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
-          title="Project Architecture & Syllabus Specs for Professor Evaluation"
-        >
-          <span className="material-symbols-outlined text-base">architecture</span>
-          <span>Specs</span>
-        </button>
+        {/* Project Specs & Architecture Button: Only shown for admin or when DEMO_MODE is true */}
+        {showDemoAndSpecs && (
+          <button
+            onClick={() => setShowArchitectureModal(true)}
+            className="hidden md:flex items-center gap-1 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
+            title="Project Architecture & Syllabus Specs for Professor Evaluation"
+          >
+            <span className="material-symbols-outlined text-base">architecture</span>
+            <span>Specs</span>
+          </button>
+        )}
 
         {/* Theme Toggle Button & Dropdown Menu */}
         <div ref={themeContainerRef} className="relative">
@@ -729,7 +733,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           {currentUser && (
             <div className="hidden lg:flex flex-col text-left">
               <span className="text-xs font-semibold text-text group-hover:text-primary transition-colors">{currentUser.name}</span>
-              <span className="text-[10px] text-muted capitalize font-medium">
+              <span className="text-xs text-muted capitalize font-medium">
                 {currentUser?.role === 'both' ? `${role} (Hybrid)` : (currentUser?.role || role)}
               </span>
             </div>

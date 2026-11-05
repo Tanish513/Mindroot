@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { NoteEditor, type NoteEditorHandle } from '../components/notes/NoteEditor';
+import { EmptyState } from '../components/ui/EmptyState';
+import { SkeletonCard } from '../components/ui/Skeleton';
 
 export function Notes() {
   const location = useLocation();
@@ -480,31 +482,21 @@ export function Notes() {
 
           {/* Notes Responsive Card Grid */}
           {loadingNotes ? (
-            <div className="py-16 text-center text-muted font-bold text-xs animate-pulse">
-              Loading notes...
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <SkeletonCard />
+              <SkeletonCard />
+              <SkeletonCard />
             </div>
           ) : notes.length === 0 ? (
-            <div className="border border-dashed border-border rounded-2xl p-12 text-center bg-surface space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-surface-2 text-primary flex items-center justify-center mx-auto">
-                <span className="material-symbols-outlined text-2xl">description</span>
-              </div>
-              <h3 className="text-sm font-bold text-text">
-                {activeFilter === 'shared' ? 'No shared notes yet' : 'No notes yet'}
-              </h3>
-              <p className="text-xs text-muted max-w-sm mx-auto">
-                {activeFilter === 'shared'
-                  ? 'Notes your mentors share will appear here.'
-                  : 'Start capturing your insights, action items, or session takeaways.'}
-              </p>
-              {activeFilter !== 'shared' && (
-                <button
-                  onClick={handleCreateNewNote}
-                  className="px-4 py-2 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold transition-all cursor-pointer shadow"
-                >
-                  Create your first note
-                </button>
-              )}
-            </div>
+            <EmptyState
+              icon="description"
+              title={activeFilter === 'shared' ? 'No shared notes yet' : 'No notes yet'}
+              description={activeFilter === 'shared'
+                ? 'Notes your mentors share will appear here.'
+                : 'Start capturing your insights, action items, or session takeaways.'}
+              actionLabel={activeFilter !== 'shared' ? 'Create your first note' : undefined}
+              onAction={activeFilter !== 'shared' ? handleCreateNewNote : undefined}
+            />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {notes.map(note => {

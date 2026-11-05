@@ -358,3 +358,42 @@
     - Total: 147/147 tests passing.
     - Server typecheck: 0 errors (`tsc --noEmit`).
     - Client build: `tsc -b && vite build` 0 errors in 2.15s.
+
+- **2026-11-04**:
+  - **Task**: UI/UX Platform Humanization & Admin Authentication Hardening.
+  - **Changes Implemented**:
+    1. **Design Tokens & Warm Academic Styling (`tailwind.config.js`, `src/index.css`)**:
+       - Added semantic design tokens: `teaching`, `teaching-bg`, `learning`, `learning-bg`, `card`, `card-border`, `surface-elevated`, `border-subtle`.
+       - Softened light mode background to warm ivory (`#F7FAF9` / `#FFFFFF`) and dark mode to deep charcoal slate (`#0A1612` / `#11201B`).
+       - Enforced standard 16px body typography with `line-height: 1.6` and `text-rendering: optimizeLegibility`.
+    2. **Core UI Primitives (`src/components/ui/`)**:
+       - `Card.tsx`: Replaced opinionated `CerebralCard` with a versatile, accessible card supporting `interactive`, `outlined`, and `subtle` variants; aliased `CerebralCard = Card` for backward compatibility.
+       - `StatusBadge.tsx`: Clean, accessible badge with companion icons and semantic colors (`live`, `confirmed`, `pending`, `completed`, `canceled`); aliased `NeuralChip = StatusBadge`.
+       - `SkillTag.tsx`: Specialized tag for the dual-sided peer exchange model (Sage for Teaches, Amber for Learns).
+       - `Skeleton.tsx` & `SkeletonCard`: Content-shaped placeholder shimmer loaders.
+       - `EmptyState.tsx`: Empathetic zero-state component with supportive guidance and action buttons.
+       - `Button.tsx`: Added `focus-visible:ring-2` keyboard rings and softened hover elevation.
+    3. **Modular Dashboard Refactoring (`src/pages/Dashboard.tsx`)**:
+       - Decomposed the 1,476-line file into modular components in `src/components/dashboard/`:
+         - `DashboardHeroHeader.tsx`: Personalized greeting, role indicator, and quick-action buttons.
+         - `TodayNoteCard.tsx`: Quick-note capture with streak milestone tracker.
+         - `PeerMatchCard.tsx`: Recommended peer match with dual-sided skill presentation.
+         - `CommunityChampionsWidget.tsx`: Weekly mentor and peer scholar leaderboard.
+         - `UpcomingSessionsWidget.tsx`: Session countdown, notes modal trigger, calendar export, and direct Live Room launch.
+    4. **Peer Discovery Polish (`src/pages/MatchFinder.tsx`)**:
+       - Integrated `SkillTag` badges, `StatusBadge` indicators, and `EmptyState` component.
+    5. **Login Page Redesign & Admin Access Hardening (`src/pages/Login.tsx`, `.env`, `server/.env`)**:
+       - Redesigned `Login.tsx` with clean card layout and warm educational styling.
+       - Added instant 1-click demo access for **Demo Student** (`student.demo@mindroot.edu`), **Demo Mentor** (`mentor.demo@mindroot.edu`), and **Demo Admin** (`admin@mindroot.com`).
+       - Configured `ADMIN_EMAIL=admin@mindroot.com`, `ADMIN_PASSWORD=admin123`, and `DEMO_MODE=true` in root `.env` and `server/.env`.
+  - **Verification**:
+    - Vite build (`npm run build`): 0 errors in 1.45s (520 modules transformed).
+    - Linter (`oxlint`): 0 errors across 112 files.
+
+- **2026-11-05**: Planning Phase: Unified Discovery Hub (Consolidating Match Finder & Marketplace).
+  - Scope: Consolidate `MatchFinder.tsx` and `Marketplace.tsx` into a single, cohesive Discovery Hub under `/marketplace` ("Explore & Mentors") with three segmented tabs:
+    1. Verified Mentors (1-on-1, hourly rates, ₹/tokens)
+    2. Group Cohorts (multi-seat batches, cohort discounts)
+    3. 1-for-1 Skill Swaps (free reciprocal matching, match score %, swap proposal management)
+  - Navigation: Single sidebar item ("Explore & Mentors", icon `explore`). `/match-finder` redirects smoothly to `/marketplace?tab=swaps`.
+  - Vault updates: Logged `DEC-018` in `decisions.md`, updated `master.md`, `task-history.md`, and created `unify_matchfinder_marketplace_plan.md`.

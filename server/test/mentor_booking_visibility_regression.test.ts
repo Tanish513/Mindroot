@@ -204,23 +204,42 @@ async function runMentorBookingVisibilityRegressionTests() {
     teacherSocket.disconnect();
 
     // =========================================================================
-    // PART 2: PostgreSQL Database Verification against Disposable DB
+    // PART 2: PostgreSQL Database Verification against Disposable Test DB
     // =========================================================================
-    console.log('\n--- PART 2: DISPOSABLE LOCAL POSTGRESQL VERIFICATION ---');
-    const pgUrl = 'postgresql://postgres:postgres@127.0.0.1:5432/disposable_test_booking';
-    const testPool = new Pool({ connectionString: pgUrl });
+    console.log('\n--- PART 2: POSTGRESQL VERIFICATION ---');
+    const pgUrl = process.env.TEST_DATABASE_URL;
+    let testPool: Pool | null = null;
+    let testPrisma: PrismaClient | null = null;
 
-    let isPgAvailable = false;
-    try {
-      await testPool.query('SELECT 1');
-      isPgAvailable = true;
-    } catch {
-      console.log('⚠️ Local PostgreSQL (disposable_test_booking) unavailable, skipping Part 2.');
+    if (!pgUrl) {
+      console.log('ℹ️ TEST_DATABASE_URL not set; skipping live PostgreSQL checks (refusing default to 127.0.0.1:5432/disposable_test_booking).');
+    } else {
+      let dbName = '';
+      try {
+        const parsed = new URL(pgUrl);
+        dbName = parsed.pathname.replace(/^\//, '');
+      } catch {
+        throw new Error(`Invalid TEST_DATABASE_URL: ${pgUrl}`);
+      }
+      if (!dbName.toLowerCase().includes('test')) {
+        throw new Error(`Refusing to run tests against database '${dbName}': TEST_DATABASE_URL must contain 'test' in the database name.`);
+      }
+
+      testPool = new Pool({ connectionString: pgUrl });
+      try {
+        await testPool.query('SELECT 1');
+        const testAdapter = new PrismaPg(testPool);
+        testPrisma = new PrismaClient({ adapter: testAdapter });
+      } catch (err) {
+        console.log(`⚠️ PostgreSQL configured at ${pgUrl} unavailable, skipping Part 2:`, err);
+        if (testPool) {
+          await testPool.end();
+          testPool = null;
+        }
+      }
     }
 
-    if (isPgAvailable) {
-      const testAdapter = new PrismaPg(testPool);
-      const testPrisma = new PrismaClient({ adapter: testAdapter });
+    if (testPrisma && testPool) {
 
       // Verify that Session and User queries succeed without column errors
       console.log('Testing User, Session, and Transaction queries on PostgreSQL...');

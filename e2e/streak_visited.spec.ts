@@ -1,5 +1,7 @@
 import { test, expect } from '@playwright/test';
 
+const today = new Date().toISOString().slice(0, 10);
+
 const testUser = {
   id: 'e2e-streak-student',
   name: 'Devon Miles',
@@ -8,8 +10,8 @@ const testUser = {
   tokenBalance: 80,
   trustScore: 4.9,
   streak: 1,
-  lastActiveDate: '2026-10-28',
-  streakHistory: [{ date: '2026-10-28', activities: ['visit'] }],
+  lastActiveDate: today,
+  streakHistory: [{ date: today, activities: ['visit'] }],
   lastClaimedStreakMilestone: 0,
   rewardPoints: 10
 };
@@ -52,7 +54,7 @@ test.describe('7-Day Streak Tracker Visited State & Animation', () => {
         body: JSON.stringify({
           success: true,
           isFirstVisitToday: true,
-          todayStr: '2026-10-28',
+          todayStr: today,
           streak: 1,
           user: testUser
         })
@@ -66,9 +68,9 @@ test.describe('7-Day Streak Tracker Visited State & Animation', () => {
     const tracker = page.locator('[data-testid="streak-tracker-container"]');
     await expect(tracker).toBeVisible();
 
-    // 2. Track background line and filled line exist behind circles
-    const trackLine = page.locator('[data-testid="streak-track-line"]');
-    await expect(trackLine).toBeVisible();
+    // 2. Track day container exists
+    const dayContainer = page.locator('[data-testid="streak-day-container-1"]');
+    await expect(dayContainer).toBeVisible();
 
     // 3. Today's circle must settle into visited state with checkmark '✓'
     const todayCircle = page.locator('[data-testid="streak-day-today"]');
@@ -80,7 +82,6 @@ test.describe('7-Day Streak Tracker Visited State & Animation', () => {
   });
 
   test('No animation on reload when visited flag is set', async ({ page }) => {
-    const today = new Date().toISOString().slice(0, 10);
     await page.addInitScript(({ user, dateStr }) => {
       localStorage.setItem('mindroot_current_user', JSON.stringify(user));
       localStorage.setItem('mindroot_auth_token', 'dev-token-' + user.id);
@@ -127,7 +128,7 @@ test.describe('7-Day Streak Tracker Visited State & Animation', () => {
         body: JSON.stringify({
           success: true,
           isFirstVisitToday: true,
-          todayStr: '2026-10-28',
+          todayStr: today,
           streak: 1,
           user: testUser
         })
@@ -159,7 +160,7 @@ test.describe('7-Day Streak Tracker Visited State & Animation', () => {
         body: JSON.stringify({
           success: true,
           isFirstVisitToday: false,
-          todayStr: '2026-10-28',
+          todayStr: today,
           streak: 1,
           user: testUser
         })

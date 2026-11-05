@@ -2,7 +2,10 @@
 
 ## Layers
 1. **Frontend UI Components (`src/pages/`, `src/components/`)**:
-   - React pages (`Login.tsx`, `Profile.tsx`, `TeacherPortal.tsx`, `Marketplace.tsx`, `Schedule.tsx`, `Wallet.tsx`, `AdminPortal.tsx`, `LiveRoom.tsx`).
+   - React pages (`Login.tsx`, `Dashboard.tsx`, `Profile.tsx`, `TeacherPortal.tsx`, `Marketplace.tsx`, `MatchFinder.tsx`, `Schedule.tsx`, `Wallet.tsx`, `AdminPortal.tsx`, `LiveRoom.tsx`, `Notes.tsx`).
+   - Modular Dashboard subsystem (`src/components/dashboard/`): `DashboardHeroHeader.tsx`, `TodayNoteCard.tsx`, `PeerMatchCard.tsx`, `CommunityChampionsWidget.tsx`, and `UpcomingSessionsWidget.tsx`.
+   - Core Design Primitives (`src/components/ui/`): `Card.tsx`, `StatusBadge.tsx`, `SkillTag.tsx`, `Skeleton.tsx`, `EmptyState.tsx`, and `Button.tsx`.
+   - Semantic Design Tokens (`tailwind.config.js`, `src/index.css`): Warm educational neutral surfaces, 16px body typography (1.6 line-height), and dual-sided skill tokens (`teaching` vs `learning`).
    - State managed by Zustand store (`src/store/useAppStore.ts`) and synchronized via local storage and WebSocket events.
    - Real-time notifications and decision prompts handled by `NotificationManager.tsx`.
 2. **API Client Layer (`src/lib/api/index.ts`)**:

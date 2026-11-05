@@ -83,3 +83,22 @@
   - Enforced atomic PostgreSQL `$transaction` for account deletion; deleted user-owned data and sanitized shared records to `"Deleted user"`.
   - Added `server/test/account_deletion_run16.test.ts` and `server/test/mentor_booking_visibility_regression.test.ts`.
   - Full test suite passes: 124 backend unit/integration tests across 17 suites and 23 Playwright E2E tests (147/147 total passing). Server and client typecheck 0 errors, build succeeds in 2.15s.
+
+- **2026-11-04**: UI/UX Platform Humanization & Admin Authentication Hardening.
+  - Result: Completed Phases 1, 2, 3, and 4.1 of the UI/UX overhaul plan. Replaced AI-templated aesthetics with a student-first design system.
+  - Files affected:
+    - `tailwind.config.js` & `src/index.css`: Replaced neon AI-glow tokens with semantic tokens (`teaching`, `learning`, `card`, `surface-elevated`), standardized 16px body typography with 1.6 line-height.
+    - `src/components/ui/`: Created `Card.tsx` (aliasing `CerebralCard`), `StatusBadge.tsx` and `SkillTag.tsx` (aliasing `NeuralChip`), `Skeleton.tsx`, `EmptyState.tsx`, and updated `Button.tsx` with accessible `focus-visible:ring-2` keyboard rings.
+    - `src/components/dashboard/`: Decomposed the 1,470-line `Dashboard.tsx` into `DashboardHeroHeader.tsx`, `TodayNoteCard.tsx`, `PeerMatchCard.tsx`, `CommunityChampionsWidget.tsx`, and `UpcomingSessionsWidget.tsx`.
+    - `src/pages/MatchFinder.tsx`: Integrated `SkillTag` dual-sided tags and `EmptyState`.
+    - `src/pages/Login.tsx`: Restyled with warm palette and added instant 1-click demo access for Demo Student, Demo Mentor, and Demo Admin.
+    - `.env` & `server/.env`: Configured `ADMIN_EMAIL=admin@mindroot.com`, `ADMIN_PASSWORD=admin123`, and `DEMO_MODE=true` to enable seamless Admin Portal authentication.
+  - Verification: `npm run build` passes with 0 errors (520 modules transformed), `oxlint` passes with 0 errors across 112 files.
+
+- **2026-11-05**: Planning Phase: Unified Discovery Hub (Consolidating Match Finder & Marketplace).
+  - Objective: Solve user navigation confusion by unifying the separate `/match-finder` and `/marketplace` pages into a single Discovery Hub under `/marketplace` ("Explore & Mentors").
+  - Plan Details:
+    - Primary Navigation: Single sidebar item ("Explore & Mentors", icon `explore`, shortcut `⌘M`).
+    - Segmented Tabs: "Verified Mentors" (hourly rates, ₹/tokens, 1-on-1s), "Group Cohorts" (multi-seat batches, split pricing), and "1-for-1 Skill Swaps" (free reciprocal AI matches & swap proposals).
+    - Route Resilience: `/match-finder` redirects smoothly to `/marketplace?tab=swaps` for 100% backward compatibility.
+    - Preserved Logic: 100% of existing booking logic, availability checks, proposal workflows, and socket listeners preserved.

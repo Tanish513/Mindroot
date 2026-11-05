@@ -297,6 +297,7 @@ export function PreJoinLobby({
         {/* Join Classroom CTA Button */}
         <button
           onClick={onJoin}
+          data-testid="join-classroom-btn"
           className="w-full h-12 bg-primary hover:bg-primary-hover text-on-primary font-bold rounded-xl text-base flex items-center justify-center gap-2 shadow-elevation-2 transition-all active:scale-98 cursor-pointer"
         >
           <span className="material-symbols-outlined text-xl">login</span>

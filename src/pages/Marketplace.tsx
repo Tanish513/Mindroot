@@ -1,10 +1,16 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
-import { api, onPeersUpdated, onSessionsUpdated, calculateSeatPrice, getCapacityDetails } from '../lib/api';
+import { Card } from '../components/ui/Card';
+import { SkillTag } from '../components/ui/SkillTag';
+import { StatusBadge } from '../components/ui/StatusBadge';
+import { EmptyState } from '../components/ui/EmptyState';
+import { SkeletonCard } from '../components/ui/Skeleton';
+import { api, onPeersUpdated, onSessionsUpdated, calculateSeatPrice } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import { getUserTimezone, getTimezoneAbbreviation } from '../lib/timezone';
+import { MatchFinder } from './MatchFinder';
 
 const categories = ['All Skills', 'Software & AI', 'Design & 3D', 'Languages', 'Business', 'Music & Audio', 'Academics'];
 
@@ -13,7 +19,15 @@ export function Marketplace() {
   const tzAbbr = getTimezoneAbbreviation(userTz);
   const navigate = useNavigate();
   const [activeCategory, setActiveCategory] = useState('All Skills');
-  const [activeTab, setActiveTab] = useState<'mentors' | 'group_batches'>('mentors');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get('tab');
+  const initialTab = urlTab === 'swaps' ? 'swaps' : urlTab === 'group_batches' ? 'group_batches' : 'mentors';
+  const [activeTab, setActiveTab] = useState<'mentors' | 'group_batches' | 'swaps'>(initialTab);
+
+  const handleTabChange = (tab: 'mentors' | 'group_batches' | 'swaps') => {
+    setActiveTab(tab);
+    setSearchParams(tab === 'mentors' ? {} : { tab });
+  };
   const [roleFilter, setRoleFilter] = useState<'all' | 'teacher' | 'both'>('all');
   const [peers, setPeers] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
@@ -129,30 +143,22 @@ export function Marketplace() {
   }).length;
 
   const filteredPeers = peers.filter(peer => {
-    // Exclude platform administrators and the logged-in user themselves
     if (peer.role === 'admin' || peer.id === 'user-admin') return false;
     if (currentUser && peer.id === currentUser.id) return false;
 
-    // Strict Role Filtering:
-    // Marketplace is strictly for booking mentoring sessions.
-    // Profiles registered as 'student' should NEVER be displayed in the marketplace.
-    // Marketplace must only display profiles whose role is 'teacher' or 'both'.
     const normalizedRole = (peer.role || '').toLowerCase().trim();
     if (normalizedRole !== 'teacher' && normalizedRole !== 'both') {
       return false;
     }
 
-    // Role sub-filter (All Mentors, Teacher only, or Both only)
     if (roleFilter === 'teacher' && normalizedRole !== 'teacher') return false;
     if (roleFilter === 'both' && normalizedRole !== 'both') return false;
 
-    // Category Filter
     if (activeCategory !== 'All Skills') {
       const matchesCategory = Array.isArray(peer.userSkills) && peer.userSkills.some((us: any) => us.skill?.category === activeCategory);
       if (!matchesCategory) return false;
     }
 
-    // Search Query Filter
     if (searchQuery.trim() !== '') {
       const query = searchQuery.toLowerCase();
       const nameMatches = peer.name?.toLowerCase().includes(query);
@@ -168,14 +174,12 @@ export function Marketplace() {
     return true;
   });
 
-  // Prioritize and pin featured mentors to top
   const sortedPeers = [...filteredPeers].sort((a, b) => {
     const aFeat = a.isFeatured ? 1 : 0;
     const bFeat = b.isFeatured ? 1 : 0;
     return bFeat - aFeat;
   });
 
-  // Filter open group sessions with capacity > 1
   const openGroupBatches = sessions.filter(s => {
     if (!s || (s.maxCapacity || 1) <= 1) return false;
     const enrolled = Array.isArray(s.students) ? s.students.length : (s.studentId ? 1 : 0);
@@ -183,45 +187,20 @@ export function Marketplace() {
     return enrolled < maxCap && s.status !== 'completed' && s.status !== 'declined';
   });
 
-const getTodayDateString = () => {
-  const d = new Date();
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+  const getTodayDateString = () => {
+    const d = new Date();
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
-const getDefaultTimeString = () => {
-  const d = new Date();
-  let hour = d.getHours() + 1;
-  if (hour > 20 || hour < 8) hour = 9;
-  return `${String(hour).padStart(2, '0')}:00`;
-};
-
-const getNextDateForDay = (dayAbbr: string) => {
-  const dayMap: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
-  const targetDay = dayMap[dayAbbr];
-  if (targetDay === undefined) return getTodayDateString();
-  const d = new Date();
-  const currentDay = d.getDay();
-  let diff = targetDay - currentDay;
-  if (diff <= 0) diff += 7;
-  d.setDate(d.getDate() + diff);
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
-
-const convert12to24 = (time12: string) => {
-  const parts = time12.trim().split(' ');
-  const time = parts[0];
-  const modifier = parts[1];
-  let [hours, minutes] = time.split(':');
-  if (hours === '12') hours = '00';
-  if (modifier === 'PM') hours = String(parseInt(hours, 10) + 12).padStart(2, '0');
-  return `${hours}:${minutes}`;
-};
+  const getDefaultTimeString = () => {
+    const d = new Date();
+    let hour = d.getHours() + 1;
+    if (hour > 20 || hour < 8) hour = 9;
+    return `${String(hour).padStart(2, '0')}:00`;
+  };
 
   const handleOpenBooking = (peer: any) => {
     const normRole = (peer?.role || '').toLowerCase().trim();
@@ -305,7 +284,6 @@ const convert12to24 = (time12: string) => {
         : 0;
       const finalPrice = Math.max(0, seatPrice - discount);
 
-      // Book session with zero upfront payment (Pay after lecture, requires teacher approval)
       const newSession = await api.postSession({
         title: sessionTitle,
         teacherId: bookingPeer.id,
@@ -320,7 +298,6 @@ const convert12to24 = (time12: string) => {
         discountApplied: discount
       });
 
-      // Optimistically mark applied voucher as used
       if (selectedVoucherId && currentUser) {
         const updatedVouchers = (currentUser.vouchers || []).map((v: any) => 
           v.id === selectedVoucherId ? { ...v, isUsed: true, usedInSessionId: newSession?.id } : v
@@ -353,7 +330,6 @@ const convert12to24 = (time12: string) => {
     }
   };
 
-  // Direct Join Open Batch with Zero Upfront (Pay After Lecture)
   const handleJoinOpenBatch = async (batch: any) => {
     setJoiningBatch(batch);
     const seatPrice = batch.pricePerStudent || batch.amount || 249;
@@ -361,7 +337,7 @@ const convert12to24 = (time12: string) => {
     try {
       await api.joinGroupSession(batch.id, {
         id: currentUser?.id || 'user-alex',
-        name: currentUser?.name || 'Alex (Student)',
+        name: currentUser?.name || 'Aarav (Student)',
         avatar: currentUser?.avatar || 'https://i.pravatar.cc/150?img=11',
         paymentStatus: 'pending',
         amountDue: seatPrice
@@ -375,283 +351,317 @@ const convert12to24 = (time12: string) => {
   };
 
   return (
-    <div className="max-w-container_max mx-auto relative select-none space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       {/* Header with Switcher Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl sm:text-2xl font-bold text-text tracking-tight">Skill Marketplace & Group Batches</h2>
-            <span className="px-2.5 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-full text-[11px] font-bold">
-              Pay After Lecture
+            <h1 className="text-2xl font-bold tracking-tight text-text">Find Peers & Mentors</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary-tint text-primary-text border border-primary/20">
+              ₹0 Upfront • Pay After Class
             </span>
           </div>
-          <p className="text-xs sm:text-sm text-muted font-medium mt-0.5">Book 1-on-1 private mentoring or group study batches (up to 5 seats) for ₹0 upfront. Pay after your lecture!</p>
+          <p className="text-sm text-muted mt-1">
+            Connect with verified student peers and mentors for 1-on-1 coaching, group cohorts, or free skill swaps.
+          </p>
         </div>
 
         {/* View Mode Switcher */}
-        <div className="flex bg-surface-2 p-1 rounded-xl border border-border self-start sm:self-auto">
+        <div className="flex p-1 bg-surface-2 rounded-xl border border-border self-start sm:self-auto">
           <button
-            onClick={() => setActiveTab('mentors')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+            type="button"
+            onClick={() => handleTabChange('mentors')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'mentors' 
-                ? 'bg-surface text-primary shadow-sm' 
+                ? 'bg-surface text-primary shadow-xs' 
                 : 'text-muted hover:text-text'
             }`}
           >
-            <span className="material-symbols-outlined text-sm">person_search</span>
+            <span className="material-symbols-outlined text-base">person_search</span>
             <span>All Mentors ({totalEligibleMentors})</span>
           </button>
           <button
-            onClick={() => setActiveTab('group_batches')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+            type="button"
+            onClick={() => handleTabChange('group_batches')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'group_batches' 
-                ? 'bg-surface text-primary shadow-sm' 
+                ? 'bg-surface text-primary shadow-xs' 
                 : 'text-muted hover:text-text'
             }`}
           >
-            <span className="material-symbols-outlined text-sm">groups</span>
+            <span className="material-symbols-outlined text-base">groups</span>
             <span>Open Cohorts ({openGroupBatches.length})</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('swaps')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'swaps' 
+                ? 'bg-surface text-primary shadow-xs' 
+                : 'text-muted hover:text-text'
+            }`}
+          >
+            <span className="material-symbols-outlined text-base">swap_horiz</span>
+            <span>Skill Swaps</span>
           </button>
         </div>
       </div>
 
-      {/* Trust & Pay After Class Info Banner */}
-      <div className="bg-surface-2 border border-border rounded-2xl p-3.5 flex items-center justify-between gap-3 text-xs text-text shadow-sm">
-        <div className="flex items-center gap-2.5">
-          <span className="material-symbols-outlined text-primary text-xl shrink-0">verified_user</span>
-          <span>
-            <strong>Post-Lecture Payment Guarantee:</strong> Reserve your seat for ₹0 today. Attend the live studio lecture first and pay your verified mentor via direct UPI / QR only after class ends.
-          </span>
+      {/* Trust Guarantee Banner */}
+      {activeTab !== 'swaps' && (
+        <div className="bg-primary-tint/50 border border-primary/20 rounded-2xl p-4 flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-lg">verified_user</span>
+          </div>
+          <div className="text-xs text-text leading-relaxed">
+            <strong className="text-primary-text font-bold">100% Student Guarantee:</strong> Reserve your seat for ₹0 upfront today. You attend the live interactive classroom first, and settle the mentoring fee directly via UPI only after your lecture is completed.
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Controls: Role Filter & Category Bar */}
-      <div className="space-y-2.5">
-        {/* Role Filter Chips: All Mentors, Teachers Only, Both (Teach & Learn) */}
-        {activeTab === 'mentors' && (
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-bold text-muted flex items-center gap-1 mr-1">
-              <span className="material-symbols-outlined text-sm text-primary">filter_list</span>
-              Role Filter:
-            </span>
-            {[
-              { id: 'all', label: 'All Mentors (Teacher & Both)' },
-              { id: 'teacher', label: 'Teacher Only' },
-              { id: 'both', label: 'Both (Teach & Learn)' }
-            ].map(rf => (
+      {activeTab !== 'swaps' && (
+        <div className="space-y-3">
+          {activeTab === 'mentors' && (
+            <div className="flex items-center gap-2 flex-wrap text-xs">
+              <span className="font-semibold text-muted flex items-center gap-1">
+                <span className="material-symbols-outlined text-sm text-primary">filter_list</span>
+                Role:
+              </span>
+              {[
+                { id: 'all', label: 'All Mentors' },
+                { id: 'teacher', label: 'Mentors Only' },
+                { id: 'both', label: 'Dual Mentors (Teach & Learn)' }
+              ].map(rf => (
+                <button
+                  key={rf.id}
+                  onClick={() => setRoleFilter(rf.id as 'all' | 'teacher' | 'both')}
+                  className={`px-3 py-1 rounded-lg font-semibold transition-all border cursor-pointer ${
+                    roleFilter === rf.id
+                      ? 'bg-primary text-on-primary border-primary shadow-xs'
+                      : 'bg-surface text-muted border-border hover:border-primary/40 hover:text-text'
+                  }`}
+                >
+                  {rf.label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Categories Bar */}
+          <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+            {categories.map(cat => (
               <button
-                key={rf.id}
-                onClick={() => setRoleFilter(rf.id as 'all' | 'teacher' | 'both')}
-                className={`px-3 py-1 rounded-lg text-xs font-bold transition-all border ${
-                  roleFilter === rf.id
-                    ? 'bg-primary text-on-primary border-primary shadow-sm'
-                    : 'bg-surface text-muted border-border hover:border-primary/40 hover:text-text'
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+                  activeCategory === cat 
+                    ? 'bg-primary text-on-primary border-primary shadow-xs' 
+                    : 'bg-surface text-muted border-border hover:bg-surface-2 hover:text-text'
                 }`}
               >
-                {rf.label}
+                {cat}
               </button>
             ))}
           </div>
-        )}
-
-        {/* Categories Bar */}
-        <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-          {categories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setActiveCategory(cat)}
-              className={`whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-colors border ${
-                activeCategory === cat 
-                  ? 'bg-primary text-on-primary border-primary shadow-sm' 
-                  : 'bg-surface text-muted border-border hover:bg-surface-2 hover:text-text'
-              }`}
-            >
-              {cat}
-            </button>
-          ))}
         </div>
-      </div>
+      )}
 
       {activeTab === 'mentors' ? (
         /* MENTORS LISTING */
         loading ? (
-          <div className="text-muted p-8 text-center font-semibold text-xs animate-pulse">Loading mentors...</div>
-        ) : filteredPeers.length === 0 ? (
-          <div className="text-muted p-12 text-center border border-dashed border-border rounded-2xl bg-surface shadow-sm">
-            <span className="material-symbols-outlined text-4xl mb-2 text-muted">search_off</span>
-            <p className="font-bold text-text text-sm">No peers found matching your query</p>
-            <p className="text-xs text-muted mt-1">Try searching for another topic or selecting a different category.</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {[1, 2, 3, 4, 5, 6].map(k => (
+              <SkeletonCard key={k} />
+            ))}
           </div>
+        ) : filteredPeers.length === 0 ? (
+          <EmptyState
+            icon="search_off"
+            title="No mentors found matching your query"
+            description="Try adjusting your search terms or picking another category to explore available peer mentors."
+            actionLabel="Reset Category"
+            onAction={() => { setActiveCategory('All Skills'); setRoleFilter('all'); }}
+          />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5">
-            {sortedPeers.map((peer, i) => (
-              <div 
-                key={peer.id} 
-                className={`flex flex-col h-full justify-between p-5 bg-surface rounded-xl border shadow-sm hover:shadow-md transition-all group ${
-                  peer.isFeatured ? 'border-accent/60 ring-1 ring-accent/30' : 'border-border hover:border-border'
-                }`}
-              >
-                <div>
-                  <div className="flex justify-between items-start gap-3 mb-4">
-                    <div className="flex gap-3 items-center">
-                      <div className="relative shrink-0">
-                        <img src={`https://i.pravatar.cc/150?img=${i + 10}`} alt={`${peer.name}'s profile avatar`} className="w-10 h-10 rounded-full object-cover border border-border" />
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-primary rounded-full ring-2 ring-surface" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            {sortedPeers.map((peer, i) => {
+              const teachesList = (peer.userSkills || []).filter((s: any) => s && s.type === 'teaches');
+              const fallbackTeaches = Array.isArray(peer.skillsTaught) ? peer.skillsTaught : [];
+              const learnsList = (peer.userSkills || []).filter((s: any) => s && s.type === 'wants_to_learn');
+              const fallbackLearns = Array.isArray(peer.skillsLearned) ? peer.skillsLearned : [];
+
+              return (
+                <Card 
+                  key={peer.id} 
+                  variant="interactive" 
+                  className={`flex flex-col h-full justify-between p-5 space-y-4 ${
+                    peer.isFeatured ? 'ring-2 ring-accent/60 border-accent/40' : ''
+                  }`}
+                >
+                  <div className="space-y-4">
+                    {/* Header: Avatar, Name, Trust & Hourly Rate */}
+                    <div className="flex justify-between items-start gap-3">
+                      <div className="flex gap-3 items-center min-w-0">
+                        <div className="relative shrink-0">
+                          <img 
+                            src={peer.avatar || `https://i.pravatar.cc/150?img=${i + 10}`} 
+                            alt={`${peer.name}'s avatar`} 
+                            className="w-12 h-12 rounded-xl object-cover border border-border" 
+                          />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full ring-2 ring-surface" />
+                        </div>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-text truncate flex items-center gap-1">
+                            <span>{peer.name}</span>
+                            {peer.trustScore > 4.8 && (
+                              <span className="material-symbols-outlined text-primary text-sm" title="High Trust Peer">verified</span>
+                            )}
+                          </h3>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span className="text-xs font-medium text-muted capitalize">{peer.role}</span>
+                            {peer.isFeatured && (
+                              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-accent-tint text-accent-text border border-accent/30 text-xs font-bold uppercase tracking-wider">
+                                <span className="material-symbols-outlined text-xs">star</span>
+                                Featured
+                              </span>
+                            )}
+                            {peer.isAvailableNow && (
+                              <StatusBadge status="live" label="Live Now" />
+                            )}
+                          </div>
+                        </div>
                       </div>
+
+                      <div className="text-right shrink-0">
+                        <div className="text-base font-extrabold text-primary">
+                          ₹{peer.hourlyRate || 499}
+                          <span className="text-xs font-normal text-muted">/hr</span>
+                        </div>
+                        <span className="text-xs text-muted block font-medium">Post-class pay</span>
+                      </div>
+                    </div>
+
+                    {/* Bio Snippet if present */}
+                    {peer.bio && (
+                      <p className="text-xs text-muted line-clamp-2 leading-relaxed">
+                        {peer.bio}
+                      </p>
+                    )}
+
+                    {/* Dual-Sided Skill Tags: Teaches & Learns */}
+                    <div className="space-y-2.5 pt-1">
                       <div>
-                        <h3 className="text-sm font-bold text-text flex items-center gap-1 group-hover:text-primary-text transition-colors">
-                          {peer.name} {peer.trustScore > 4.8 && <span className="material-symbols-outlined text-primary text-sm">verified</span>}
-                        </h3>
-                        <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
-                          <span className="text-[11px] font-medium text-muted capitalize">{peer.role}</span>
-                          {peer.isFeatured && (
-                            <span className="inline-flex items-center gap-0.5 px-2 py-0.2 rounded-md bg-accent-tint text-accent-text border border-accent/40 text-[10px] font-black uppercase tracking-wide shadow-xs">
-                              <span className="material-symbols-outlined text-xs text-accent">star</span>
-                              Featured
-                            </span>
+                        <span className="text-xs font-bold text-primary-text tracking-wider uppercase block mb-1">
+                          Teaches
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {teachesList.length > 0 ? (
+                            teachesList.slice(0, 3).map((s: any, idx: number) => (
+                              <SkillTag key={s.id || idx} label={s.skill?.name || s.name || 'Skill'} type="teaching" size="sm" />
+                            ))
+                          ) : fallbackTeaches.length > 0 ? (
+                            fallbackTeaches.slice(0, 3).map((t: string, idx: number) => (
+                              <SkillTag key={idx} label={t} type="teaching" size="sm" />
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted italic">General Mentoring</span>
                           )}
-                          {peer.isAvailableNow && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-primary-tint text-primary-text border border-primary/30 text-[10px] font-black uppercase tracking-wide">
-                              <span className="material-symbols-outlined text-xs text-primary">bolt</span>
-                              Live Now
-                            </span>
-                          )}
-                          {(peer.officialIdStatus === 'verified' || peer.officialIdDocument) && (
-                            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded-md bg-primary-tint text-primary-text border border-primary/30 text-[10px] font-black uppercase tracking-wide" title="Official Academic / ID credentials verified">
-                              <span className="material-symbols-outlined text-xs text-primary">verified_user</span>
-                              ID Verified
-                            </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-xs font-bold text-accent-text tracking-wider uppercase block mb-1">
+                          Learning
+                        </span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {learnsList.length > 0 ? (
+                            learnsList.slice(0, 3).map((s: any, idx: number) => (
+                              <SkillTag key={s.id || idx} label={s.skill?.name || s.name || 'Skill'} type="learning" size="sm" />
+                            ))
+                          ) : fallbackLearns.length > 0 ? (
+                            fallbackLearns.slice(0, 3).map((l: string, idx: number) => (
+                              <SkillTag key={idx} label={l} type="learning" size="sm" />
+                            ))
+                          ) : (
+                            <span className="text-xs text-muted italic">Open to topics</span>
                           )}
                         </div>
                       </div>
                     </div>
-                    <div className="text-right">
-                      <span className="px-2.5 py-1 bg-primary-tint border border-primary/20 text-primary-text rounded-lg text-xs font-bold flex items-center gap-1">
-                        <span>₹{peer.hourlyRate || 499}</span>
-                        <span className="text-[10px] font-normal text-primary-text/80">/hr</span>
+
+                    {/* Group Discount Pill */}
+                    <div className="p-2.5 bg-surface-2 border border-border rounded-xl text-xs flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 font-medium text-text">
+                        <span className="material-symbols-outlined text-base text-primary">groups</span>
+                        Group Cohort:
                       </span>
-                      <span className="text-[9px] text-muted block font-semibold mt-0.5">Pay after class</span>
+                      <span className="text-primary font-bold text-xs">
+                        From ₹{calculateSeatPrice(peer, 5)}/seat
+                      </span>
                     </div>
                   </div>
 
-                  <div className="mb-3.5">
-                    <p className="text-[10px] font-bold text-primary tracking-wider uppercase mb-1">TEACHES</p>
-                    <div className="flex flex-wrap gap-1">
-                      {(peer.userSkills || []).filter((s: any) => s && s.type === 'teaches').length === 0 && <span className="text-xs text-muted italic">None</span>}
-                      {(peer.userSkills || []).filter((s: any) => s && s.type === 'teaches').map((s: any, sIdx: number) => (
-                        <span key={s.id || s.skill?.id || sIdx} className="px-2 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-md text-xs font-semibold">
-                          {s.skill?.name || 'Skill'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <p className="text-[10px] font-bold text-accent tracking-wider uppercase mb-1">WANTS TO LEARN</p>
-                    <div className="flex flex-wrap gap-1">
-                      {(peer.userSkills || []).filter((s: any) => s && s.type === 'wants_to_learn').length === 0 && <span className="text-xs text-muted italic">None</span>}
-                      {(peer.userSkills || []).filter((s: any) => s && s.type === 'wants_to_learn').map((s: any, sIdx: number) => (
-                        <span key={s.id || s.skill?.id || sIdx} className="px-2 py-0.5 bg-surface-2 text-text border border-border rounded-md text-xs font-semibold">
-                          {s.skill?.name || 'Skill'}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Group Capacity Pricing Teaser */}
-                  <div className="mb-4 p-2.5 bg-surface-2 border border-border rounded-xl text-[11px] text-muted flex items-center justify-between">
-                    <span className="flex items-center gap-1 font-semibold text-text">
-                      <span className="material-symbols-outlined text-sm text-primary">groups</span>
-                      Group Option:
-                    </span>
-                    <span className="text-primary font-bold">From ₹{calculateSeatPrice(peer, 5)}/seat (Pay later)</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2 pt-3.5 border-t border-border">
-                  <Button 
-                    variant="secondary" 
-                    className="flex-1 font-semibold text-xs py-1.5"
-                    onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
-                  >
-                    Chat
-                  </Button>
-                  {(!peer.upiId && !peer.hasUpiConfigured) ? (
-                    <Button
-                      variant="secondary"
-                      disabled
-                      title="This mentor has not set up payments yet. Booking is currently unavailable."
-                      className="flex-1 font-semibold text-xs py-1.5 flex items-center justify-center gap-1 opacity-60 cursor-not-allowed"
+                  {/* Action Buttons */}
+                  <div className="flex gap-2 pt-2 border-t border-border">
+                    <Button 
+                      variant="secondary" 
+                      className="flex-1 text-xs py-2"
+                      onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
                     >
-                      <span className="material-symbols-outlined text-sm">payment</span>
-                      Payments Not Set Up
+                      Chat
                     </Button>
-                  ) : (
-                    <Button variant="primary" className="flex-1 font-semibold text-xs py-1.5 flex items-center justify-center gap-1" onClick={() => handleOpenBooking(peer)}>
-                      <span className="material-symbols-outlined text-sm">calendar_month</span>
-                      Book Lecture
-                    </Button>
-                  )}
-                </div>
-              </div>
-            ))}
+                    {(!peer.upiId && !peer.hasUpiConfigured) ? (
+                      <Button
+                        variant="secondary"
+                        disabled
+                        className="flex-1 text-xs py-2 opacity-60 cursor-not-allowed"
+                      >
+                        Payments Not Set Up
+                      </Button>
+                    ) : (
+                      <Button 
+                        variant="primary" 
+                        className="flex-1 text-xs py-2 flex items-center justify-center gap-1"
+                        onClick={() => handleOpenBooking(peer)}
+                      >
+                        <span className="material-symbols-outlined text-sm">calendar_month</span>
+                        Book Lecture
+                      </Button>
+                    )}
+                  </div>
+                </Card>
+              );
+            })}
           </div>
         )
-      ) : (
+      ) : activeTab === 'group_batches' ? (
         /* OPEN GROUP BATCHES LISTING */
         <div className="space-y-4">
-          {/* Cohort Batch Filter Chips */}
-          <div className="flex items-center gap-2 pb-1">
-            <span className="text-xs font-bold text-muted mr-1">Filter Batch Size:</span>
-            {[
-              { id: 'all', label: 'All Batches' },
-              { id: '3', label: '3-Student Batches (Trio)' },
-              { id: '5', label: '5-Student Batches (Masterclass)' }
-            ].map(bTab => (
-              <button
-                key={bTab.id}
-                onClick={() => setBookingCapacity(bTab.id === '3' ? 3 : bTab.id === '5' ? 5 : 1)}
-                className="px-3 py-1 bg-surface border border-border hover:border-primary/40 rounded-lg text-xs font-bold text-text shadow-sm"
-              >
-                {bTab.label}
-              </button>
-            ))}
-          </div>
-
           {openGroupBatches.length === 0 ? (
-            <div className="bg-surface border border-border rounded-2xl p-12 text-center space-y-3 shadow-sm">
-              <span className="material-symbols-outlined text-5xl text-primary">groups</span>
-              <h3 className="text-base font-bold text-text">No Open Group Cohorts Right Now</h3>
-              <p className="text-xs text-muted max-w-md mx-auto">
-                Be the first to start a group cohort! Choose a mentor above, select a <strong>3-Student or 5-Student Batch</strong>, and invite peers to join your batch (Pay ₹0 upfront, pay after lecture).
-              </p>
-              <Button variant="primary" onClick={() => setActiveTab('mentors')} className="mt-2 text-xs">
-                Browse Mentors
-              </Button>
-            </div>
+            <EmptyState
+              icon="groups"
+              title="No Open Group Cohorts Right Now"
+              description="Be the first to start a group cohort! Choose a mentor above, select a 3-Student or 5-Student Batch, and invite peers to join your batch (Pay ₹0 upfront, pay after lecture)."
+              actionLabel="Browse Mentors"
+              onAction={() => setActiveTab('mentors')}
+            />
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {openGroupBatches.map(batch => {
                 const enrolledCount = Array.isArray(batch.students) ? batch.students.length : (batch.studentId ? 1 : 0);
                 const maxCap = batch.maxCapacity || 5;
                 const seatsLeft = maxCap - enrolledCount;
                 const isEnrolled = currentUser && Array.isArray(batch.students) && batch.students.some((st: any) => st.id === currentUser.id);
-                const isBatchReady = enrolledCount >= maxCap;
 
                 return (
-                  <div key={batch.id} className="bg-surface border border-border rounded-2xl p-5 shadow-sm hover:shadow-md transition-all space-y-4">
-                    <div className="flex justify-between items-start">
+                  <Card key={batch.id} className="p-5 space-y-4">
+                    <div className="flex justify-between items-start gap-3">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary-tint text-primary-text border border-primary/20">
-                            {maxCap}-Student Group Cohort
+                          <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-primary-tint text-primary-text border border-primary/20">
+                            {maxCap}-Student Cohort
                           </span>
-                          {isBatchReady && (
-                            <span className="px-2 py-0.5 bg-primary-tint text-primary-text text-[10px] font-extrabold rounded-full flex items-center gap-1 border border-primary/20">
-                              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
-                              Ready to Join
-                            </span>
-                          )}
                         </div>
                         <h3 className="text-base font-bold text-text mt-1">{batch.title}</h3>
                         <p className="text-xs text-muted flex items-center gap-1 mt-0.5">
@@ -660,55 +670,32 @@ const convert12to24 = (time12: string) => {
                         </p>
                       </div>
 
-                      <div className="text-right">
-                        <div className="text-lg font-black text-primary">₹{batch.pricePerStudent || batch.amount || 249}</div>
-                        <div className="text-[10px] text-muted">per seat • pay after class</div>
+                      <div className="text-right shrink-0">
+                        <div className="text-lg font-bold text-primary">₹{batch.pricePerStudent || batch.amount || 249}</div>
+                        <div className="text-xs text-muted font-medium">per seat • pay later</div>
                       </div>
                     </div>
 
-                    {/* Enrolled Students Avatars & Capacity Progress */}
-                    <div className="space-y-1.5 p-3 bg-surface-2 border border-border rounded-xl">
+                    {/* Progress Bar & Seat Count */}
+                    <div className="space-y-2 p-3 bg-surface-2 border border-border rounded-xl">
                       <div className="flex justify-between text-xs font-semibold text-text">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-                          {enrolledCount} / {maxCap} Students Joined
-                        </span>
+                        <span>{enrolledCount} of {maxCap} Students Joined</span>
                         <span className="text-primary font-bold">
-                          {seatsLeft > 0 ? `${seatsLeft} Seat${seatsLeft > 1 ? 's' : ''} Left` : 'Batch Full & Ready!'}
+                          {seatsLeft > 0 ? `${seatsLeft} Seat${seatsLeft > 1 ? 's' : ''} Left` : 'Cohort Full'}
                         </span>
                       </div>
-
-                      {/* Progress Bar */}
-                      <div className="w-full bg-surface-2 h-2 rounded-full overflow-hidden border border-border">
+                      <div className="w-full bg-surface h-2 rounded-full overflow-hidden border border-border">
                         <div 
                           className="bg-primary h-full rounded-full transition-all duration-300"
                           style={{ width: `${(enrolledCount / maxCap) * 100}%` }}
                         />
                       </div>
-
-                      <div className="flex items-center justify-between pt-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-muted font-bold uppercase">Classmates:</span>
-                          <div className="flex -space-x-1.5 overflow-hidden">
-                            {(batch.students || []).map((st: any, sI: number) => (
-                              <img 
-                                key={st.id || sI} 
-                                src={st.avatar || `https://i.pravatar.cc/150?img=${sI + 11}`} 
-                                alt={st.name} 
-                                title={st.name}
-                                className="inline-block h-6 w-6 rounded-full ring-2 ring-surface object-cover" 
-                              />
-                            ))}
-                          </div>
-                        </div>
-                        <span className="text-[10px] text-muted font-semibold">All join room together</span>
-                      </div>
                     </div>
 
-                    {/* Scheduled Time and Action */}
+                    {/* Schedule and Action */}
                     <div className="flex items-center justify-between pt-2 border-t border-border text-xs">
                       <div className="text-muted font-medium flex items-center gap-1">
-                        <span className="material-symbols-outlined text-base text-muted">schedule</span>
+                        <span className="material-symbols-outlined text-base">schedule</span>
                         <span>{batch.scheduledAt ? new Date(batch.scheduledAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Scheduled Soon'}</span>
                       </div>
 
@@ -716,29 +703,32 @@ const convert12to24 = (time12: string) => {
                         <Button
                           variant="primary"
                           onClick={() => navigate(`/live/${batch.id}`)}
-                          className="font-bold text-xs py-1.5 px-3 flex items-center gap-1"
+                          className="text-xs py-1.5 px-3 flex items-center gap-1"
                         >
                           <span className="material-symbols-outlined text-sm">videocam</span>
-                          <span>Join Live Batch Room</span>
+                          <span>Join Classroom</span>
                         </Button>
                       ) : (
                         <Button
                           variant="primary"
                           onClick={() => handleJoinOpenBatch(batch)}
                           disabled={joiningBatch?.id === batch.id}
-                          className="font-bold text-xs py-1.5 px-4 flex items-center gap-1"
+                          className="text-xs py-1.5 px-4 flex items-center gap-1"
                         >
                           <span className="material-symbols-outlined text-sm">how_to_reg</span>
                           <span>Join Batch (Pay ₹{batch.pricePerStudent || batch.amount || 249} Later)</span>
                         </Button>
                       )}
                     </div>
-                  </div>
+                  </Card>
                 );
               })}
             </div>
           )}
         </div>
+      ) : (
+        /* SKILL SWAPS TAB (MUTUAL MATCHES & PROPOSALS) */
+        <MatchFinder embedded={true} />
       )}
 
       {/* Booking Modal with Student Choice (Pay After Lecture) */}
@@ -746,50 +736,43 @@ const convert12to24 = (time12: string) => {
         {bookingPeer && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-              className="bg-surface border border-border rounded-3xl w-full max-w-lg p-6 sm:p-7 shadow-lg relative max-h-[90vh] overflow-y-auto custom-scrollbar"
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              transition={{ duration: 0.2 }}
+              className="bg-surface border border-border rounded-2xl w-full max-w-lg p-6 shadow-xl relative max-h-[90vh] overflow-y-auto custom-scrollbar"
             >
               <button 
                 onClick={() => setBookingPeer(null)}
                 aria-label="Close booking modal"
-                className="absolute right-4 top-4 text-muted hover:text-text hover:bg-surface-2 rounded-xl p-1.5 transition-colors"
+                className="absolute right-4 top-4 text-muted hover:text-text hover:bg-surface-2 rounded-xl p-1.5 transition-colors cursor-pointer"
               >
                 <span className="material-symbols-outlined text-xl">close</span>
               </button>
 
-              <div className="flex items-center gap-2.5 mb-1">
-                <div className="w-10 h-10 rounded-2xl bg-primary-tint text-primary-text flex items-center justify-center font-bold">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-primary-tint text-primary-text flex items-center justify-center font-bold shrink-0">
                   <span className="material-symbols-outlined text-xl">school</span>
                 </div>
                 <div>
-                  <h3 className="text-xl font-black text-text">Book Mentoring Lecture</h3>
-                  <p className="text-xs text-muted">Mentor: <strong className="text-text">{bookingPeer.name}</strong> {bookingPeer.email ? <span className="text-muted/80">({bookingPeer.email})</span> : null} · Pay After Class</p>
+                  <h3 className="text-lg font-bold text-text">Book Mentoring Lecture</h3>
+                  <p className="text-xs text-muted">With <strong className="text-text">{bookingPeer.name}</strong> • Pay After Class</p>
                 </div>
               </div>
 
-              {!bookingPeer.upiId && !bookingPeer.hasUpiConfigured && (
-                <div className="mt-4 p-3.5 rounded-2xl bg-accent-tint border border-accent/40 text-accent-text text-xs flex items-center gap-2.5">
-                  <span className="material-symbols-outlined text-xl shrink-0">error</span>
-                  <span>This mentor has not set up payments yet. Booking is currently unavailable for this mentor.</span>
-                </div>
-              )}
-
               {bookingSuccess ? (
-                <div className="space-y-4 pt-4">
-                  <div className="bg-primary-tint border border-primary/20 text-primary-text rounded-2xl p-5 text-xs">
-                    <div className="flex items-center gap-2 font-bold text-sm text-primary-text mb-1.5">
-                      <span className="material-symbols-outlined text-primary text-xl">verified</span>
+                <div className="space-y-4 pt-2">
+                  <div className="bg-primary-tint border border-primary/20 text-primary-text rounded-xl p-4 text-xs space-y-2">
+                    <div className="flex items-center gap-1.5 font-bold text-sm text-primary-text">
+                      <span className="material-symbols-outlined text-base">verified</span>
                       Lecture Reserved Successfully!
                     </div>
                     <p className="text-primary-text/90 leading-relaxed">
-                      Your <strong>{confirmedSession?.maxCapacity ? (confirmedSession.maxCapacity > 1 ? `${confirmedSession.maxCapacity}-Student Group Cohort` : '1-on-1 Private') : (bookingCapacity > 1 ? `${bookingCapacity}-Student Group Cohort` : '1-on-1 Private')}</strong> lecture with <strong>{bookingPeer.name}</strong> is scheduled.
+                      Your <strong>{confirmedSession?.maxCapacity ? (confirmedSession.maxCapacity > 1 ? `${confirmedSession.maxCapacity}-Student Cohort` : '1-on-1 Private') : (bookingCapacity > 1 ? `${bookingCapacity}-Student Cohort` : '1-on-1 Private')}</strong> lecture with <strong>{bookingPeer.name}</strong> is confirmed.
                     </p>
-                    <div className="mt-3 p-3 bg-surface rounded-xl border border-primary/20 flex items-center justify-between font-bold text-text">
-                      <span>Amount Due (Pay After Lecture):</span>
-                      <span className="text-primary text-sm font-black">₹{currentSeatPrice}</span>
+                    <div className="mt-2 p-3 bg-surface rounded-lg border border-primary/20 flex items-center justify-between font-bold text-text">
+                      <span>Due After Lecture:</span>
+                      <span className="text-primary text-base font-extrabold">₹{currentSeatPrice}</span>
                     </div>
                   </div>
 
@@ -801,58 +784,37 @@ const convert12to24 = (time12: string) => {
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4.5 pt-4">
+                <div className="space-y-4">
                   {bookingError && (
                     <div className="bg-danger/10 border border-danger/30 text-danger rounded-xl p-3 text-xs flex items-center gap-2">
-                      <span className="material-symbols-outlined text-base">error</span>
-                      {bookingError}
+                      <span className="material-symbols-outlined text-base shrink-0">error</span>
+                      <span>{bookingError}</span>
                     </div>
                   )}
 
-                  {/* Nearest Available Slot Recommendation Banner */}
-                  {conflictData && (
-                    conflictData.noAvailability || !conflictData.nearestSlot ? (
-                      <div className="bg-accent-tint border border-accent/20 rounded-xl p-3.5 space-y-1.5 text-xs">
-                        <div className="flex items-center gap-1.5 font-bold text-accent-text">
-                          <span className="material-symbols-outlined text-accent text-base">event_busy</span>
-                          <span>No Availability Set</span>
-                        </div>
-                        <p className="text-accent-text/90 font-medium">
-                          This teacher hasn't set availability yet. Please reach out or check back later once their schedule is published.
-                        </p>
+                  {conflictData && conflictData.nearestSlot && (
+                    <div className="bg-accent-tint border border-accent/20 rounded-xl p-3.5 space-y-2 text-xs">
+                      <div className="flex items-center gap-1.5 font-bold text-accent-text">
+                        <span className="material-symbols-outlined text-accent text-base">schedule</span>
+                        <span>Requested slot booked! Nearest available slot:</span>
                       </div>
-                    ) : (
-                      <div className="bg-accent-tint border border-accent/20 rounded-xl p-3.5 space-y-2 text-xs">
-                        <div className="flex items-center gap-1.5 font-bold text-accent-text">
-                          <span className="material-symbols-outlined text-accent text-base">schedule</span>
-                          <span>Requested Slot Booked! Nearest Available Slot Found:</span>
-                        </div>
-                        <p className="text-accent-text/90">
-                          The nearest open slot for <strong>{bookingPeer?.name}</strong> is:
-                          <br />
-                          <span className="font-extrabold text-accent-text text-sm">{conflictData.nearestSlotFormatted}</span>
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => handleReserveBooking(conflictData.nearestSlot || undefined)}
-                          className="w-full py-2 bg-accent hover:bg-accent/90 text-on-primary font-black rounded-xl text-xs flex items-center justify-center gap-1 shadow-sm active:scale-98 transition-all cursor-pointer"
-                        >
-                          <span className="material-symbols-outlined text-sm">event_available</span>
-                          <span>Book Nearest Slot ({conflictData.nearestSlotFormatted})</span>
-                        </button>
-                      </div>
-                    )
+                      <p className="text-accent-text/90">
+                        Nearest open slot: <strong className="text-accent-text">{conflictData.nearestSlotFormatted}</strong>
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => handleReserveBooking(conflictData.nearestSlot || undefined)}
+                        className="w-full py-2 bg-accent hover:bg-accent/90 text-on-primary font-bold rounded-xl text-xs flex items-center justify-center gap-1 shadow-xs cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-sm">event_available</span>
+                        <span>Book Nearest Slot</span>
+                      </button>
+                    </div>
                   )}
 
-                  {/* Student Choice: Lecture Format & Capacity */}
+                  {/* Lecture Format & Capacity */}
                   <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <label className="block text-xs font-bold text-text uppercase tracking-wider">
-                        Choose Your Lecture Format
-                      </label>
-                      <span className="text-[11px] text-primary font-bold">Max 5 Students</span>
-                    </div>
-
+                    <label className="block text-xs font-bold text-text">Choose Lecture Format</label>
                     <div className="grid grid-cols-5 gap-1.5">
                       {[
                         { cap: 1, label: '1-on-1', icon: 'person' },
@@ -862,8 +824,6 @@ const convert12to24 = (time12: string) => {
                         { cap: 5, label: 'Batch (5)', icon: 'school' }
                       ].map(item => {
                         const price = calculateSeatPrice(bookingPeer, item.cap);
-                        const base1on1 = calculateSeatPrice(bookingPeer, 1);
-                        const disc = item.cap > 1 && base1on1 > price ? Math.round(((base1on1 - price) / base1on1) * 100) : 0;
                         const isSelected = bookingCapacity === item.cap;
 
                         return (
@@ -871,40 +831,26 @@ const convert12to24 = (time12: string) => {
                             key={item.cap}
                             type="button"
                             onClick={() => setBookingCapacity(item.cap)}
-                            className={`p-2 rounded-xl border flex flex-col items-center justify-between text-center transition-all ${
+                            className={`p-2 rounded-xl border flex flex-col items-center justify-between text-center transition-all cursor-pointer ${
                               isSelected 
-                                ? 'bg-primary-tint border-primary text-primary-text shadow-sm ring-2 ring-primary/20' 
+                                ? 'bg-primary-tint border-primary text-primary-text shadow-xs ring-2 ring-primary/20' 
                                 : 'bg-surface-2 border-border text-muted hover:bg-surface'
                             }`}
                           >
-                            <span className="material-symbols-outlined text-lg mb-0.5">{item.icon}</span>
-                            <span className="text-[10px] font-bold leading-tight">{item.label}</span>
-                            <span className={`text-[11px] font-black mt-1 ${isSelected ? 'text-primary' : 'text-text'}`}>
+                            <span className="material-symbols-outlined text-lg">{item.icon}</span>
+                            <span className="text-xs font-bold mt-0.5">{item.label}</span>
+                            <span className={`text-xs font-extrabold mt-1 ${isSelected ? 'text-primary' : 'text-text'}`}>
                               ₹{price}
                             </span>
-                            {disc > 0 ? (
-                              <span className="text-[9px] font-bold text-primary-text bg-primary-tint px-1 rounded mt-0.5 border border-primary/20">
-                                -{disc}%
-                              </span>
-                            ) : (
-                              <span className="text-[9px] text-transparent mt-0.5">.</span>
-                            )}
                           </button>
                         );
                       })}
                     </div>
-
-                    <div className="bg-primary-tint border border-primary/20 text-primary-text p-2.5 rounded-xl text-[11px] flex items-center justify-between">
-                      <span className="font-semibold flex items-center gap-1">
-                        <span className="material-symbols-outlined text-sm text-primary">info</span>
-                        {getCapacityDetails(bookingCapacity).label}:
-                      </span>
-                      <strong className="text-primary">{getCapacityDetails(bookingCapacity).desc}</strong>
-                    </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-text mb-1.5">Select Topic / Skill</label>
+                  {/* Topic / Skill Selection */}
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-bold text-text">Topic / Skill</label>
                     {(() => {
                       const peerSkills = Array.isArray(bookingPeer.userSkills) && bookingPeer.userSkills.length > 0
                         ? bookingPeer.userSkills
@@ -913,7 +859,7 @@ const convert12to24 = (time12: string) => {
 
                       return (
                         <select 
-                          className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-sm"
+                          className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                           value={selectedSkill ? (selectedSkill.id || selectedSkill.skill?.id) : ''}
                           onChange={(e) => {
                             const skill = teachesSkills.find((us: any) => (us.id === e.target.value || us.skill?.id === e.target.value));
@@ -934,76 +880,71 @@ const convert12to24 = (time12: string) => {
                     })()}
                   </div>
 
-                  {/* Mentor Instant Tutoring Banner */}
-                  {bookingPeer.isAvailableNow && (
-                    <div className="p-3 rounded-2xl bg-primary-tint border border-primary/30 flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-lg">bolt</span>
-                        <div>
-                          <p className="text-xs font-black text-text">Mentor is Online Right Now</p>
-                          <p className="text-[10px] text-muted font-medium">Ready for an immediate 1-on-1 drop-in session</p>
-                        </div>
+                  {/* Quick Availability Slots */}
+                  {bookingPeer?.availability && Object.keys(bookingPeer.availability).filter(k => bookingPeer.availability[k]).length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-bold text-text">
+                          ⚡ Quick Availability Slots (Click to Select)
+                        </label>
+                        <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20">
+                          {tzAbbr} ({userTz})
+                        </span>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setBookingDate(getTodayDateString());
-                          setBookingTime(new Date().toTimeString().slice(0, 5));
-                        }}
-                        className="px-2.5 py-1 bg-primary text-on-primary rounded-lg text-xs font-bold hover:bg-primary-hover transition-all cursor-pointer shrink-0"
-                      >
-                        Set to Now
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Mentor's Open Weekly Slots */}
-                  {(() => {
-                    const avail = bookingPeer.availability;
-                    if (!avail || typeof avail !== 'object') return null;
-                    const openSlots = Object.entries(avail).filter(([_, isOpen]) => Boolean(isOpen)).map(([slotKey]) => slotKey);
-                    if (openSlots.length === 0) return null;
-
-                    return (
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <label className="block text-xs font-bold text-text">
-                            ⚡ Quick Availability Slots (Click to Select)
-                          </label>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20">
-                            {tzAbbr} ({userTz})
-                          </span>
-                        </div>
-                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar p-1">
-                          {openSlots.slice(0, 8).map(slot => {
+                      <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto custom-scrollbar p-1">
+                        {Object.keys(bookingPeer.availability)
+                          .filter(k => bookingPeer.availability[k])
+                          .slice(0, 8)
+                          .map(slot => {
                             const [day, time12] = slot.split('-');
                             return (
                               <button
                                 key={slot}
                                 type="button"
                                 onClick={() => {
-                                  setBookingDate(getNextDateForDay(day));
-                                  setBookingTime(convert12to24(time12));
+                                  const today = new Date();
+                                  const daysMap: Record<string, number> = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
+                                  const targetDay = daysMap[day] ?? 1;
+                                  const currentDay = today.getDay();
+                                  let diff = targetDay - currentDay;
+                                  if (diff <= 0) diff += 7;
+                                  const targetDate = new Date(today);
+                                  targetDate.setDate(today.getDate() + diff);
+                                  const dateStr = targetDate.toISOString().slice(0, 10);
+                                  setBookingDate(dateStr);
+                                  
+                                  if (time12) {
+                                    const match = time12.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+                                    if (match) {
+                                      let h = parseInt(match[1], 10);
+                                      const m = match[2];
+                                      const isPM = match[3].toUpperCase() === 'PM';
+                                      if (isPM && h < 12) h += 12;
+                                      if (!isPM && h === 12) h = 0;
+                                      setBookingTime(`${String(h).padStart(2, '0')}:${m}`);
+                                    }
+                                  }
+                                  setConflictData(null);
+                                  setBookingError('');
+                                  setIsSlotAvailable(null);
                                 }}
-                                className="px-2.5 py-1 rounded-lg text-xs font-bold bg-surface-2 hover:bg-primary-tint hover:text-primary-text text-muted border border-border transition-all cursor-pointer flex items-center gap-1"
+                                className="px-2 py-1 text-xs font-semibold bg-surface-2 hover:bg-primary-tint hover:text-primary-text rounded-lg border border-border text-muted transition-colors cursor-pointer"
                               >
-                                <span className="material-symbols-outlined text-xs">schedule</span>
-                                <span>{day} {time12}</span>
-                                <span className="text-[10px] opacity-75 font-semibold">({tzAbbr})</span>
+                                {day} {time12}
                               </button>
                             );
                           })}
-                        </div>
                       </div>
-                    );
-                  })()}
+                    </div>
+                  )}
 
+                  {/* Date & Time Inputs */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-bold text-text mb-1.5">Date</label>
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-text">Date</label>
                       <input 
                         type="date" 
-                        className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-sm"
+                        className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                         value={bookingDate}
                         onChange={(e) => {
                           setBookingDate(e.target.value);
@@ -1013,14 +954,14 @@ const convert12to24 = (time12: string) => {
                         }}
                       />
                     </div>
-                    <div>
-                      <label className="block text-xs font-bold text-text mb-1.5 flex items-center justify-between">
+                    <div className="space-y-1.5">
+                      <label className="block text-xs font-bold text-text flex items-center justify-between">
                         <span>Time</span>
-                        <span className="text-[10px] font-bold text-muted px-1.5 py-0.5 rounded bg-surface-2 border border-border">{tzAbbr}</span>
+                        <span className="text-xs font-bold text-muted px-1.5 py-0.5 rounded bg-surface-2 border border-border">{tzAbbr}</span>
                       </label>
                       <input 
                         type="time" 
-                        className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 shadow-sm"
+                        className="w-full rounded-xl border border-border bg-surface text-text text-xs font-medium p-2.5 outline-none focus:border-primary focus:ring-2 focus:ring-primary/20"
                         value={bookingTime}
                         onChange={(e) => {
                           setBookingTime(e.target.value);
@@ -1032,112 +973,39 @@ const convert12to24 = (time12: string) => {
                     </div>
                   </div>
 
-                  {/* Real-time slot availability status */}
-                  {isCheckingAvailability && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted font-medium py-1">
-                      <span className="animate-spin material-symbols-outlined text-sm text-primary">progress_activity</span>
-                      <span>Checking availability...</span>
-                    </div>
-                  )}
-                  {!isCheckingAvailability && isSlotAvailable === true && !conflictData && (
-                    <div className="flex items-center gap-1.5 text-xs text-primary font-bold py-1">
-                      <span className="material-symbols-outlined text-sm text-primary">check_circle</span>
-                      <span>Time slot is available</span>
-                    </div>
-                  )}
-
-                  {/* Price Breakdown Card */}
-                  <div className="bg-surface-2 border border-border rounded-2xl p-4 space-y-2">
-                    <div className="flex justify-between items-center text-xs text-muted">
-                      <span>Base Mentor Rate (1-on-1)</span>
-                      <span className="font-semibold text-muted/80 line-through">₹{bookingPeer.hourlyRate || 499}</span>
+                  {/* Price Breakdown */}
+                  <div className="bg-surface-2 border border-border rounded-xl p-3.5 space-y-2 text-xs">
+                    <div className="flex justify-between items-center text-muted">
+                      <span>Base Rate</span>
+                      <span className="font-semibold text-text">₹{bookingPeer.hourlyRate || 499}</span>
                     </div>
                     {bookingCapacity > 1 && (
-                      <div className="flex justify-between items-center text-xs text-primary font-semibold">
-                        <span>Group Batch Discount ({getCapacityDetails(bookingCapacity).discountPercent}%)</span>
+                      <div className="flex justify-between items-center text-primary font-semibold">
+                        <span>Cohort Discount</span>
                         <span>-₹{(bookingPeer.hourlyRate || 499) - currentSeatPrice}</span>
                       </div>
                     )}
-
-                    {/* Active Reward Voucher Selection */}
-                    {availableVouchers.length > 0 && (
-                      <div className="pt-2 border-t border-border space-y-1.5">
-                        <div className="flex items-center justify-between text-xs font-bold text-text">
-                          <span className="flex items-center gap-1 text-primary">
-                            <span className="material-symbols-outlined text-sm">confirmation_number</span>
-                            Apply Reward Voucher:
-                          </span>
-                          {selectedVoucher && (
-                            <button
-                              type="button"
-                              onClick={() => setSelectedVoucherId(null)}
-                              className="text-[10px] text-danger hover:underline"
-                            >
-                              Remove Voucher
-                            </button>
-                          )}
-                        </div>
-                        <select
-                          className="w-full rounded-xl border border-primary/30 bg-surface text-text text-xs font-medium p-2 outline-none shadow-xs"
-                          value={selectedVoucherId || ''}
-                          onChange={(e) => setSelectedVoucherId(e.target.value || null)}
-                        >
-                          <option value="">No voucher applied</option>
-                          {availableVouchers.map((v: any) => (
-                            <option key={v.id} value={v.id}>
-                              {v.title} ({v.discountType === 'percent' ? `${v.discountValue}% OFF` : `₹${v.discountValue} OFF`}) • {v.code}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {voucherDiscount > 0 && (
-                      <div className="flex justify-between items-center text-xs text-primary font-bold">
-                        <span>Voucher Discount ({selectedVoucher?.code})</span>
-                        <span>-₹{voucherDiscount}</span>
-                      </div>
-                    )}
-
-                    <div className="flex justify-between items-center text-xs text-primary font-semibold">
-                      <span>Upfront Payment Today</span>
+                    <div className="flex justify-between items-center text-primary font-semibold">
+                      <span>Upfront Payment</span>
                       <span>₹0 (Pay After Class)</span>
                     </div>
-                    <div className="pt-2 border-t border-border flex justify-between items-center text-sm font-bold text-text">
-                      <span>Due After Lecture</span>
-                      <div className="text-right">
-                        <span className="text-primary text-lg font-black">₹{finalSeatPrice}</span>
-                        <span className="text-[10px] text-muted block font-normal">payable after session</span>
-                      </div>
+                    <div className="pt-2 border-t border-border flex justify-between items-center font-bold text-text">
+                      <span>Total Due Post-Class:</span>
+                      <span className="text-primary text-base font-extrabold">₹{finalSeatPrice}</span>
                     </div>
                   </div>
 
+                  {/* Actions */}
                   <div className="flex justify-end gap-2 pt-2 border-t border-border">
                     <Button variant="ghost" onClick={() => setBookingPeer(null)} disabled={isProcessingPayment}>
                       Cancel
                     </Button>
                     <Button 
                       variant="primary" 
-                      className="flex items-center gap-1.5 px-5 font-bold"
                       onClick={() => handleReserveBooking()}
-                      disabled={isProcessingPayment || isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict) || (!bookingPeer.upiId && !bookingPeer.hasUpiConfigured)}
+                      disabled={isProcessingPayment || isCheckingAvailability || isSlotAvailable === false || Boolean(conflictData?.conflict)}
                     >
-                      {isProcessingPayment ? (
-                        <>
-                          <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
-                          <span>Reserving...</span>
-                        </>
-                      ) : isCheckingAvailability ? (
-                        <>
-                          <span className="animate-spin material-symbols-outlined text-sm">progress_activity</span>
-                          <span>Checking availability...</span>
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-symbols-outlined text-sm">check_circle</span>
-                          <span>Reserve Seat (Pay ₹{finalSeatPrice} After Lecture)</span>
-                        </>
-                      )}
+                      {isProcessingPayment ? 'Reserving...' : `Reserve (Pay ₹${finalSeatPrice} Later)`}
                     </Button>
                   </div>
                 </div>
