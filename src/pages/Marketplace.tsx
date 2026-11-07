@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Button } from '../components/ui/Button';
@@ -23,6 +24,7 @@ export function Marketplace() {
   const urlTab = searchParams.get('tab');
   const initialTab = urlTab === 'swaps' ? 'swaps' : urlTab === 'group_batches' ? 'group_batches' : 'mentors';
   const [activeTab, setActiveTab] = useState<'mentors' | 'group_batches' | 'swaps'>(initialTab);
+  const [isGuaranteeExpanded, setIsGuaranteeExpanded] = useState(false);
 
   const handleTabChange = (tab: 'mentors' | 'group_batches' | 'swaps') => {
     setActiveTab(tab);
@@ -351,27 +353,28 @@ export function Marketplace() {
   };
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
+    <>
+      <div className="max-w-6xl mx-auto space-y-6 select-none">
       {/* Header with Switcher Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-text">Find Peers & Mentors</h1>
-            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary-tint text-primary-text border border-primary/20">
+          <div className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2">
+            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text">Find Peers & Mentors</h1>
+            <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary-tint text-primary-text border border-primary/20 whitespace-nowrap">
               ₹0 Upfront • Pay After Class
             </span>
           </div>
-          <p className="text-sm text-muted mt-1">
+          <p className="text-xs sm:text-sm text-muted mt-1">
             Connect with verified student peers and mentors for 1-on-1 coaching, group cohorts, or free skill swaps.
           </p>
         </div>
 
         {/* View Mode Switcher */}
-        <div className="flex p-1 bg-surface-2 rounded-xl border border-border self-start sm:self-auto">
+        <div className="flex p-1 bg-surface-2 rounded-xl border border-border self-start sm:self-auto overflow-x-auto max-w-full no-scrollbar flex-nowrap">
           <button
             type="button"
             onClick={() => handleTabChange('mentors')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] sm:min-h-0 ${
               activeTab === 'mentors' 
                 ? 'bg-surface text-primary shadow-xs' 
                 : 'text-muted hover:text-text'
@@ -383,7 +386,7 @@ export function Marketplace() {
           <button
             type="button"
             onClick={() => handleTabChange('group_batches')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] sm:min-h-0 ${
               activeTab === 'group_batches' 
                 ? 'bg-surface text-primary shadow-xs' 
                 : 'text-muted hover:text-text'
@@ -395,7 +398,7 @@ export function Marketplace() {
           <button
             type="button"
             onClick={() => handleTabChange('swaps')}
-            className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+            className={`whitespace-nowrap shrink-0 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer min-h-[44px] sm:min-h-0 ${
               activeTab === 'swaps' 
                 ? 'bg-surface text-primary shadow-xs' 
                 : 'text-muted hover:text-text'
@@ -409,12 +412,21 @@ export function Marketplace() {
 
       {/* Trust Guarantee Banner */}
       {activeTab !== 'swaps' && (
-        <div className="bg-primary-tint/50 border border-primary/20 rounded-2xl p-4 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0">
-            <span className="material-symbols-outlined text-lg">verified_user</span>
+        <div className="bg-primary-tint/50 border border-primary/20 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex items-start sm:items-center gap-2.5 sm:gap-3">
+          <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
+            <span className="material-symbols-outlined text-base sm:text-lg">verified_user</span>
           </div>
-          <div className="text-xs text-text leading-relaxed">
-            <strong className="text-primary-text font-bold">100% Student Guarantee:</strong> Reserve your seat for ₹0 upfront today. You attend the live interactive classroom first, and settle the mentoring fee directly via UPI only after your lecture is completed.
+          <div className="text-[11px] sm:text-xs text-text leading-relaxed flex-1 min-w-0">
+            <p className={clsx("sm:block", !isGuaranteeExpanded && "line-clamp-2 sm:line-clamp-none")}>
+              <strong className="text-primary-text font-bold">100% Student Guarantee:</strong> Reserve your seat for ₹0 upfront today. You attend the live interactive classroom first, and settle the mentoring fee directly via UPI only after your lecture is completed.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsGuaranteeExpanded(prev => !prev)}
+              className="text-[11px] font-bold text-primary sm:hidden mt-0.5 hover:underline cursor-pointer"
+            >
+              {isGuaranteeExpanded ? 'Read less' : 'Read more'}
+            </button>
           </div>
         </div>
       )}
@@ -423,8 +435,8 @@ export function Marketplace() {
       {activeTab !== 'swaps' && (
         <div className="space-y-3">
           {activeTab === 'mentors' && (
-            <div className="flex items-center gap-2 flex-wrap text-xs">
-              <span className="font-semibold text-muted flex items-center gap-1">
+            <div className="flex items-center gap-2 overflow-x-auto flex-nowrap no-scrollbar pb-0.5 text-xs">
+              <span className="font-semibold text-muted flex items-center gap-1 shrink-0">
                 <span className="material-symbols-outlined text-sm text-primary">filter_list</span>
                 Role:
               </span>
@@ -436,7 +448,7 @@ export function Marketplace() {
                 <button
                   key={rf.id}
                   onClick={() => setRoleFilter(rf.id as 'all' | 'teacher' | 'both')}
-                  className={`px-3 py-1 rounded-lg font-semibold transition-all border cursor-pointer ${
+                  className={`whitespace-nowrap shrink-0 px-3 py-1 rounded-lg font-semibold transition-all border cursor-pointer min-h-[36px] sm:min-h-0 flex items-center ${
                     roleFilter === rf.id
                       ? 'bg-primary text-on-primary border-primary shadow-xs'
                       : 'bg-surface text-muted border-border hover:border-primary/40 hover:text-text'
@@ -449,7 +461,7 @@ export function Marketplace() {
           )}
 
           {/* Categories Bar */}
-          <div className="flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
+          <div className="flex gap-2 overflow-x-auto flex-nowrap no-scrollbar pb-1">
             {categories.map(cat => (
               <button
                 key={cat}
@@ -495,27 +507,27 @@ export function Marketplace() {
                 <Card 
                   key={peer.id} 
                   variant="interactive" 
-                  className={`flex flex-col h-full justify-between p-5 space-y-4 ${
+                  className={`flex flex-col h-full justify-between p-3.5 sm:p-5 space-y-3 sm:space-y-4 ${
                     peer.isFeatured ? 'ring-2 ring-accent/60 border-accent/40' : ''
                   }`}
                 >
-                  <div className="space-y-4">
+                  <div className="space-y-3 sm:space-y-4">
                     {/* Header: Avatar, Name, Trust & Hourly Rate */}
-                    <div className="flex justify-between items-start gap-3">
-                      <div className="flex gap-3 items-center min-w-0">
+                    <div className="flex justify-between items-start gap-2.5 sm:gap-3">
+                      <div className="flex gap-2.5 sm:gap-3 items-center min-w-0">
                         <div className="relative shrink-0">
                           <img 
                             src={peer.avatar || `https://i.pravatar.cc/150?img=${i + 10}`} 
                             alt={`${peer.name}'s avatar`} 
-                            className="w-12 h-12 rounded-xl object-cover border border-border" 
+                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover border border-border" 
                           />
-                          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-primary rounded-full ring-2 ring-surface" />
+                          <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-primary rounded-full ring-2 ring-surface" />
                         </div>
                         <div className="min-w-0">
                           <h3 className="text-sm font-bold text-text truncate flex items-center gap-1">
-                            <span>{peer.name}</span>
+                            <span className="truncate">{peer.name}</span>
                             {peer.trustScore > 4.8 && (
-                              <span className="material-symbols-outlined text-primary text-sm" title="High Trust Peer">verified</span>
+                              <span className="material-symbols-outlined text-primary text-[15px] shrink-0 inline-flex items-center" title="High Trust Peer">verified</span>
                             )}
                           </h3>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
@@ -603,31 +615,60 @@ export function Marketplace() {
                   </div>
 
                   {/* Action Buttons */}
-                  <div className="flex gap-2 pt-2 border-t border-border">
-                    <Button 
-                      variant="secondary" 
-                      className="flex-1 text-xs py-2"
-                      onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
-                    >
-                      Chat
-                    </Button>
+                  <div className="pt-2 border-t border-border">
                     {(!peer.upiId && !peer.hasUpiConfigured) ? (
-                      <Button
-                        variant="secondary"
-                        disabled
-                        className="flex-1 text-xs py-2 opacity-60 cursor-not-allowed"
-                      >
-                        Payments Not Set Up
-                      </Button>
+                      <>
+                        {/* Mobile: Full-width Chat with subtitle badge */}
+                        <div className="flex sm:hidden flex-col w-full gap-1.5">
+                          <Button 
+                            variant="primary" 
+                            className="w-full text-xs py-2.5 min-h-[44px]"
+                            onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
+                          >
+                            Chat with Mentor
+                          </Button>
+                          <div className="flex items-center justify-center gap-1 text-[11px] text-muted font-medium text-center">
+                            <span className="material-symbols-outlined text-xs">info</span>
+                            <span>Payments Not Set Up • Booking unavailable</span>
+                          </div>
+                        </div>
+
+                        {/* Desktop: Exact existing buttons preserved */}
+                        <div className="hidden sm:flex gap-2">
+                          <Button 
+                            variant="secondary" 
+                            className="flex-1 text-xs py-2"
+                            onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
+                          >
+                            Chat
+                          </Button>
+                          <Button
+                            variant="secondary"
+                            disabled
+                            className="flex-1 text-xs py-2 opacity-60 cursor-not-allowed"
+                          >
+                            Payments Not Set Up
+                          </Button>
+                        </div>
+                      </>
                     ) : (
-                      <Button 
-                        variant="primary" 
-                        className="flex-1 text-xs py-2 flex items-center justify-center gap-1"
-                        onClick={() => handleOpenBooking(peer)}
-                      >
-                        <span className="material-symbols-outlined text-sm">calendar_month</span>
-                        Book Lecture
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button 
+                          variant="secondary" 
+                          className="flex-1 text-xs py-2 min-h-[44px] sm:min-h-0"
+                          onClick={() => navigate(`/messages?peerId=${peer.id}`, { state: { peerId: peer.id } })}
+                        >
+                          Chat
+                        </Button>
+                        <Button 
+                          variant="primary" 
+                          className="flex-1 text-xs py-2 flex items-center justify-center gap-1 min-h-[44px] sm:min-h-0"
+                          onClick={() => handleOpenBooking(peer)}
+                        >
+                          <span className="material-symbols-outlined text-sm">calendar_month</span>
+                          Book Lecture
+                        </Button>
+                      </div>
                     )}
                   </div>
                 </Card>
@@ -732,6 +773,8 @@ export function Marketplace() {
       )}
 
       {/* Booking Modal with Student Choice (Pay After Lecture) */}
+      </div>
+
       <AnimatePresence>
         {bookingPeer && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
@@ -1014,6 +1057,6 @@ export function Marketplace() {
           </div>
         )}
       </AnimatePresence>
-    </div>
+    </>
   );
 }

@@ -136,7 +136,7 @@ export function AIAssistant() {
   }
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-4">
+    <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-3 md:gap-4">
       {/* Chat Window */}
       <AnimatePresence>
         {open && (
@@ -145,7 +145,7 @@ export function AIAssistant() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9, y: 20 }}
             transition={{ type: 'spring', stiffness: 400, damping: 28 }}
-            className="w-80 md:w-96 bg-surface rounded-2xl shadow-lg border border-border overflow-hidden flex flex-col max-h-[540px]"
+            className="w-[calc(100vw-32px)] max-w-sm md:w-96 bg-surface rounded-2xl shadow-lg border border-border overflow-hidden flex flex-col max-h-[540px]"
           >
             {/* Header */}
             <div className="bg-primary text-on-primary p-4 flex items-center justify-between shadow">
@@ -259,7 +259,7 @@ export function AIAssistant() {
         whileTap={{ scale: 0.94 }}
         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
         onClick={() => setOpen(o => !o)}
-        className="w-12 h-12 bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-md flex items-center justify-center relative cursor-pointer"
+        className="w-12 h-12 min-w-[48px] min-h-[48px] bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-md flex items-center justify-center relative cursor-pointer"
         aria-label="Open AI Assistant"
       >
         {!open && (

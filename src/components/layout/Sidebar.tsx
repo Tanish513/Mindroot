@@ -47,6 +47,8 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
   const currentUser = useAppStore(state => state.currentUser);
   const isSidebarCollapsed = useAppStore(state => state.isSidebarCollapsed);
   const toggleSidebarCollapsed = useAppStore(state => state.toggleSidebarCollapsed);
+  const theme = useAppStore(state => state.theme);
+  const setTheme = useAppStore(state => state.setTheme);
 
   const [isHovered, setIsHovered] = useState(false);
   const [moreExpanded, setMoreExpanded] = useState(false);
@@ -176,7 +178,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
   };
 
   const renderNavContent = (isCollapsed: boolean) => (
-    <div className="flex flex-col h-full py-4 bg-sidebar-bg text-sidebar-icon select-none px-3.5 overflow-hidden">
+    <div style={{ backgroundColor: "var(--sidebar-bg)" }} className="flex flex-col h-full py-4 bg-sidebar-bg text-sidebar-icon select-none px-3.5 overflow-hidden">
       {/* Brand Header */}
       <div className="flex items-center mb-4 h-11 w-full justify-between overflow-hidden">
         <div 
@@ -554,6 +556,25 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
           );
         })()}
 
+        {/* Mobile-Only Theme Toggle in Drawer */}
+        <button
+          onClick={() => {
+            const currentDark = document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark');
+            setTheme(currentDark ? 'light' : 'dark');
+          }}
+          aria-label="Toggle Theme"
+          className="md:hidden group relative w-full h-10 rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon hover:bg-nav-hover hover:text-text transition-colors duration-150 flex items-center cursor-pointer mb-2"
+        >
+          <div className="w-11 h-10 flex items-center justify-center shrink-0">
+            <span className="material-symbols-outlined text-lg text-sidebar-icon">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
+          </div>
+          <div className="flex-1 min-w-0 pr-2 pl-1 text-left">
+            <span>{theme === 'dark' ? 'Light Theme' : 'Dark Theme'}</span>
+          </div>
+        </button>
+
         {/* Switch Role Button: Only available if account is both/hybrid */}
         {canSwitchRole && (
           <button 
@@ -633,6 +654,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
       <aside 
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
+        style={{ backgroundColor: "var(--sidebar-bg)" }}
         className={clsx(
           "hidden md:block h-full fixed left-0 top-0 border-r border-sidebar-border bg-sidebar-bg transition-all duration-300 ease-[cubic-bezier(0.2,0,0,1)] will-change-[width] overflow-hidden",
           isFloatingOverlay

@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { Sidebar } from './Sidebar';
 import { TopBar } from './TopBar';
 import { AIAssistant } from './AIAssistant';
+import { MobileBottomNav } from '../mobile/MobileBottomNav';
 import { InSessionFloatingBar } from '../liveroom/InSessionFloatingBar';
 import { NotificationManager } from '../NotificationManager';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -68,12 +69,13 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
 
         <TopBar onOpenMobileMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <main className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 md:pb-8">
           {children}
         </main>
       </div>
       <InSessionFloatingBar />
       <AIAssistant />
+      <MobileBottomNav />
     </div>
   );
 }

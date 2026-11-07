@@ -161,19 +161,19 @@ export function DashboardHeroHeader({
         </p>
       </div>
 
-      {/* Right: Primary "Schedule Session" & Secondary "Find Peer Match" (Text Link) */}
-      <div className="flex items-center gap-3 shrink-0 self-start md:self-center">
+      {/* Right: Primary "Schedule Session" & Secondary "Find Peer Match" (Text Link on Desktop, Stacked Outlined on Mobile) */}
+      <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0 self-start md:self-center">
         <button
           type="button"
           onClick={onFindMatch}
-          className="text-sm font-medium text-muted hover:text-text px-3 py-2 rounded-lg transition-colors duration-150 cursor-pointer"
+          className="w-full sm:w-auto text-center border border-border sm:border-transparent text-sm font-medium text-text sm:text-muted hover:text-text px-3 py-2.5 sm:py-2 rounded-lg hover:bg-surface-2 transition-colors duration-150 cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
         >
           Find Peer Match
         </button>
         <button
           type="button"
           onClick={onSchedule}
-          className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-hover rounded-lg transition-colors duration-150 shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer"
+          className="w-full sm:w-auto text-center px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-primary hover:bg-primary-hover rounded-lg transition-colors duration-150 shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
         >
           Schedule Session
         </button>

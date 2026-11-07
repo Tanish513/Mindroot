@@ -162,7 +162,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="bg-surface border border-border rounded-3xl w-full max-w-lg max-h-[min(90vh,720px)] flex flex-col shadow-lg overflow-hidden transition-all duration-200">
+      <div className="bg-surface border border-border rounded-3xl w-full max-w-lg max-h-[min(90dvh,720px)] pb-[env(safe-area-inset-bottom)] flex flex-col shadow-lg overflow-hidden transition-all duration-200">
         
         {/* Success / Receipt Screen */}
         {successDetails ? (
@@ -247,7 +247,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
               </div>
               <button
                 onClick={onClose}
-                className="h-8 w-8 rounded-full flex items-center justify-center text-muted hover:text-text hover:bg-surface-2 transition-colors"
+                className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-muted hover:text-text hover:bg-surface-2 transition-colors cursor-pointer"
               >
                 <span className="material-symbols-outlined text-lg">close</span>
               </button>
@@ -386,6 +386,33 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                         </div>
                       </div>
 
+                      {/* Mobile-Only Action Buttons for phones below md */}
+                      <div className="md:hidden flex flex-col sm:flex-row gap-2 pt-1">
+                        <a
+                          href={upiUrl || '#'}
+                          onClick={(e) => {
+                            if (!mentorUpi) e.preventDefault();
+                          }}
+                          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border transition-all min-h-[44px] ${
+                            mentorUpi
+                              ? 'bg-primary text-on-primary hover:bg-primary-hover shadow-xs cursor-pointer'
+                              : 'opacity-50 pointer-events-none bg-surface-2 text-muted border-border'
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-base">open_in_new</span>
+                          <span>Open UPI app</span>
+                        </a>
+                        <button
+                          type="button"
+                          onClick={handleCopyUpi}
+                          disabled={!mentorUpi}
+                          className="flex-1 py-3 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 border border-border bg-surface hover:bg-surface-2 text-text transition-all min-h-[44px] cursor-pointer disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-base">{copied ? 'check' : 'content_copy'}</span>
+                          <span>{copied ? 'Copied!' : 'Copy UPI ID'}</span>
+                        </button>
+                      </div>
+
                       {/* UPI ID Copy Field with Truthful Verification Label */}
                       <div>
                         <div className="flex items-center justify-between mb-1">
@@ -435,22 +462,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                         </p>
                       </div>
 
-                      {/* Mobile Deep Link */}
-                      <a
-                        href={upiUrl || '#'}
-                        onClick={(e) => {
-                          if (!mentorUpi) {
-                            e.preventDefault();
-                          }
-                        }}
-                        className={`w-full py-2.5 px-4 text-xs font-bold text-center block transition-all border rounded-xl ${
-                          mentorUpi
-                            ? 'bg-surface hover:bg-surface-2 text-text border-border cursor-pointer'
-                            : 'opacity-50 pointer-events-none bg-surface-2 text-muted border-border'
-                        }`}
-                      >
-                        📱 Open Directly in Mobile UPI App
-                      </a>
+                      
 
                       {/* Mandatory 12-Digit UTR Input */}
                       <div className="border-t border-border pt-3 space-y-1.5">
@@ -473,7 +485,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                             const val = e.target.value.replace(/[^0-9]/g, '');
                             setUtrInput(val);
                           }}
-                          className="w-full px-3 py-2 bg-surface-2 rounded-xl text-xs font-mono text-text border border-border focus:outline-none focus:ring-2 focus:ring-primary/20"
+                          className="w-full px-3 py-2.5 bg-surface-2 rounded-xl text-base md:text-xs font-mono text-text border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[44px]"
                         />
                         {utrInput.length > 0 && utrInput.length < 12 && (
                           <p className="text-[10px] text-accent font-medium">

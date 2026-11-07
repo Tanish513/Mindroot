@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import type { ChangeEvent } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAppStore } from '../store/useAppStore';
 import { api } from '../lib/api';
 import { showAppToast } from '../components/NotificationManager';
@@ -20,6 +20,8 @@ export function Profile() {
   const { currentUser, setCurrentUser, role, loginRole, toggleRole } = useAppStore();
   const loginAction = useAppStore(state => state.login);
   const logout = useAppStore(state => state.logout);
+  const theme = useAppStore(state => state.theme);
+  const setTheme = useAppStore(state => state.setTheme);
   const navigate = useNavigate();
 
   const [accountRole, setAccountRole] = useState<'student' | 'teacher' | 'both'>(
@@ -578,6 +580,159 @@ export function Profile() {
         </div>
       )}
 
+      {/* Mobile-Only Quick Access Hub & Tools (Native App Pattern - Option 1) */}
+      <div className="md:hidden bg-surface rounded-2xl p-4 border border-outline-variant shadow-elevation-1 space-y-4">
+        <div className="flex items-center justify-between border-b border-outline-variant/60 pb-3">
+          <div className="flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-xl">apps</span>
+            <h2 className="text-sm font-black text-on-surface">Platform Tools & Hub</h2>
+          </div>
+          <span className="text-[10px] font-bold text-on-surface-variant bg-surface-container px-2 py-0.5 rounded-full">
+            1-Tap Access
+          </span>
+        </div>
+
+        {/* 2x4 Quick Action Grid */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <Link
+            to="/wallet"
+            className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+          >
+            <div className="w-8 h-8 rounded-lg bg-teaching-emerald/15 text-teaching-emerald flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base">payments</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-on-surface truncate">Wallet & UPI</p>
+              <p className="text-[10px] text-on-surface-variant">Payouts & tokens</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/live/session-trio-batch-101"
+            className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+          >
+            <div className="w-8 h-8 rounded-lg bg-alert-rose/15 text-alert-rose flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base">videocam</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-on-surface truncate">Live Room</p>
+              <p className="text-[10px] text-on-surface-variant">Classroom studio</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/notes"
+            className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+          >
+            <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base">description</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-on-surface truncate">Study Notes</p>
+              <p className="text-[10px] text-on-surface-variant">Class scratchpads</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/community"
+            className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+          >
+            <div className="w-8 h-8 rounded-lg bg-trust-purple/15 text-trust-purple flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base">forum</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-on-surface truncate">Community</p>
+              <p className="text-[10px] text-on-surface-variant">Peer discussions</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/match-finder"
+            className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+          >
+            <div className="w-8 h-8 rounded-lg bg-learning-amber/15 text-learning-amber flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base">handshake</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-on-surface truncate">Match Finder</p>
+              <p className="text-[10px] text-on-surface-variant">AI barter swap</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/rewards"
+            className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+          >
+            <div className="w-8 h-8 rounded-lg bg-secondary/15 text-secondary flex items-center justify-center shrink-0">
+              <span className="material-symbols-outlined text-base">military_tech</span>
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs font-bold text-on-surface truncate">Rewards</p>
+              <p className="text-[10px] text-on-surface-variant">Badges & tokens</p>
+            </div>
+          </Link>
+
+          {(accountRole === 'teacher' || accountRole === 'both' || currentUser?.role === 'admin') && (
+            <Link
+              to="/teacher"
+              className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+            >
+              <div className="w-8 h-8 rounded-lg bg-primary/15 text-primary flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-base">school</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-on-surface truncate">Teacher Portal</p>
+                <p className="text-[10px] text-on-surface-variant">Manage classes</p>
+              </div>
+            </Link>
+          )}
+
+          {currentUser?.role === 'admin' && (
+            <Link
+              to="/admin"
+              className="flex items-center gap-2.5 p-3 rounded-xl bg-surface-container-low border border-outline-variant/50 hover:bg-surface-container transition-all active:scale-98"
+            >
+              <div className="w-8 h-8 rounded-lg bg-outline/15 text-on-surface flex items-center justify-center shrink-0">
+                <span className="material-symbols-outlined text-base">admin_panel_settings</span>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-on-surface truncate">Admin Desk</p>
+                <p className="text-[10px] text-on-surface-variant">Disputes & logs</p>
+              </div>
+            </Link>
+          )}
+        </div>
+
+        {/* Mobile Preferences: Theme Toggle & Sign Out */}
+        <div className="pt-2 border-t border-outline-variant/60 flex items-center justify-between gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              const currentDark = document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark');
+              setTheme(currentDark ? 'light' : 'dark');
+            }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-surface-container text-on-surface text-xs font-bold border border-outline-variant hover:bg-surface-container-high transition-colors active:scale-98"
+          >
+            <span className="material-symbols-outlined text-base">
+              {theme === 'dark' ? 'light_mode' : 'dark_mode'}
+            </span>
+            <span>{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              logout();
+              navigate('/login');
+            }}
+            className="flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-alert-rose/10 text-alert-rose text-xs font-bold border border-alert-rose/20 hover:bg-alert-rose/20 transition-colors active:scale-98"
+          >
+            <span className="material-symbols-outlined text-base">logout</span>
+            <span>Sign Out</span>
+          </button>
+        </div>
+      </div>
+
       {/* Grid Layout for Profile Editing */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         

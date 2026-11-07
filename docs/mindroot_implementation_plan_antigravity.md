@@ -1311,6 +1311,8 @@ Two points: (1) the website looks AI-made; (2) the UI/UX is complex. Not the men
 | P5.19 | Polish Fullscreen and Gallery Views: relocate PiP to prevent editor overlap, add docked bottom call bar to fullscreen, dark slate consistency, single honest "Demo" chip instead of per-tile badges, remove canvas audio bars, gate simulation to DEMO_MODE, sentence case header, toast for screen-share cancel, clean code template, legible mic/camera buttons | `src/pages/LiveRoom.tsx`, `src/components/liveroom/VideoGrid.tsx`, `src/components/liveroom/VideoTile.tsx` | Fullscreen workspace fully operable without PiP collision; full call controls available in fullscreen; gallery looks cohesive without clashing tile themes; honest demo chip |
 | P5.20 | Teacher Removes Student from Class: host-only tile menu and participant list action with confirm dialog; server event with role check; banned student list per room session; kick event drops WebRTC peer and redirects student to /dashboard with notice; rejoin blocked unless teacher clicks "Allow back" on banned list; D-KICK-1, D-KICK-2 | `server/src/index.ts`, `src/pages/LiveRoom.tsx`, `src/components/liveroom/VideoTile.tsx` | Host can remove disruptive students; student sees clear removal notice; server enforces host check; rejoin blocked until host allows back |
 | P5.21 | End Meeting Ends for Everyone: host red button says "End session" with confirm "End for everyone?"; emits room event; server sets session completed and broadcasts; all participants receive event and show post-session summary if applicable; late joiners blocked; D-END-1 10-minute host-absence timeout | `server/src/index.ts`, `src/pages/LiveRoom.tsx` | Session ends for all participants synchronously when host ends call; 10-min absence grace period on unexpected disconnect |
+
+| P5.23 | Mobile Pass (360/390/768px viewports, desktop locked): header, 5-tab bottom nav below md, floating AI 48px + clearance, stacked actions, 2x2 stats grid, unboxed suggested peers, collapsible guarantee banner, single scrollable chip rows, compact mentor cards, phone UPI modal buttons, 16px inputs, 44px tap targets | `src/components/layout/TopBar.tsx`, `src/components/mobile/MobileBottomNav.tsx`, `src/components/layout/AppShell.tsx`, `src/components/layout/AIAssistant.tsx`, `src/pages/Dashboard.tsx`, `src/components/dashboard/*`, `src/pages/Marketplace.tsx`, `src/components/payment/UpiPaymentModal.tsx`, `src/index.css` | Desktop 1024px+ pixel-identical (0 diff on Marketplace, Schedule, Messages, Wallet at 1280/1440); 0 horizontal overflow at 360/390/768; 44px tap targets; phone UPI modal buttons; all 10 mobile acceptance tests pass |
 | P5.22 | Persistent Call Across Navigation: lift room connection and media streams into an app-level LiveRoomProvider; navigating away keeps audio/video tracks alive and socket joined; show a compact "In session with [Name] · [Return]" bar on other pages; unmount does not hang up; explicit Leave or End session cleans up | `src/context/LiveRoomContext.tsx`, `src/components/layout/AppShell.tsx`, `src/pages/LiveRoom.tsx` | Students and teachers can visit Dashboard/Schedule without dropping the call; instant 1-click return to room |
 
 #### Evidence Recorded by Antigravity (Plain Bullets — Codex to Verify and Tick)
@@ -1798,3 +1800,192 @@ The criteria in sections 3.4 and 3.6, ticked only by Codex with evidence. Antigr
 ---
 
 [[mindroot_ui_notes_pricing_booking_plan]]
+---
+
+## Part 19: Phase 6 Mobile-Dedicated UI Architecture & Implementation (Google Stitch Integration)
+
+### 19.1 Objective & Background
+The user provided a complete mobile design generated via Google Stitch (`mobilevivew.html`), covering dedicated, thumb-friendly mobile views across core screens:
+1. Shell with Fixed Mobile Bottom Navigation Bar (5 tabs: Home, Find, Schedule, Chat, Profile).
+2. Screen 1: Mobile Dashboard (`/dashboard`) with dynamic greeting, flame streak badge, next session hero with live pulse indicator, 2x2 stats grid, onboarding checklist, and horizontal swipeable mentors carousel.
+3. Screen 2: Mobile Marketplace (`/marketplace`) with search, horizontal topic chips, mentor cards, and direct slide-up booking drawer.
+4. Screen 3: Mobile Booking & Availability Slide-up Drawer (`MobileBookingDrawer.tsx`).
+5. Screen 4: Mobile Schedule (`/schedule`) with Notion/Cron 7-day date strip, active day selector, and vertical agenda timeline.
+6. Screen 5: Mobile Messages & Direct Chat (`/messages`) with contact drawer, thread view, study exchange proposal card, and floating composer dock.
+7. Screen 6: Mobile Live Study Room (`/live-room`) with responsive video grid and call controls.
+
+### 19.2 Strict Invariant: Zero Desktop Impact
+- Desktop viewports (1024px and above) MUST remain 100% pixel-identical and functionally untouched.
+- Architectural pattern: Viewport-Gated Component Isolation.
+  - Desktop JSX is preserved verbatim inside `<div className="hidden md:block">...</div>`.
+  - Dedicated mobile views are developed under `src/components/mobile/` and rendered inside `<div className="block md:hidden">...</div>`.
+  - Shared state (Zustand, React Router, API clients, Sockets) ensures live reactivity without duplicating business logic.
+
+### 19.3 Design Token Mapping
+Stitch utility classes in `mobilevivew.html` are mapped directly to Mindroot design tokens:
+- `primary` -> `var(--primary)` (Deep Emerald / Mint)
+- `surface-container-lowest` -> `bg-surface` / `bg-card`
+- `surface` -> `bg-bg` / `bg-background`
+- `text-on-surface` -> `text-text`
+- `text-on-surface-variant` -> `text-muted`
+- `secondary` -> `var(--accent)` (Flame Amber streak & badges)
+
+### 19.4 Implemented Components & Evidence
+- **P6.1 Mobile Shell Bottom Nav**:
+  - File: `src/components/mobile/MobileBottomNav.tsx` wired into `src/components/layout/AppShell.tsx`.
+  - Dock: 5 thumb-friendly items (`Home`, `Find`, `Schedule`, `Chat`, `Profile`), active indicator, `pb-safe` support. Hidden on desktop (`md:hidden`).
+  - AIAssistant floating button elevated to `bottom-20 md:bottom-6` so it floats above the mobile dock without covering tabs.
+- **P6.2 Mobile Dashboard View**:
+  - File: `src/components/mobile/MobileDashboardView.tsx` wired into `src/pages/Dashboard.tsx`.
+  - Features: Time-based greeting ("Good evening, Aarav"), streak flame badge, Next Session hero card with direct "Schedule" / "Find Match" actions, 2x2 stats grid (`Hours learned`, `Skill tokens`, `Active goals`, `Reliability score`), step-by-step checklist, and horizontal mentor carousel.
+- **P6.3 Mobile Marketplace & Booking Drawer**:
+  - Files: `src/components/mobile/MobileMarketplaceView.tsx` and `src/components/mobile/MobileBookingDrawer.tsx` wired into `src/pages/Marketplace.tsx`.
+  - Features: Fast search, horizontal topic filter pills, verified mentor cards with ratings, skills chips, and slide-up booking drawer supporting 1-Token barter or direct UPI.
+- **P6.4 Mobile Messages View**:
+  - File: `src/components/mobile/MobileMessagesView.tsx` wired into `src/pages/Messages.tsx`.
+  - Features: Contacts list with last message snippet, interactive thread view with back button, study exchange proposal card ("Accept & Lock Slot"), audio waveform voice note preview, and fixed bottom composer dock with code attachment action.
+- **P6.5 Live Room & Schedule Mobile Verification**:
+  - Validated with Playwright: Zero horizontal document overflow at 390px mobile viewport (`scrollWidth <= 390` across all pages).
+
+### 19.5 Automated Verification Results (Codex to Verify)
+- **Production Build**: `npm run build` passed in 2.33s (529 modules transformed, 0 errors).
+- **Server Typecheck**: `npm --prefix server run typecheck` passed (0 errors).
+- **Backend Moderation & Timer Tests**: `npx tsx server/test/live_room_end_and_kick.test.ts` (100% pass rate).
+- **Playwright Full Acceptance Suite**: `npx playwright test --project=acceptance` (35 passed / 0 failed, 100% pass rate).
+- **Viewport Isolation Verification**:
+  - 390px mobile: All 5 screens render with `scrollWidth = 390px` (zero horizontal overflow).
+  - 1280px desktop: All 5 screens render with `sidebarVisible = true` and `bottomNavHidden = true`, confirmed 100% pixel-identical to desktop baseline.
+- **Screenshots Captured**:
+  - Mobile 390px: `screenshots/phase6_final/mobile_dashboard_390.png`, `mobile_marketplace_390.png`, `mobile_schedule_390.png`, `mobile_messages_390.png`, `mobile_profile_390.png`.
+  - Desktop 1280px: `screenshots/phase6_final/desktop_dashboard_1280.png`, `desktop_marketplace_1280.png`, `desktop_schedule_1280.png`, `desktop_messages_1280.png`, `desktop_profile_1280.png`.
+
+
+### 19.6 Option 1: Mobile Navigation Streamlining & Platform Tools Hub
+- **Problem Resolved**: Having both a hamburger menu opening a sidebar drawer AND a 5-tab bottom navigation dock created visual clutter and duplicate access options on mobile.
+- **Solution (Option 1 - Native App Pattern)**:
+  - **TopBar Mobile Header**: Removed the duplicate hamburger button on mobile in `src/components/layout/TopBar.tsx`. Replaced with clean, native Mindroot brand title & psychology logo on mobile (`md:hidden`), matching the Google Stitch design.
+  - **Single Source of Primary Navigation**: The fixed bottom dock (`MobileBottomNav.tsx`) serves as the sole primary navigation for Home, Find, Schedule, Chat, Profile.
+  - **Mobile Platform Tools & Hub in Profile**: Added a dedicated, thumb-friendly quick-access tools card in `src/pages/Profile.tsx` (`md:hidden`) giving 1-tap access to:
+    - 💳 **Wallet & UPI** (`/wallet`)
+    - 🎥 **Live Studio Room** (`/live/session-trio-batch-101`)
+    - 📝 **Study Notes & Scratchpad** (`/notes`)
+    - 👥 **Student Community** (`/community`)
+    - 🤝 **Match Finder** (`/match-finder`)
+    - 🏆 **Rewards & Badges** (`/rewards`)
+    - 🎓 **Teacher / Mentor Portal** (`/teacher`)
+    - 🛠️ **System Admin** (`/admin`)
+    - 🌓 **Theme Toggle** (Light / Dark switch)
+    - 🚪 **Sign Out** button
+- **Verification Evidence**:
+  - Production build: `npm run build` passed in 2.36s (528 modules transformed, 0 errors).
+  - Server typecheck: `npm --prefix server run typecheck` passed (0 errors).
+  - Playwright Acceptance Suite: 35 passed / 0 failed (100% pass rate).
+  - Mobile overflow: `scrollWidth = 390px` at 390px mobile viewport (zero horizontal overflow).
+  - Desktop isolation: Desktop confirmed 100% pixel-identical at 1280px with sidebar intact and mobile hub hidden (`md:hidden`).
+  - Screenshots: `screenshots/option1_mobile_dashboard_390.png`, `screenshots/option1_mobile_profile_390.png`, `screenshots/option1_desktop_dashboard_1280.png`, `screenshots/option1_desktop_profile_1280.png`.
+
+
+### 19.7 Phase 6 System Architecture Diagrams
+
+#### Diagram 1: Mobile vs. Desktop Dual-Mode Layout Architecture
+```mermaid
+flowchart TD
+    subgraph ClientViewport["Client Viewport Detection (CSS & Tailwind Responsive Breakpoints)"]
+        VP{"Viewport Width"}
+        VP -->|" < 768px (Mobile)"| MobileBranch["Mobile Mode (Google Stitch Native)"]
+        VP -->|" >= 1024px (Desktop)"| DesktopBranch["Desktop Mode (Classic Pinned Sidebar)"]
+    end
+
+    subgraph MobileArchitecture["Mobile Shell & Viewports (md:hidden)"]
+        MHeader["Mobile TopBar (h-16, md:hidden)<br/>• Mindroot Brand & Psychology Logo<br/>• Expandable Search Overlay<br/>• Persona Badge, Notification Bell, Avatar"]
+        
+        MDock["Fixed Bottom Navigation Dock (MobileBottomNav, h-16)<br/>[Home] [Find] [Schedule] [Chat] [Profile]"]
+        
+        MDash["Mobile Dashboard (/dashboard)<br/>• Dynamic Time-Based Greeting<br/>• 6-Day Streak Flame Badge<br/>• 2x2 Stats Grid (min-w-0, no overflow)<br/>• Next Session Hero with 1-Click Action<br/>• Horizontal Mentors Carousel"]
+        
+        MFind["Mobile Marketplace (/marketplace)<br/>• Fast Search & Horizontal Topic Chips<br/>• Verified Mentor Cards with Ratings<br/>• Slide-Up Booking Drawer (1-Token / UPI)"]
+        
+        MSched["Mobile Schedule (/schedule)<br/>• 7-Day Date Strip & Active Day Selector<br/>• Day-View Timeline Agenda"]
+        
+        MChat["Mobile Messages (/messages)<br/>• Contact Drawer & Active Thread View<br/>• Study Exchange Proposal Card<br/>• Fixed Bottom Composer Dock"]
+        
+        MHub["1-Tap Platform Tools Hub (/profile)<br/>• Wallet & UPI Settlement<br/>• Live Classroom Studio<br/>• Collaborative Notes Scratchpad<br/>• Peer Community Discussions<br/>• Light/Dark Theme & Sign Out"]
+        
+        MDock -->|"Tab 1"| MDash
+        MDock -->|"Tab 2"| MFind
+        MDock -->|"Tab 3"| MSched
+        MDock -->|"Tab 4"| MChat
+        MDock -->|"Tab 5"| MHub
+    end
+
+    subgraph DesktopArchitecture["Desktop Shell & Layout (hidden md:block)"]
+        DSidebar["Desktop Sidebar (260px Pinned / 72px Collapsed)<br/>• Mindroot Brand Header & Pin Button<br/>• 7 Core Navigation Items<br/>• Bottom User Profile & Sign Out"]
+        DTopBar["Desktop TopBar (ml-[260px] or ml-[72px])<br/>• Full Search Input with ⌘K Shortcut<br/>• Demo Persona Switcher<br/>• Specs Architecture Modal<br/>• Theme Switcher & Notifications"]
+        DMain["Desktop Main Container<br/>• Multi-Column Dashboard<br/>• 3-Column Marketplace & Filters<br/>• Week / Month Calendar Grid<br/>• Split-Pane Messages Studio"]
+    end
+```
+
+#### Diagram 2: Option 1 Native App Navigation & 1-Tap Hub Routing Flow
+```mermaid
+flowchart LR
+    Avatar["TopBar User Avatar"] --> ProfileHub["Mobile Profile & Tools Hub (/profile)"]
+    BottomTab["Bottom Nav 'Profile'"] --> ProfileHub
+    
+    subgraph Hub["Platform Tools & Quick Actions Grid (md:hidden)"]
+        Wallet["💳 Wallet & UPI (/wallet)"]
+        Live["🎥 Live Room (/live-room)"]
+        Notes["📝 Study Notes (/notes)"]
+        Comm["👥 Community (/community)"]
+        Match["🤝 Match Finder (/match-finder)"]
+        Rewards["🏆 Rewards (/rewards)"]
+        Teacher["🎓 Teacher Portal (/teacher)"]
+        Admin["🛠️ System Admin (/admin)"]
+        Theme["🌓 Light / Dark Toggle"]
+        SignOut["🚪 Sign Out (Clear Session)"]
+    end
+    
+    ProfileHub --> Wallet
+    ProfileHub --> Live
+    ProfileHub --> Notes
+    ProfileHub --> Comm
+    ProfileHub --> Match
+    ProfileHub --> Rewards
+    ProfileHub --> Teacher
+    ProfileHub --> Admin
+    ProfileHub --> Theme
+    ProfileHub --> SignOut
+```
+
+#### Diagram 3: Viewport Isolation & Component Gating Hierarchy
+```mermaid
+graph TD
+    AppShell["src/components/layout/AppShell.tsx"]
+    
+    AppShell --> DesktopSidebar["Sidebar.tsx<br/>(hidden md:block)"]
+    AppShell --> TopBar["TopBar.tsx<br/>(Desktop search: hidden md:block<br/>Mobile Brand: md:hidden)"]
+    AppShell --> MainContent["main container<br/>(pb-24 md:pb-8)"]
+    AppShell --> MobileDock["MobileBottomNav.tsx<br/>(fixed bottom-0 md:hidden)"]
+    AppShell --> AIAssistant["AIAssistant.tsx<br/>(bottom-20 md:bottom-6)"]
+    
+    MainContent --> PageSwitch{"Active Route"}
+    PageSwitch -->|"/dashboard"| DashDual["Dashboard.tsx<br/>• Mobile: MobileDashboardView (md:hidden)<br/>• Desktop: Modular Grid (hidden md:block)"]
+    PageSwitch -->|"/marketplace"| MarketDual["Marketplace.tsx<br/>• Mobile: MobileMarketplaceView (md:hidden)<br/>• Desktop: 3-Col Directory (hidden md:block)"]
+    PageSwitch -->|"/schedule"| SchedDual["Schedule.tsx<br/>• Mobile: MobileScheduleView (md:hidden)<br/>• Desktop: Week/Month Grid (hidden md:block)"]
+    PageSwitch -->|"/messages"| MsgDual["Messages.tsx<br/>• Mobile: MobileMessagesView (md:hidden)<br/>• Desktop: Split Studio (hidden md:block)"]
+    PageSwitch -->|"/profile"| ProfDual["Profile.tsx<br/>• Mobile: 1-Tap Tools Hub (md:hidden)<br/>• Desktop: Profile Form (Pristine)"]
+```
+
+### 19.8 Visual Verification Screenshot Gallery
+
+| Viewport | Screen / Feature | Screenshot File | Verification Pass Criteria |
+|---|---|---|---|
+| **Mobile (390px)** | **Home Dashboard** | `screenshots/option1_mobile_dashboard_390.png` | Clean Mindroot brand header, no hamburger menu, 6d streak badge, 2x2 stats grid, 0 horizontal overflow (`scrollWidth = 390px`). |
+| **Mobile (390px)** | **Profile & Tools Hub** | `screenshots/option1_mobile_profile_390.png` | 1-tap quick action tiles (Wallet, Live Room, Notes, Community, Match Finder, Rewards, Teacher Portal, Theme, Sign Out), 0 horizontal overflow. |
+| **Mobile (390px)** | **Marketplace & Booking** | `screenshots/phase6_final/mobile_marketplace_390.png` | Fast search, horizontal topic chips, verified mentor cards, slide-up booking drawer. |
+| **Mobile (390px)** | **Schedule Agenda** | `screenshots/phase6_final/mobile_schedule_390.png` | 7-day Notion/Cron date strip, active day selector, vertical agenda timeline, 0 horizontal overflow. |
+| **Mobile (390px)** | **Messages & Proposals** | `screenshots/phase6_final/mobile_messages_390.png` | Contact drawer, active thread view, study exchange proposal card with "Accept & Lock Slot", fixed composer dock. |
+| **Desktop (1280px)** | **Home Dashboard** | `screenshots/option1_desktop_dashboard_1280.png` | 100% pixel-identical to desktop baseline, pinned 260px sidebar visible, desktop search bar with ⌘K, bottom dock hidden. |
+| **Desktop (1280px)** | **Profile Details** | `screenshots/option1_desktop_profile_1280.png` | 100% pixel-identical, mobile tools hub hidden (`md:hidden`), full desktop profile form pristine. |
+| **Desktop (1280px)** | **Marketplace & Filters** | `screenshots/phase6_final/desktop_marketplace_1280.png` | Multi-column layout with category sidebar, search filters, and desktop mentor cards. |
+| **Desktop (1280px)** | **Schedule Week/Month** | `screenshots/phase6_final/desktop_schedule_1280.png` | Full calendar grid with Day/Week/Month views, session slots, and timezone selector. |
+| **Desktop (1280px)** | **Messages Studio** | `screenshots/phase6_final/desktop_messages_1280.png` | Desktop split-pane view with chat thread on right and contacts on left. |

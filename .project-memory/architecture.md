@@ -40,3 +40,17 @@
    - Host-only signaling event authorization: Events such as `fullscreen`, `workspace`, and `sync-full-state` are restricted to room hosts or admins, rejecting unauthorized participants with `room-error`.
 5. **Real-time Scoped Event Delivery**:
    - User-targeted socket rooms (`user:<userId>`) ensure sensitive booking requests and notifications are delivered only to intended recipients rather than broadcasted.
+
+
+## 6. Dual-Mode Responsive Viewport Subsystem (Mobile Native vs Desktop)
+1. **Architectural Isolation Principle**:
+   - Desktop viewports (>= 1024px) use the classic multi-column layout with a pinned 260px sidebar (or 72px icon rail), top search bar with ⌘K shortcut, and wide multi-column grids.
+   - Mobile viewports (< 768px) use dedicated native app components styled per Google Stitch design (`mobilevivew.html`), with zero horizontal overflow (`scrollWidth <= clientWidth`).
+   - Gating is strictly handled using Tailwind breakpoints: `md:hidden` for mobile-only elements, and `hidden md:block` (or `hidden md:flex`) for desktop-only elements.
+2. **Mobile Navigation Hierarchy (Option 1 Native App Model)**:
+   - Primary 5-Tab Bottom Dock: `MobileBottomNav.tsx` (`Home`, `Find`, `Schedule`, `Chat`, `Profile`).
+   - Top Header: Mindroot brand logo/title on left, search expander, notification bell, and user avatar on right. Zero hamburger menu.
+   - Secondary Platform Tools Hub: Embedded in mobile `Profile.tsx` with 1-tap access to Wallet & UPI, Live Room, Study Notes, Community, Match Finder, Rewards, Teacher Portal, Admin Desk, Theme Switcher, and Sign Out.
+3. **Floating Bar & Dock Stacking**:
+   - `AIAssistant.tsx` button is elevated to `bottom-20 md:bottom-6` on mobile so it floats cleanly above the 64px bottom dock without obscuring navigation tabs.
+   - Page containers apply `pb-24 md:pb-8` so scrollable content can scroll completely clear of the bottom navigation dock.

@@ -586,6 +586,17 @@ const defaultSeedPeers = [
   }
 ];
 
+
+export function resolveAttachmentUrl(url?: string | null): string {
+  if (!url) return '';
+  if (url.startsWith('data:') || url.startsWith('blob:') || /^https?:\/\//i.test(url)) {
+    return url;
+  }
+  const base = getBackendUrl().replace(/\/+$/, '');
+  const cleanPath = url.startsWith('/') ? url : '/' + url;
+  return base + cleanPath;
+}
+
 export const api = {
   getTurnCredentials: async (): Promise<{ iceServers: RTCIceServer[] } | null> => {
     try {
@@ -2422,6 +2433,8 @@ export const api = {
       throw err;
     }
   },
+
+  resolveAttachmentUrl: (url?: string | null) => resolveAttachmentUrl(url),
 
   exportDailyNotesUrl: (format: 'zip' | 'md' = 'zip') => {
     const token = typeof window !== 'undefined' ? getAuthItem('mindroot_auth_token') : null;

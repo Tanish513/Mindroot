@@ -31,7 +31,7 @@ export function UpcomingSessionsWidget({
     <section className="bg-surface border border-border rounded-xl p-5 shadow-xs flex flex-col justify-between h-full">
       {/* Clean Card Header */}
       <div>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-2 mb-3">
           <div className="flex items-center gap-2">
             <span className="material-symbols-outlined text-primary text-[18px]" aria-hidden="true">
               calendar_today
@@ -41,7 +41,7 @@ export function UpcomingSessionsWidget({
           <button
             type="button"
             onClick={onOpenSchedule}
-            className="text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer"
+            className="self-start sm:self-auto text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer min-h-[32px] sm:min-h-0 flex items-center"
           >
             Calendar &rarr;
           </button>

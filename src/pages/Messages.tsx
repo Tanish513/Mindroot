@@ -6,6 +6,7 @@ import { api, onPeersUpdated, onMessagesUpdated } from '../lib/api';
 import { useAppStore } from '../store/useAppStore';
 import { AISkillMatchBanner } from '../components/chat/AISkillMatchBanner';
 import { UpiPaymentModal, type UpiPaymentSession } from '../components/payment/UpiPaymentModal';
+import { MobileMessagesView } from '../components/mobile/MobileMessagesView';
 
 export function Messages() {
   const location = useLocation();
@@ -210,6 +211,27 @@ export function Messages() {
 
   return (
     <div className="max-w-6xl mx-auto h-[calc(100vh-140px)] flex flex-col space-y-4">
+      {/* Dedicated Mobile Chat Thread (< md) */}
+      <div className="block md:hidden flex-1 min-h-0">
+        <MobileMessagesView
+          peers={peers}
+          activePeerId={activePeerId}
+          setActivePeerId={setActivePeerId}
+          messages={messages}
+          currentUser={currentUser}
+          inputText={inputText}
+          setInputText={setInputText}
+          onSend={handleSend}
+          onRemoveFailedMsg={handleRemoveFailedMsg}
+          onOpenUpiModal={(session) => {
+            setUpiSession(session);
+            setIsUpiModalOpen(true);
+          }}
+        />
+      </div>
+
+      {/* Untouched Desktop Chat View (>= md) */}
+      <div className="hidden md:flex flex-col flex-1 min-h-0 space-y-4">
       <div className="shrink-0 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-text">Messages & Coordination</h1>
@@ -408,6 +430,7 @@ export function Messages() {
           </div>
         </div>
       )}
+      </div>
 
       {/* Direct UPI Payment Modal in Chat */}
       <UpiPaymentModal

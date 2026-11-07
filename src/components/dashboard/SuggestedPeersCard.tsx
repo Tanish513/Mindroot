@@ -24,11 +24,11 @@ export function SuggestedPeersCard({
   onConnect
 }: SuggestedPeersCardProps) {
   return (
-    <section className="bg-surface border border-border rounded-xl p-5 shadow-xs space-y-4">
+    <section className="bg-transparent md:bg-surface border-0 md:border border-border rounded-xl p-0 md:p-5 shadow-none md:shadow-xs space-y-3 md:space-y-4">
       {/* Card Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <span className="material-symbols-outlined text-primary text-[18px]" aria-hidden="true">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-4">
+        <div className="flex items-start sm:items-center gap-2.5">
+          <span className="material-symbols-outlined text-primary text-[18px] shrink-0 mt-0.5 sm:mt-0" aria-hidden="true">
             recommend
           </span>
           <div>
@@ -41,7 +41,7 @@ export function SuggestedPeersCard({
         <button
           type="button"
           onClick={onBrowseAll}
-          className="text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer"
+          className="self-start sm:self-auto text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer min-h-[32px] sm:min-h-0 flex items-center"
         >
           Browse all &rarr;
         </button>
@@ -90,7 +90,7 @@ export function SuggestedPeersCard({
 
                   <div className="min-w-0">
                     <h4 className="text-sm font-semibold text-text truncate">{peer.name}</h4>
-                    <p className="text-xs text-muted truncate mt-0.5">
+                    <p className="text-xs text-muted line-clamp-2 md:truncate mt-0.5 leading-snug">
                       {peer.role || 'Peer Scholar'}
                     </p>
                   </div>
@@ -120,7 +120,7 @@ export function SuggestedPeersCard({
                 <button
                   type="button"
                   onClick={() => onConnect(peer.id)}
-                  className="px-3 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer"
+                  className="px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer min-h-[44px] md:min-h-0 flex items-center justify-center"
                 >
                   Connect
                 </button>

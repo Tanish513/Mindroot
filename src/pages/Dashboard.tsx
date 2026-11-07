@@ -653,7 +653,8 @@ export function Dashboard() {
   ];
 
   return (
-    <div className="max-w-[1200px] mx-auto space-y-6 px-6 pb-20 select-none">
+    <>
+      <div className="max-w-[1200px] mx-auto space-y-5 md:space-y-6 px-0 md:px-6 pb-6 md:pb-20 select-none">
 
       {/* Search Results Banner when search query is active */}
       {query && (
@@ -802,25 +803,25 @@ export function Dashboard() {
       )}
 
       {/* Slim Stats Strip - Single white card divided by vertical hairlines */}
-      <div className="bg-surface border border-border rounded-xl shadow-xs grid grid-cols-2 lg:grid-cols-4 divide-y lg:divide-y-0 lg:divide-x divide-border overflow-hidden">
+      <div className="bg-surface border border-border rounded-xl shadow-xs grid grid-cols-2 lg:grid-cols-4 divide-y divide-border lg:divide-y-0 lg:divide-x overflow-hidden">
         {statCards.map((stat, i) => (
           <div 
             key={i} 
             onClick={() => navigate(stat.path)}
-            className="p-4 sm:px-5 sm:py-3.5 flex items-center gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150"
+            className="p-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 sm:gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150 min-w-0"
           >
-            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-              <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+              <span className="material-symbols-outlined text-[16px] sm:text-[18px]" aria-hidden="true">
                 {stat.icon}
               </span>
             </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted font-medium truncate">{stat.label}</p>
-              <div className="flex items-baseline mt-0.5">
-                <span className="text-2xl font-bold text-text leading-tight tracking-tight tabular-nums">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-muted font-medium whitespace-normal leading-tight lg:truncate">{stat.label}</p>
+              <div className="flex items-baseline mt-0.5 min-w-0 flex-wrap sm:flex-nowrap">
+                <span className="text-lg sm:text-xl lg:text-2xl font-bold text-text leading-tight tracking-tight tabular-nums truncate">
                   {stat.value}
                 </span>
-                <span className="text-xs text-muted font-normal ml-1">
+                <span className="text-[11px] sm:text-xs text-muted font-normal ml-1 shrink-0">
                   {stat.unit}
                 </span>
               </div>
@@ -924,6 +925,8 @@ export function Dashboard() {
         />
       </div>
 
+      </div>
+
       {/* Session Notes Modal Panel */}
       {selectedSessionForNotes && (
         <SessionNotesPanel
@@ -946,6 +949,6 @@ export function Dashboard() {
           currentUserId={currentUser?.id}
         />
       )}
-    </div>
+    </>
   );
 }

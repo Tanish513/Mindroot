@@ -102,3 +102,44 @@
     - Segmented Tabs: "Verified Mentors" (hourly rates, ₹/tokens, 1-on-1s), "Group Cohorts" (multi-seat batches, split pricing), and "1-for-1 Skill Swaps" (free reciprocal AI matches & swap proposals).
     - Route Resilience: `/match-finder` redirects smoothly to `/marketplace?tab=swaps` for 100% backward compatibility.
     - Preserved Logic: 100% of existing booking logic, availability checks, proposal workflows, and socket listeners preserved.
+
+- **2026-11-06**: Phase 6 Dedicated Mobile UI Architecture & Plan (Google Stitch Integration).
+  - Objective: Implement a dedicated, thumb-friendly mobile UI across all 6 core screens based on `mobilevivew.html` (generated in Google Stitch) without altering or regressing the desktop UI.
+  - Strict Invariant: Desktop viewports (1024px and above) remain 100% pixel-identical and functionally untouched.
+  - Architecture: Viewport-Gated Component Isolation. Clean separation with `<div className="hidden md:block">` for verbatim desktop JSX and `<div className="block md:hidden">` for modular mobile views under `src/components/mobile/`.
+  - Core Modules:
+    - Shell: `MobileBottomNav.tsx` (5 tabs: Home, Find, Schedule, Messages, Profile).
+    - Screen 1: `MobileDashboardView.tsx` (Greeting, Next session hero, 2x2 stats grid, checklist, mentor carousel).
+    - Screen 2: `MobileMarketplaceView.tsx` & `MobileBookingDrawer.tsx` (Filter chips, mentor cards, slide-up booking sheet).
+    - Screen 3: `MobileScheduleView.tsx` (7-day Notion/Cron date strip, vertical agenda timeline).
+    - Screen 4: `MobileMessagesView.tsx` & `MobileLiveRoomView.tsx`.
+  - Artifact & Vault: Plan documented in `mobile_redesign_plan.md` and appended as Part 19 to `docs/mindroot_implementation_plan_antigravity.md`.
+  - Result: Completed successfully with 100% test pass rate.
+  - Implemented Files:
+    - `src/components/mobile/MobileBottomNav.tsx`: 5-tab fixed dock (`Home`, `Find`, `Schedule`, `Chat`, `Profile`) with active indicators and safe-area padding.
+    - `src/components/mobile/MobileDashboardView.tsx`: Greeting, 6-day streak flame badge, Next Session hero card with pulse indicator, 2x2 stats grid, checklist, and horizontal mentor carousel.
+    - `src/components/mobile/MobileBookingDrawer.tsx`: Slide-up drawer for 1-Token barter or UPI payment booking.
+    - `src/components/mobile/MobileMarketplaceView.tsx`: Fast search, topic chips, mentor cards, ratings, and direct booking drawer trigger.
+    - `src/components/mobile/MobileMessagesView.tsx`: Contacts list, active chat thread with back navigation, study exchange proposal card, and floating composer dock.
+    - Layout Integration: `src/components/layout/AppShell.tsx`, `src/pages/Dashboard.tsx`, `src/pages/Marketplace.tsx`, `src/pages/Messages.tsx`.
+    - Floating Action Button: `src/components/layout/AIAssistant.tsx` elevated to `bottom-20 md:bottom-6` to avoid overlapping mobile dock tabs.
+  - Verification Evidence:
+    - Production build: `npm run build` passed in 2.33s (529 modules transformed, 0 errors).
+    - Server typecheck: `npm --prefix server run typecheck` passed (0 errors).
+    - Server moderation and timer tests: `npx tsx server/test/live_room_end_and_kick.test.ts` (100% pass rate).
+    - Playwright Acceptance Suite: `npx playwright test --project=acceptance` (35 passed / 0 failed, 100% pass rate).
+    - Responsive overflow checks: `scrollWidth = 390px` (zero horizontal overflow) across all screens.
+    - Desktop isolation: Desktop confirmed 100% pixel-identical at 1280px with sidebar visible and bottom nav hidden.
+
+
+## [2026-11-06T16:00:42.396Z] Option 1 Native App Mobile Navigation Streamlining
+- **Task**: Eliminate redundant mobile navigation (hamburger sidebar drawer vs bottom dock).
+- **Files Modified**:
+  - `src/components/layout/TopBar.tsx`: Replaced mobile hamburger menu button with clean native Mindroot brand logo/title (`md:hidden`). Desktop layout and classes 100% unchanged.
+  - `src/pages/Profile.tsx`: Added mobile-only Platform Tools & Hub card (`md:hidden`) providing 1-tap access to Wallet, Live Room, Notes, Community, Match Finder, Rewards, Teacher Portal, Admin Desk, Theme Switcher, and Sign Out.
+- **Verification**:
+  - `npm run build`: 0 errors, built in 2.36s.
+  - `npm --prefix server run typecheck`: 0 errors.
+  - `npx playwright test --project=acceptance`: 35 passed / 0 failed (100% pass rate).
+  - Responsive: 0 horizontal overflow at 390px mobile viewport (`scrollWidth = 390px`).
+  - Desktop 1280px: Pixel-identical, sidebar intact, bottom nav & mobile tools hub hidden.

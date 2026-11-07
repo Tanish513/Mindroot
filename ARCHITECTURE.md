@@ -243,7 +243,58 @@ c:/Users/tanis/Downloads/hackton/Student to Student/
 
 ---
 
-## 6. Maintenance Checklist for Developers
+---
+
+## 6. Dual-Mode Responsive Viewport Subsystem & Mobile Native Architecture (Option 1)
+
+```mermaid
+flowchart TD
+    subgraph ViewportRouting["Breakpoint Gating (Tailwind md: 768px & lg: 1024px)"]
+        VP{"Viewport Width"}
+        VP -->|" < 768px (Mobile)"| MobileTree["Mobile Subsystem (md:hidden)"]
+        VP -->|" >= 1024px (Desktop)"| DesktopTree["Desktop Subsystem (hidden md:block)"]
+    end
+
+    subgraph MobileSubsystem["Mobile Native App Architecture (Google Stitch)"]
+        MTopBar["Mobile TopBar (h-16)<br/>• Mindroot Brand & Psychology Logo<br/>• Expandable Search Overlay Trigger<br/>• Notification Bell & Avatar"]
+        
+        MDock["Fixed Bottom Navigation Dock (MobileBottomNav, h-16)<br/>[Home] [Find] [Schedule] [Chat] [Profile]"]
+        
+        MDash["Mobile Dashboard (/dashboard)<br/>• Time Greeting & Flame Streak<br/>• 2x2 Stats Grid (min-w-0)<br/>• Next Session Hero Card<br/>• Horizontal Mentors Carousel"]
+        
+        MFind["Mobile Marketplace (/marketplace)<br/>• Fast Search & Topic Chips<br/>• Verified Mentor Cards<br/>• Slide-Up Booking Drawer"]
+        
+        MSched["Mobile Schedule (/schedule)<br/>• 7-Day Date Strip & Active Day<br/>• Vertical Agenda Timeline"]
+        
+        MChat["Mobile Messages (/messages)<br/>• Contact Drawer & Active Thread<br/>• Study Proposal Card<br/>• Fixed Bottom Composer Dock"]
+        
+        MHub["1-Tap Platform Tools Hub (/profile)<br/>• Wallet & UPI Settlement<br/>• Live Classroom Studio<br/>• Collaborative Notes<br/>• Peer Community Forum<br/>• Theme Switcher & Sign Out"]
+        
+        MDock -->|"Tab 1"| MDash
+        MDock -->|"Tab 2"| MFind
+        MDock -->|"Tab 3"| MSched
+        MDock -->|"Tab 4"| MChat
+        MDock -->|"Tab 5"| MHub
+    end
+
+    subgraph DesktopSubsystem["Desktop Multi-Column Subsystem (1024px+)"]
+        DSidebar["Desktop Sidebar (260px Pinned / 72px Collapsed)<br/>• Mindroot Brand Header & Pin Button<br/>• 7 Core Nav Items<br/>• Bottom User Profile & Sign Out"]
+        DTopBar["Desktop TopBar (ml-[260px] or ml-[72px])<br/>• Full Search with ⌘K Shortcut<br/>• Demo Suite Switcher & Specs Modal<br/>• Theme Switcher & Notifications"]
+        DMain["Desktop Main Layout<br/>• 3-Column Dashboard Grid<br/>• 3-Column Marketplace & Filters<br/>• Week / Month Calendar Grid"]
+    end
+```
+
+### 6.1 Architectural Principles & Verification Matrix
+1. **Zero Desktop Regression**: Desktop styles remain strictly untouched. All mobile additions are protected behind `md:hidden`.
+2. **Elimination of Hamburger Clutter**: Deprecated mobile hamburger menu button to prevent dual-navigation conflict with bottom dock.
+3. **1-Tap Tools Hub**: Consolidated all secondary tools (Wallet, Live Room, Notes, Community, Teacher, Theme, Sign Out) into a clean mobile grid in `Profile.tsx`.
+4. **Zero Horizontal Overflow**: Guaranteed `scrollWidth = 390px` at 390px viewport across all 5 primary mobile screens.
+
+![Mobile Architecture Diagram](diagrams/mobile_architecture_diagram.png)
+
+---
+
+## 7. Maintenance Checklist for Developers
 
 When modifying the codebase:
 - [ ] **Added a new API endpoint?** Update Section 5 (API Endpoint Summary) and Section 1 (Architecture Flow).

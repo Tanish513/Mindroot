@@ -37,6 +37,9 @@ export default defineConfig({
           });
         }
       },
+      '/uploads': {
+        target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:3000'
+      },
       '/socket.io': {
         target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:3000',
         ws: true,

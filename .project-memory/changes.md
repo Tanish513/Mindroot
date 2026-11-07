@@ -397,3 +397,22 @@
     3. 1-for-1 Skill Swaps (free reciprocal matching, match score %, swap proposal management)
   - Navigation: Single sidebar item ("Explore & Mentors", icon `explore`). `/match-finder` redirects smoothly to `/marketplace?tab=swaps`.
   - Vault updates: Logged `DEC-018` in `decisions.md`, updated `master.md`, `task-history.md`, and created `unify_matchfinder_marketplace_plan.md`.
+
+
+- **2026-11-06**: Phase 6: Mobile-Dedicated UI Architecture (Google Stitch) & Option 1 Navigation Streamlining.
+  - Scope: Complete dedicated mobile redesign across core screens based on `mobilevivew.html` (Google Stitch) while keeping desktop 100% pixel-identical at 1024px+.
+  - Changes:
+    1. **Mobile Bottom Navigation Dock (`src/components/mobile/MobileBottomNav.tsx`)**: Fixed 5-tab bar (`Home`, `Find`, `Schedule`, `Chat`, `Profile`) with active indicator and `pb-safe` support. Hidden on desktop (`md:hidden`).
+    2. **Mobile TopBar Polish (`src/components/layout/TopBar.tsx`)**: Removed mobile hamburger menu button. Added native Mindroot logo and title on mobile (`md:hidden`). Preserved desktop search, demo suite, specs, and theme menus untouched.
+    3. **Mobile Platform Tools Hub (`src/pages/Profile.tsx`)**: Added 1-tap quick action tiles (`md:hidden`) for Wallet & UPI, Live Room, Study Notes, Community, Match Finder, Rewards, Teacher Portal, Admin Desk, Theme Toggle, and Sign Out.
+    4. **Mobile Dashboard (`src/components/mobile/MobileDashboardView.tsx`)**: Dynamic greeting, streak flame badge, 2x2 stats grid, Next Session hero with action button, and horizontal mentors carousel.
+    5. **Mobile Marketplace & Booking Drawer (`src/components/mobile/MobileMarketplaceView.tsx`, `MobileBookingDrawer.tsx`)**: Fast search, topic pills, verified mentor cards, and slide-up booking drawer for 1-Token barter and UPI checkout.
+    6. **Mobile Schedule (`src/components/mobile/MobileScheduleView.tsx`)**: 7-day Notion/Cron date strip, active day selector, and vertical agenda timeline.
+    7. **Mobile Messages (`src/components/mobile/MobileMessagesView.tsx`)**: Direct peer chat, study exchange proposal card with "Accept & Lock Slot", simulated voice note preview, and fixed bottom composer dock.
+    8. **AIAssistant Button Offset (`src/components/layout/AIAssistant.tsx`)**: Elevated floating button to `bottom-20 md:bottom-6` to avoid overlapping bottom navigation dock on mobile.
+  - Verification:
+    - Vite build (`npm run build`): Passed in 2.36s (528 modules transformed, 0 errors).
+    - Server typecheck (`npm --prefix server run typecheck`): 0 errors.
+    - Playwright acceptance suite: 35/35 passed (100% pass rate).
+    - Mobile horizontal overflow: `scrollWidth = 390px` at 390px viewport (0 overflow across all screens).
+    - Desktop isolation: Confirmed 100% pixel-identical at 1280px.

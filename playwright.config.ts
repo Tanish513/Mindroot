@@ -12,8 +12,15 @@ export default defineConfig({
   projects: [
     {
       name: 'acceptance',
-      testIgnore: /capture_.*\.spec\.ts/,
+      testIgnore: [/capture_.*\.spec\.ts/, /mobile_redesign_checks\.spec\.ts/],
       use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      name: 'mobile',
+      testMatch: /mobile_redesign_checks\.spec\.ts/,
+      use: {
+        viewport: { width: 390, height: 844 },
+      },
     },
     {
       name: 'screenshots',

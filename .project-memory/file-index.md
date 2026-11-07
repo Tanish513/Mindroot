@@ -46,3 +46,10 @@
 | `src/pages/Login.tsx` | Authentication & onboarding page | `Login` | 2026-11-04 | verified | Warm styling, 1-click demo login for Student, Mentor, and Admin |
 | `tailwind.config.js` & `src/index.css` | Design tokens & base styles | Semantic tokens & typography | 2026-11-04 | verified | Calibrated tokens (`teaching`, `learning`, `card`, `surface-elevated`) and 16px body copy |
 
+
+| `src/components/mobile/MobileBottomNav.tsx` | Mobile 5-tab fixed bottom navigation dock | `MobileBottomNav`, `navItems` | 2026-11-06 | verified | Fixed bottom dock for Home, Find, Schedule, Chat, Profile (md:hidden) |
+| `src/components/mobile/MobileDashboardView.tsx` | Dedicated mobile dashboard view | `MobileDashboardView` | 2026-11-06 | verified | Time greeting, streak badge, 2x2 stats, hero card, mentor carousel (md:hidden) |
+| `src/components/mobile/MobileBookingDrawer.tsx` | Slide-up mobile booking and payment drawer | `MobileBookingDrawer` | 2026-11-06 | verified | Slide-up drawer for 1-Token barter and direct UPI checkout |
+| `src/components/mobile/MobileMarketplaceView.tsx` | Dedicated mobile marketplace and mentor finder | `MobileMarketplaceView` | 2026-11-06 | verified | Fast search, topic pills, mentor cards, slide-up booking trigger (md:hidden) |
+| `src/components/mobile/MobileScheduleView.tsx` | Dedicated mobile schedule view | `MobileScheduleView` | 2026-11-06 | verified | 7-day date strip, active day selector, vertical timeline agenda (md:hidden) |
+| `src/components/mobile/MobileMessagesView.tsx` | Dedicated mobile messages and peer chat view | `MobileMessagesView` | 2026-11-06 | verified | Contact drawer, thread view, study proposal card, fixed composer dock (md:hidden) |

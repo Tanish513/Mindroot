@@ -80,11 +80,11 @@ export function OnboardingChecklistCard({
           return (
             <div
               key={step.id}
-              className="py-3 first:pt-1.5 last:pb-1 flex items-center justify-between gap-3"
+              className="py-3 first:pt-1.5 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3"
             >
-              <div className="flex items-center gap-3 min-w-0">
+              <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
                 <div
-                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-colors ${
+                  className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-semibold shrink-0 transition-colors mt-0.5 sm:mt-0 ${
                     step.isDone
                       ? 'bg-primary text-white'
                       : isCurrent
@@ -94,17 +94,17 @@ export function OnboardingChecklistCard({
                 >
                   {step.isDone ? '✓' : step.id}
                 </div>
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className={`text-sm font-semibold ${step.isDone ? 'text-text/70 line-through' : 'text-text'}`}>
                     {step.title}
                   </p>
-                  <p className="text-[13px] text-muted truncate">
+                  <p className="text-[13px] text-muted line-clamp-3 sm:line-clamp-none md:truncate leading-relaxed">
                     {step.description}
                   </p>
                 </div>
               </div>
 
-              <div className="shrink-0">
+              <div className="shrink-0 self-end sm:self-center pl-9 sm:pl-0">
                 {step.isDone ? (
                   <span className="text-xs font-semibold text-primary flex items-center gap-1">
                     <span className="material-symbols-outlined text-sm">check</span>
@@ -114,7 +114,7 @@ export function OnboardingChecklistCard({
                   <button
                     type="button"
                     onClick={step.onAction}
-                    className="px-3.5 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-hover rounded-lg shadow-xs transition-colors cursor-pointer"
+                    className="px-3.5 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-hover rounded-lg shadow-xs transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
                   >
                     {step.actionLabel}
                   </button>
@@ -122,7 +122,7 @@ export function OnboardingChecklistCard({
                   <button
                     type="button"
                     onClick={step.onAction}
-                    className="px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer"
+                    className="px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
                   >
                     {step.actionLabel}
                   </button>

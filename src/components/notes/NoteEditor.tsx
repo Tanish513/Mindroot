@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import DOMPurify from 'dompurify';
-import { api } from '../../lib/api';
+import { api, resolveAttachmentUrl } from '../../lib/api';
 
 export interface Attachment {
   name: string;
@@ -47,6 +47,15 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
   const [attachments, setAttachments] = useState<Attachment[]>(initialNote?.attachments || []);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const [previewAttachment, setPreviewAttachment] = useState<{
+    name: string;
+    url: string;
+    resolvedUrl: string;
+    type: string;
+    size: number;
+  } | null>(null);
+  const toolbarImageInputRef = useRef<HTMLInputElement>(null);
 
   const [availableTags, setAvailableTags] = useState<string[]>([]);
   const [filteredTagSuggestions, setFilteredTagSuggestions] = useState<string[]>([]);
@@ -191,6 +200,18 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     };
   }, [title, content, tags, sessionId, visibility, attachments]);
 
+  // Escape key handler for image preview modal
+  useEffect(() => {
+    if (!previewAttachment) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setPreviewAttachment(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [previewAttachment]);
+
   // Warn before closing/unloading if unsaved changes
   useEffect(() => {
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -273,6 +294,94 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     }
   };
 
+  const handleInsertImageIntoNote = (url: string, altText: string = 'Note image') => {
+    if (isReadOnly) return;
+    const resolved = resolveAttachmentUrl(url);
+    const imgHtml = `<p><img src="${resolved}" alt="${altText}" class="rounded-lg max-w-full my-2 border border-border cursor-pointer shadow-xs hover:opacity-95 transition-opacity" style="max-height: 480px; object-fit: contain;" /></p><p><br></p>`;
+    if (editorRef.current) {
+      editorRef.current.focus();
+      document.execCommand('insertHTML', false, imgHtml);
+      setContent(editorRef.current.innerHTML);
+      setHasUnsavedChanges(true);
+    }
+  };
+
+  const handleToolbarImageUpload = async (files: FileList | null) => {
+    if (!files || files.length === 0 || isReadOnly) return;
+    const file = files[0];
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Please select an image file (PNG, JPG, WEBP).');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError(`"${file.name}" exceeds the 5 MB limit.`);
+      return;
+    }
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const uploaded = await api.uploadNoteAttachment(file);
+      if (uploaded) {
+        setAttachments(prev => [...prev, uploaded]);
+        setHasUnsavedChanges(true);
+        const resolved = resolveAttachmentUrl(uploaded.url);
+        handleInsertImageIntoNote(resolved, uploaded.name);
+      }
+    } catch (err: any) {
+      setUploadError(err.message || 'Image upload failed');
+    } finally {
+      setUploading(false);
+      if (toolbarImageInputRef.current) toolbarImageInputRef.current.value = '';
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items || isReadOnly) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          setUploading(true);
+          setUploadError(null);
+          try {
+            const uploaded = await api.uploadNoteAttachment(file);
+            if (uploaded) {
+              setAttachments(prev => [...prev, uploaded]);
+              setHasUnsavedChanges(true);
+              const resolved = resolveAttachmentUrl(uploaded.url);
+              handleInsertImageIntoNote(resolved, uploaded.name);
+            }
+          } catch (err: any) {
+            setUploadError(err.message || 'Image paste upload failed');
+          } finally {
+            setUploading(false);
+          }
+          return;
+        }
+      }
+    }
+  };
+
+  const handleContentClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target && target.tagName === 'IMG') {
+      const img = target as HTMLImageElement;
+      const src = img.getAttribute('src') || img.src || '';
+      if (src) {
+        const resolved = resolveAttachmentUrl(src);
+        setPreviewAttachment({
+          name: img.getAttribute('alt') || 'Note image',
+          url: src,
+          resolvedUrl: resolved,
+          type: 'image/jpeg',
+          size: 0
+        });
+      }
+    }
+  };
+
   const handleRemoveAttachment = (index: number) => {
     if (isReadOnly) return;
     setAttachments(attachments.filter((_, i) => i !== index));
@@ -286,7 +395,10 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
     setErrorMessage(null);
 
     try {
-      const sanitizedHtml = DOMPurify.sanitize(content);
+      const sanitizedHtml = DOMPurify.sanitize(content, {
+        ADD_TAGS: ['img'],
+        ADD_ATTR: ['src', 'alt', 'class', 'style', 'title', 'loading']
+      });
       const userTz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Kolkata';
 
       const payload = {
@@ -578,15 +690,40 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
           >
             <span className="material-symbols-outlined text-base">code</span>
           </button>
+          <div className="w-[1px] h-4 bg-border mx-0.5" />
+          <button
+            type="button"
+            onClick={() => toolbarImageInputRef.current?.click()}
+            className="p-1.5 hover:bg-surface rounded text-text transition-colors cursor-pointer"
+            title="Upload and insert image"
+            aria-label="Upload and insert image"
+          >
+            <span className="material-symbols-outlined text-base">image</span>
+          </button>
+          <input
+            ref={toolbarImageInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={e => handleToolbarImageUpload(e.target.files)}
+          />
         </div>
       )}
 
       {/* Editor Content Area */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar border border-border rounded-xl p-3 bg-surface focus-within:border-primary/60 transition-colors min-h-[220px]">
+      <div
+        className="flex-1 overflow-y-auto custom-scrollbar border border-border rounded-xl p-3 bg-surface focus-within:border-primary/60 transition-colors min-h-[220px]"
+        onClick={handleContentClick}
+      >
         {isReadOnly ? (
           <div
             className="prose prose-sm max-w-none text-text text-sm leading-relaxed"
-            dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(content) }}
+            dangerouslySetInnerHTML={{
+              __html: DOMPurify.sanitize(content, {
+                ADD_TAGS: ['img'],
+                ADD_ATTR: ['src', 'alt', 'class', 'style', 'title', 'loading']
+              })
+            }}
           />
         ) : (
           <div
@@ -596,6 +733,7 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
               setContent((e.target as HTMLElement).innerHTML);
               setHasUnsavedChanges(true);
             }}
+            onPaste={handlePaste}
             className="outline-hidden text-text text-sm leading-relaxed min-h-full font-sans selection:bg-primary-tint"
             data-placeholder="Write your note here... (Markdown & Rich Text supported)"
           />
@@ -691,39 +829,97 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
           {attachments.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {attachments.map((att, idx) => {
-                const isImage = att.type.startsWith('image/');
+                const isImage = (att.type || '').startsWith('image/') || /\.(png|jpe?g|webp|gif|svg)$/i.test(att.name);
+                const resolvedUrl = resolveAttachmentUrl(att.url);
                 return (
                   <div
                     key={idx}
-                    className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-2 border border-border rounded-xl text-xs max-w-xs group"
+                    className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-2 border border-border rounded-xl text-xs max-w-sm group hover:border-primary/40 transition-colors shadow-2xs"
                   >
                     {isImage ? (
-                      <img src={att.url} alt={att.name} className="w-6 h-6 rounded object-cover" />
-                    ) : (
-                      <span className="material-symbols-outlined text-accent text-lg">picture_as_pdf</span>
-                    )}
-                    <a
-                      href={att.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="truncate text-text hover:text-primary font-medium hover:underline max-w-[140px]"
-                      title={att.name}
-                    >
-                      {att.name}
-                    </a>
-                    <span className="text-[10px] text-muted whitespace-nowrap">
-                      ({(att.size / (1024 * 1024)).toFixed(1)} MB)
-                    </span>
-                    {!isReadOnly && (
                       <button
                         type="button"
-                        onClick={() => handleRemoveAttachment(idx)}
-                        className="text-muted hover:text-danger cursor-pointer ml-1"
-                        title="Remove file"
+                        onClick={() => setPreviewAttachment({ ...att, resolvedUrl })}
+                        className="cursor-pointer hover:opacity-80 transition-opacity focus:outline-none shrink-0"
+                        title="Click to preview image"
                       >
-                        <span className="material-symbols-outlined text-xs">close</span>
+                        <img
+                          src={resolvedUrl}
+                          alt={att.name}
+                          className="w-7 h-7 rounded-lg object-cover border border-border bg-surface"
+                          onError={e => {
+                            (e.target as HTMLElement).style.display = 'none';
+                          }}
+                        />
                       </button>
+                    ) : (
+                      <span className="material-symbols-outlined text-accent text-lg shrink-0">picture_as_pdf</span>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isImage) {
+                          setPreviewAttachment({ ...att, resolvedUrl });
+                        } else {
+                          window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+                        }
+                      }}
+                      className="truncate text-text hover:text-primary font-medium hover:underline max-w-[120px] sm:max-w-[150px] text-left cursor-pointer"
+                      title={isImage ? `Preview ${att.name}` : `Open ${att.name}`}
+                    >
+                      {att.name}
+                    </button>
+
+                    <span className="text-[10px] text-muted whitespace-nowrap shrink-0">
+                      ({(att.size / (1024 * 1024)).toFixed(1)} MB)
+                    </span>
+
+                    <div className="flex items-center gap-0.5 ml-auto shrink-0">
+                      {/* Preview / Open button */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isImage) {
+                            setPreviewAttachment({ ...att, resolvedUrl });
+                          } else {
+                            window.open(resolvedUrl, '_blank', 'noopener,noreferrer');
+                          }
+                        }}
+                        className="p-1 text-muted hover:text-primary hover:bg-surface rounded-md transition-colors cursor-pointer"
+                        title={isImage ? 'Preview full image' : 'Open in new tab'}
+                        aria-label={isImage ? 'Preview full image' : 'Open in new tab'}
+                      >
+                        <span className="material-symbols-outlined text-sm">
+                          {isImage ? 'visibility' : 'open_in_new'}
+                        </span>
+                      </button>
+
+                      {/* Insert into note button for images when editing */}
+                      {!isReadOnly && isImage && (
+                        <button
+                          type="button"
+                          onClick={() => handleInsertImageIntoNote(resolvedUrl, att.name)}
+                          className="p-1 text-muted hover:text-primary hover:bg-surface rounded-md transition-colors cursor-pointer"
+                          title="Insert image into note text"
+                          aria-label="Insert image into note text"
+                        >
+                          <span className="material-symbols-outlined text-sm">add_photo_alternate</span>
+                        </button>
+                      )}
+
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveAttachment(idx)}
+                          className="p-1 text-muted hover:text-danger hover:bg-danger/10 rounded-md transition-colors cursor-pointer"
+                          title="Remove file"
+                          aria-label="Remove attachment"
+                        >
+                          <span className="material-symbols-outlined text-sm">close</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -756,6 +952,87 @@ export const NoteEditor = forwardRef<NoteEditorHandle, NoteEditorProps>(({
               >
                 Delete Note
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Image Preview / Lightbox Modal */}
+      {previewAttachment && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-xs p-4"
+          onClick={() => setPreviewAttachment(null)}
+          onKeyDown={e => e.key === 'Escape' && setPreviewAttachment(null)}
+          tabIndex={0}
+        >
+          <div
+            className="bg-surface border border-border rounded-2xl max-w-4xl max-h-[90vh] w-full flex flex-col overflow-hidden shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Lightbox Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-surface-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="material-symbols-outlined text-primary text-lg">image</span>
+                <span className="text-xs font-bold text-text truncate max-w-md" title={previewAttachment.name}>
+                  {previewAttachment.name}
+                </span>
+                {previewAttachment.size > 0 && (
+                  <span className="text-[11px] text-muted whitespace-nowrap">
+                    ({(previewAttachment.size / (1024 * 1024)).toFixed(1)} MB)
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleInsertImageIntoNote(previewAttachment.resolvedUrl, previewAttachment.name);
+                      setPreviewAttachment(null);
+                    }}
+                    className="px-2.5 py-1 text-xs font-bold rounded-lg bg-surface border border-border hover:bg-surface-2 text-text flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Insert image into note editor"
+                  >
+                    <span className="material-symbols-outlined text-xs">add_photo_alternate</span>
+                    <span className="hidden sm:inline">Insert into note</span>
+                  </button>
+                )}
+                <a
+                  href={previewAttachment.resolvedUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-surface border border-border hover:bg-surface-2 text-text flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Open original image in new tab"
+                >
+                  <span className="material-symbols-outlined text-xs">open_in_new</span>
+                  <span className="hidden sm:inline">Open in tab</span>
+                </a>
+                <a
+                  href={previewAttachment.resolvedUrl}
+                  download={previewAttachment.name}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg bg-surface border border-border hover:bg-surface-2 text-text flex items-center gap-1 cursor-pointer transition-colors"
+                  title="Download image"
+                >
+                  <span className="material-symbols-outlined text-xs">download</span>
+                  <span className="hidden sm:inline">Download</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewAttachment(null)}
+                  className="p-1 text-muted hover:text-text rounded-lg hover:bg-surface-2 transition-colors cursor-pointer ml-1"
+                  aria-label="Close image preview"
+                >
+                  <span className="material-symbols-outlined text-xl">close</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Lightbox Image Body */}
+            <div className="p-4 flex-1 flex items-center justify-center overflow-auto bg-black/40 min-h-[300px]">
+              <img
+                src={previewAttachment.resolvedUrl}
+                alt={previewAttachment.name}
+                className="max-h-[75vh] max-w-full object-contain rounded-lg shadow-lg border border-border/40"
+              />
             </div>
           </div>
         </div>

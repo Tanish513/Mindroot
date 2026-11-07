@@ -1,3 +1,4 @@
+import clsx from 'clsx';
 import { useAppStore } from '../../store/useAppStore';
 import { useEffect, useState, useRef } from 'react';
 import { api, globalSocket, setAuthItem, isSocketConnected, onSocketConnectionChange, updateSocketAuth } from '../../lib/api';
@@ -52,6 +53,13 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   const [demoMode, setDemoMode] = useState(false);
   const { pendingCount } = usePendingApprovals();
   const [socketConnected, setSocketConnected] = useState<boolean>(isSocketConnected());
+  const [socketBannerDismissed, setSocketBannerDismissed] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem('mindroot_socket_banner_dismissed') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const isAdmin = currentUser?.role === 'admin';
   const showDemoAndSpecs = isAdmin || demoMode;
@@ -65,6 +73,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
   }, []);
 
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const [peers, setPeers] = useState<any[]>([]);
   const [sessions, setSessions] = useState<any[]>([]);
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -277,41 +286,95 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
 
   return (
     <>
-      {!socketConnected && currentUser && (
-        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 z-30 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-base text-amber-600 animate-pulse">cloud_off</span>
-            <span>
-              <strong>Live socket disconnected.</strong> Updates continue automatically over REST background refresh.
+      {!socketConnected && currentUser && !socketBannerDismissed && (
+        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-3 sm:px-4 py-1.5 flex items-center justify-between text-xs text-amber-800 dark:text-amber-200 z-30 shrink-0 gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="material-symbols-outlined text-base text-amber-600 animate-pulse shrink-0">cloud_off</span>
+            <span className="truncate sm:whitespace-normal">
+              <strong>Live socket disconnected.</strong> <span className="hidden sm:inline">Updates continue automatically over REST background refresh.</span>
             </span>
           </div>
-          <button
-            type="button"
-            onClick={() => updateSocketAuth()}
-            className="px-2.5 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-xs border border-amber-500/30 transition-colors cursor-pointer"
-          >
-            Reconnect
-          </button>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => updateSocketAuth()}
+              className="px-2 sm:px-2.5 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-xs border border-amber-500/30 transition-colors cursor-pointer"
+            >
+              Reconnect
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSocketBannerDismissed(true);
+                try {
+                  sessionStorage.setItem('mindroot_socket_banner_dismissed', 'true');
+                } catch {}
+              }}
+              aria-label="Dismiss banner"
+              className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 transition-colors cursor-pointer"
+              title="Dismiss"
+            >
+              <span className="material-symbols-outlined text-sm leading-none block">close</span>
+            </button>
+          </div>
         </div>
       )}
       <header className="h-[64px] flex items-center justify-between px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
-      <div className="flex items-center gap-4 flex-1">
-        <button 
-          onClick={onOpenMobileMenu}
-          aria-label="Open navigation menu"
-          className="md:hidden text-text hover:text-text p-2 rounded-xl hover:bg-surface transition-colors"
-          title="Open Menu"
+      <div className="flex items-center gap-2 sm:gap-4 flex-1">
+        {/* Mobile Menu Hamburger Button */}
+        {onOpenMobileMenu && (
+          <button
+            type="button"
+            onClick={onOpenMobileMenu}
+            aria-label="Open Navigation Menu"
+            className="md:hidden p-2 text-text hover:bg-surface rounded-xl flex items-center justify-center min-w-[44px] min-h-[44px] shrink-0"
+            title="Open Menu"
+          >
+            <span className="material-symbols-outlined text-xl">menu</span>
+          </button>
+        )}
+
+        {/* Mobile Brand Logo & Name */}
+        <Link 
+          to="/dashboard"
+          className="md:hidden flex items-center gap-2 select-none group mr-1 shrink-0"
+          title="Mindroot Home"
         >
-          <span className="material-symbols-outlined">menu</span>
+          <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-black shrink-0 group-hover:scale-105 transition-transform">
+            <span className="material-symbols-outlined text-lg">psychology</span>
+          </div>
+          <span className="text-base font-black tracking-tight text-text">Mindroot</span>
+        </Link>
+
+        {/* Mobile Search Toggle Button */}
+        <button
+          type="button"
+          onClick={() => {
+            setIsMobileSearchOpen(true);
+            setIsSearchFocused(true);
+            setTimeout(() => searchInputRef.current?.focus(), 50);
+          }}
+          aria-label="Search"
+          className="md:hidden text-text hover:text-text p-2 rounded-xl hover:bg-surface transition-colors shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+          title="Search"
+        >
+          <span className="material-symbols-outlined text-lg">search</span>
         </button>
 
         {/* Global Spotlight Search Input & Dropdown */}
-        <div ref={searchContainerRef} className="relative w-full max-w-xs sm:max-w-sm md:max-w-md">
-          <form onSubmit={handleSearchSubmit} className="relative">
+        <div 
+          ref={searchContainerRef} 
+          className={clsx(
+            isMobileSearchOpen
+              ? "fixed inset-x-0 top-0 h-16 z-50 bg-surface px-4 flex items-center gap-2 border-b border-border shadow-md"
+              : "hidden md:block relative w-full max-w-xs sm:max-w-sm md:max-w-md"
+          )}
+        >
+          <form onSubmit={handleSearchSubmit} className="relative flex-1">
             <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-muted text-sm">search</span>
             <input 
               ref={searchInputRef}
-              className="w-full pl-9 pr-16 py-2 bg-surface hover:bg-surface border border-border rounded-xl text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all" 
+              className="w-full pl-9 pr-16 py-2 bg-surface hover:bg-surface border border-border rounded-xl text-base md:text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary focus:bg-surface transition-all" 
               placeholder="Search skills, peers, sessions..." 
               type="text" 
               value={searchQuery}
@@ -337,9 +400,24 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
             )}
           </form>
 
+          {/* Close button for expanded mobile search */}
+          {isMobileSearchOpen && (
+            <button
+              type="button"
+              onClick={() => {
+                setIsMobileSearchOpen(false);
+                setIsSearchFocused(false);
+              }}
+              className="md:hidden p-2 text-muted hover:text-text rounded-xl shrink-0 min-w-[44px] min-h-[44px] flex items-center justify-center"
+              title="Close search"
+            >
+              <span className="material-symbols-outlined text-lg">close</span>
+            </button>
+          )}
+
           {/* Spotlight Search Results Dropdown */}
           {isSearchFocused && (
-            <div className="absolute left-0 right-0 mt-2 bg-surface border border-border rounded-2xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[460px] overflow-y-auto custom-scrollbar">
+            <div className="absolute top-full left-0 right-0 mt-1 md:mt-2 bg-surface border border-border rounded-2xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150 max-h-[70vh] md:max-h-[460px] overflow-y-auto custom-scrollbar">
               {query && !hasAnyResults ? (
                 <div className="p-6 text-center text-muted text-xs">
                   <span className="material-symbols-outlined text-3xl text-muted mb-1">search_off</span>
@@ -571,7 +649,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         )}
 
         {/* Theme Toggle Button & Dropdown Menu */}
-        <div ref={themeContainerRef} className="relative">
+        <div ref={themeContainerRef} className="hidden md:block relative">
           <button
             onClick={() => {
               const currentDark = document.documentElement.getAttribute('data-theme') === 'dark' || document.documentElement.classList.contains('dark');
@@ -660,10 +738,10 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           </button>
 
           {showNotifications && (
-            <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-surface border border-border rounded-2xl shadow-lg z-50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="p-3.5 border-b border-border bg-surface-2 flex items-center justify-between">
+            <div className="fixed inset-0 z-50 bg-surface flex flex-col md:inset-auto md:absolute md:right-0 md:mt-2 md:w-80 sm:md:w-96 md:rounded-2xl border border-border shadow-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="p-3.5 border-b border-border bg-surface-2 flex items-center justify-between shrink-0">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-xs font-bold text-text">Notifications</h4>
+                  <h4 className="text-sm font-bold text-text">Notifications</h4>
                   {unreadCount > 0 && (
                     <span className="bg-primary-tint text-primary-text text-[10px] font-bold px-2 py-0.5 rounded-full">
                       {unreadCount} new
@@ -674,16 +752,17 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   {notifications.length > 0 && (
                     <button 
                       onClick={clearNotifications}
-                      className="text-[11px] font-semibold text-muted hover:text-text transition-colors"
+                      className="text-xs font-semibold text-muted hover:text-text transition-colors min-h-[44px] sm:min-h-0 flex items-center px-2"
                     >
                       Clear all
                     </button>
                   )}
                   <button 
                     onClick={() => setShowNotifications(false)}
-                    className="text-muted hover:text-text p-0.5 rounded-lg"
+                    aria-label="Close notifications"
+                    className="text-muted hover:text-text p-2 rounded-xl min-w-[44px] min-h-[44px] flex items-center justify-center cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-base">close</span>
+                    <span className="material-symbols-outlined text-xl">close</span>
                   </button>
                 </div>
               </div>
