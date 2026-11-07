@@ -654,7 +654,7 @@ export function Dashboard() {
 
   return (
     <>
-      <div className="max-w-[1200px] mx-auto space-y-5 md:space-y-6 px-0 md:px-6 pb-6 md:pb-20 select-none">
+      <div className="max-w-[1200px] mx-auto space-y-3.5 sm:space-y-5 md:space-y-6 px-0 md:px-6 pb-6 md:pb-20 select-none">
 
       {/* Search Results Banner when search query is active */}
       {query && (
@@ -720,7 +720,7 @@ export function Dashboard() {
       />
 
       {(role === 'teacher' || currentUser?.role === 'teacher' || currentUser?.role === 'both') && !currentUser?.upiId && (
-        <div className="bg-surface border border-border rounded-xl p-4 shadow-xs flex items-center justify-between gap-3 text-sm">
+        <div className="bg-surface border border-border rounded-xl p-3 sm:p-4 shadow-xs flex items-center justify-between gap-2.5 text-xs">
           <p className="text-muted min-w-0 text-xs">
             Payments are not set up. Add a UPI ID in your profile to accept student payments.
           </p>
@@ -808,20 +808,20 @@ export function Dashboard() {
           <div 
             key={i} 
             onClick={() => navigate(stat.path)}
-            className="p-3 sm:px-5 sm:py-3.5 flex items-center gap-2.5 sm:gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150 min-w-0"
+            className="p-2.5 sm:px-5 sm:py-3.5 flex items-center gap-2 sm:gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150 min-w-0"
           >
-            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
-              <span className="material-symbols-outlined text-[16px] sm:text-[18px]" aria-hidden="true">
+            <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
+              <span className="material-symbols-outlined text-[15px] sm:text-[18px]" aria-hidden="true">
                 {stat.icon}
               </span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs text-muted font-medium whitespace-normal leading-tight lg:truncate">{stat.label}</p>
+              <p className="text-[10px] sm:text-xs text-muted font-medium whitespace-normal leading-tight lg:truncate">{stat.label}</p>
               <div className="flex items-baseline mt-0.5 min-w-0 flex-wrap sm:flex-nowrap">
-                <span className="text-lg sm:text-xl lg:text-2xl font-bold text-text leading-tight tracking-tight tabular-nums truncate">
+                <span className="text-base sm:text-xl lg:text-2xl font-bold text-text leading-tight tracking-tight tabular-nums truncate">
                   {stat.value}
                 </span>
-                <span className="text-[11px] sm:text-xs text-muted font-normal ml-1 shrink-0">
+                <span className="text-[10px] sm:text-xs text-muted font-normal ml-1 shrink-0">
                   {stat.unit}
                 </span>
               </div>

@@ -10,7 +10,12 @@ interface NavItem {
   badge?: number;
 }
 
-export function MobileBottomNav() {
+interface MobileBottomNavProps {
+  onOpenMenu?: () => void;
+  isMenuOpen?: boolean;
+}
+
+export function MobileBottomNav({ onOpenMenu, isMenuOpen = false }: MobileBottomNavProps) {
   const location = useLocation();
   const notifications = useAppStore(state => state.notifications);
   const unreadCount = notifications.filter(n => !n.read).length;
@@ -56,14 +61,23 @@ export function MobileBottomNav() {
     >
       <div className="h-full max-w-lg mx-auto flex items-center justify-around px-2">
         {navItems.map((item) => {
-          const isActive = item.activePaths 
-            ? item.activePaths.some(p => location.pathname === p || (p !== '/' && location.pathname.startsWith(p)))
-            : location.pathname === item.path;
+          const isMore = item.label === 'More';
+          const isActive = isMore 
+            ? Boolean(isMenuOpen)
+            : (item.activePaths 
+                ? item.activePaths.some(p => location.pathname === p || (p !== '/' && location.pathname.startsWith(p)))
+                : location.pathname === item.path);
 
           return (
             <Link
               key={item.path}
               to={item.path}
+              onClick={(e) => {
+                if (isMore && onOpenMenu) {
+                  e.preventDefault();
+                  onOpenMenu();
+                }
+              }}
               aria-label={item.label}
               aria-current={isActive ? 'page' : undefined}
               className={clsx(
@@ -86,7 +100,7 @@ export function MobileBottomNav() {
                 )}
               </div>
               <span className={clsx(
-                "text-[12px] leading-tight mt-0.5 transition-colors",
+                "text-[11px] sm:text-[12px] leading-tight mt-0.5 transition-colors",
                 isActive ? "font-bold text-primary" : "font-medium text-muted"
               )}>
                 {item.label}

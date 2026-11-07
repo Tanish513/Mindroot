@@ -53,12 +53,12 @@ export function OnboardingChecklistCard({
   const progressPercent = Math.round((completedCount / steps.length) * 100);
 
   return (
-    <section className="bg-primary/[0.06] border border-primary/20 border-l-4 border-l-primary rounded-xl p-5 shadow-xs space-y-3.5 h-full flex flex-col justify-between">
+    <section className="bg-primary/[0.06] border border-primary/20 border-l-4 border-l-primary rounded-xl p-3.5 sm:p-5 shadow-xs space-y-2.5 sm:space-y-3.5 h-full flex flex-col justify-between">
       {/* Header */}
       <div>
         <div className="flex items-center justify-between">
-          <h3 className="text-base font-bold text-text">Get started</h3>
-          <span className="text-xs font-semibold text-primary">
+          <h3 className="text-sm sm:text-base font-bold text-text">Get started</h3>
+          <span className="text-[11px] sm:text-xs font-semibold text-primary">
             Step {currentStepNumber} of {steps.length}
           </span>
         </div>
@@ -80,7 +80,7 @@ export function OnboardingChecklistCard({
           return (
             <div
               key={step.id}
-              className="py-3 first:pt-1.5 last:pb-1 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3"
+              className="py-2 sm:py-3 first:pt-1 last:pb-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3"
             >
               <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
                 <div
@@ -95,10 +95,10 @@ export function OnboardingChecklistCard({
                   {step.isDone ? '✓' : step.id}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className={`text-sm font-semibold ${step.isDone ? 'text-text/70 line-through' : 'text-text'}`}>
+                  <p className={`text-xs sm:text-sm font-semibold ${step.isDone ? 'text-text/70 line-through' : 'text-text'}`}>
                     {step.title}
                   </p>
-                  <p className="text-[13px] text-muted line-clamp-3 sm:line-clamp-none md:truncate leading-relaxed">
+                  <p className="text-[11px] sm:text-xs text-muted line-clamp-2 leading-relaxed">
                     {step.description}
                   </p>
                 </div>

@@ -45,7 +45,7 @@ export function DashboardHeroHeader({
       {/* Left: Greeting + Streak Chip + Subtitle (Directly on page background) */}
       <div className="space-y-1 min-w-0">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-[26px] font-bold text-text tracking-tight">
+          <h1 className="text-xl sm:text-2xl font-bold text-text tracking-tight">
             {greeting}, {userName}
           </h1>
 
@@ -162,18 +162,18 @@ export function DashboardHeroHeader({
       </div>
 
       {/* Right: Primary "Schedule Session" & Secondary "Find Peer Match" (Text Link on Desktop, Stacked Outlined on Mobile) */}
-      <div className="flex flex-col-reverse sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 w-full sm:w-auto shrink-0 self-start md:self-center">
+      <div className="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3 w-full sm:w-auto shrink-0 self-start md:self-center">
         <button
           type="button"
           onClick={onFindMatch}
-          className="w-full sm:w-auto text-center border border-border sm:border-transparent text-sm font-medium text-text sm:text-muted hover:text-text px-3 py-2.5 sm:py-2 rounded-lg hover:bg-surface-2 transition-colors duration-150 cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
+          className="w-full sm:w-auto text-center border border-border sm:border-transparent text-xs sm:text-sm font-semibold text-text sm:text-muted hover:text-text px-3 py-2 rounded-xl hover:bg-surface-2 transition-colors duration-150 cursor-pointer min-h-[44px] flex items-center justify-center"
         >
           Find Peer Match
         </button>
         <button
           type="button"
           onClick={onSchedule}
-          className="w-full sm:w-auto text-center px-4 py-2.5 sm:py-2 text-sm font-medium text-white bg-primary hover:bg-primary-hover rounded-lg transition-colors duration-150 shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
+          className="w-full sm:w-auto text-center px-4 py-2.5 sm:py-2 text-xs sm:text-sm font-bold text-white bg-primary hover:bg-primary-hover rounded-xl transition-colors duration-150 shadow-xs focus:outline-none focus:ring-2 focus:ring-primary/40 cursor-pointer min-h-[44px] flex items-center justify-center"
         >
           Schedule Session
         </button>

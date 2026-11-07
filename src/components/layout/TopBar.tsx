@@ -319,7 +319,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           </div>
         </div>
       )}
-      <header className="h-[64px] flex items-center justify-between px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
+      <header className="h-[54px] sm:h-[64px] flex items-center justify-between px-3 sm:px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
       <div className="flex items-center gap-2 sm:gap-4 flex-1">
         {/* Mobile Menu Hamburger Button */}
         {onOpenMobileMenu && (

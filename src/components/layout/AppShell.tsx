@@ -68,14 +68,14 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
         )}
 
-        <TopBar onOpenMobileMenu={() => setMobileOpen(true)} />
-        <main className="flex-1 overflow-y-auto p-4 pb-24 md:p-8 md:pb-8">
+        <TopBar onOpenMobileMenu={undefined} />
+        <main className="flex-1 overflow-y-auto p-3.5 pb-24 sm:p-5 md:p-8 md:pb-8">
           {children}
         </main>
       </div>
       <InSessionFloatingBar />
       <AIAssistant />
-      <MobileBottomNav />
+      <MobileBottomNav onOpenMenu={() => setMobileOpen(o => !o)} isMenuOpen={mobileOpen} />
     </div>
   );
 }
