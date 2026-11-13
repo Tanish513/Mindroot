@@ -62,16 +62,16 @@ test.describe('Midnight + Electric Mint Theme Suite', () => {
       };
     });
 
-    expect(darkTokens.bg).toBe('#0A1612');
-    expect(darkTokens.surface).toBe('#11201B');
-    expect(darkTokens.surface2).toBe('#142A26');
-    expect(darkTokens.border).toBe('#233A33');
-    expect(darkTokens.text).toBe('#E8F1EE');
-    expect(darkTokens.primary).toBe('#2BC48A');
-    expect(darkTokens.sidebarBg).toBe('#142A26');
-    expect(darkTokens.sidebarActiveBg).toBe('RGBA(43, 196, 138, 0.14)');
-    expect(darkTokens.accent).toBe('#FBBF24');
-    expect(darkTokens.warning).toBe('#FBBF24');
+    expect(darkTokens.bg).toBe('#090A0F');
+    expect(darkTokens.surface).toBe('#12141A');
+    expect(darkTokens.surface2).toBe('#181B22');
+    expect(darkTokens.border).toBe('#222630');
+    expect(darkTokens.text).toBe('#F3F4F6');
+    expect(darkTokens.primary).toBe('#10B981');
+    expect(darkTokens.sidebarBg).toBe('#0D0E14');
+    expect(darkTokens.sidebarActiveBg).toBe('RGBA(16, 185, 129, 0.14)');
+    expect(darkTokens.accent).toBe('#F59E0B');
+    expect(darkTokens.warning).toBe('#F59E0B');
     expect(darkTokens.danger).toBe('#F87171');
 
     // 3. Click the toggle to switch to light mode

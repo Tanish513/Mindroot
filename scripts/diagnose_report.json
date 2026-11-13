@@ -1,0 +1,396 @@
+{
+  "360": {
+    "dashboard": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "14px",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 1,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "marketplace": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "n/a",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "schedule": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "n/a",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "messages": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "n/a",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "wallet": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "20px",
+      "h3FontSize": "24px",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    }
+  },
+  "390": {
+    "dashboard": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "14px",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 1,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "marketplace": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "n/a",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "schedule": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "n/a",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "messages": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "n/a",
+      "h3FontSize": "n/a",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    },
+    "wallet": {
+      "headerHeight": 54,
+      "bottomNavHeight": 64,
+      "mainPadding": "14px 14px 96px 14px",
+      "h1FontSize": "16px",
+      "h2FontSize": "20px",
+      "h3FontSize": "24px",
+      "pFontSize": "12px",
+      "mentorCardsAboveFold": 0,
+      "statsAboveFold": 0,
+      "checklistAboveFold": 0,
+      "buttonHeights": [
+        {
+          "text": "menu_open",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "close",
+          "height": 0,
+          "fontSize": "16px"
+        },
+        {
+          "text": "more_horizMore (4 items)",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "dark_modeDark Theme",
+          "height": 0,
+          "fontSize": "12px"
+        },
+        {
+          "text": "logoutSign OutSign Out",
+          "height": 0,
+          "fontSize": "12px"
+        }
+      ]
+    }
+  }
+}

@@ -68,7 +68,7 @@ export function AISkillMatchBanner({ currentUser, peer, onProposeExchange }: AIS
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-1 flex-wrap">
               <span className="text-xs font-semibold text-on-surface">Gemini AI Exchange Recommendation</span>
-              <span className="px-2 py-0.5 bg-surface-container border border-outline-variant text-primary text-[10px] font-bold rounded-full flex items-center gap-1">
+              <span className="px-2 py-0.5 bg-surface-container border border-outline-variant text-primary text-xs md:text-[10px] font-bold rounded-full flex items-center gap-1">
                 <span className="material-symbols-outlined text-xs">bolt</span>
                 {matchScore}% MATCH
               </span>
@@ -76,7 +76,7 @@ export function AISkillMatchBanner({ currentUser, peer, onProposeExchange }: AIS
             <p className="text-xs text-on-surface-variant font-medium leading-relaxed">
               {aiInsight}
             </p>
-            <div className="flex items-center gap-2 mt-2 text-[11px] font-medium text-on-surface flex-wrap">
+            <div className="flex items-center gap-2 mt-2 text-xs md:text-[11px] md:leading-[17.6px] font-medium text-on-surface flex-wrap">
               <span className="px-2 py-0.5 rounded-md bg-surface-container border border-outline-variant text-on-surface font-semibold">
                 Give: {giveSkill}
               </span>
@@ -91,7 +91,7 @@ export function AISkillMatchBanner({ currentUser, peer, onProposeExchange }: AIS
         <Button
           variant="primary"
           onClick={() => onProposeExchange(giveSkill, takeSkill)}
-          className="w-full sm:w-auto shrink-0 py-2 px-3.5 text-xs font-semibold shadow-elevation-1 flex items-center justify-center gap-1.5"
+          className="w-full sm:w-auto shrink-0 py-2 px-3.5 text-xs font-semibold shadow-elevation-1 flex items-center justify-center gap-1.5 min-h-[44px] sm:min-h-0"
         >
           <span className="material-symbols-outlined text-base">handshake</span>
           <span>Propose Exchange</span>

@@ -42,7 +42,7 @@ export function EmptyState({
         {description}
       </p>
       {actionLabel && onAction && (
-        <Button onClick={onAction} variant="primary" size="md">
+        <Button onClick={onAction} variant="primary" size="md" className="min-h-[44px]">
           {actionIcon && (
             <span className="material-symbols-outlined text-[18px] mr-1" aria-hidden="true">
               {actionIcon}

@@ -234,7 +234,7 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
           <button 
             onClick={() => setMobileOpen(false)} 
             aria-label="Close navigation menu"
-            className="md:hidden text-sidebar-icon hover:text-sidebar-icon-hover p-1.5 rounded-lg hover:bg-sidebar-hover-bg transition-colors"
+            className="md:hidden text-sidebar-icon hover:text-sidebar-icon-hover p-2.5 rounded-xl hover:bg-sidebar-hover-bg transition-colors min-w-[44px] min-h-[44px] flex items-center justify-center"
           >
             <span className="material-symbols-outlined text-xl">close</span>
           </button>
@@ -563,9 +563,9 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
             setTheme(currentDark ? 'light' : 'dark');
           }}
           aria-label="Toggle Theme"
-          className="md:hidden group relative w-full h-10 rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon hover:bg-nav-hover hover:text-text transition-colors duration-150 flex items-center cursor-pointer mb-2"
+          className="md:hidden group relative w-full min-h-[44px] rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon hover:bg-nav-hover hover:text-text transition-colors duration-150 flex items-center cursor-pointer mb-2"
         >
-          <div className="w-11 h-10 flex items-center justify-center shrink-0">
+          <div className="w-11 min-h-[44px] md:min-h-0 md:h-10 flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-lg text-sidebar-icon">
               {theme === 'dark' ? 'light_mode' : 'dark_mode'}
             </span>
@@ -583,9 +583,9 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
               setMobileOpen?.(false);
             }}
             aria-label={`Switch to ${activeRole === 'student' ? 'Teacher' : 'Student'}`}
-            className="group relative w-full h-10 rounded-xl text-xs font-bold transition-colors duration-150 flex items-center active:scale-98 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg border border-sidebar-border text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
+            className="group relative w-full min-h-[44px] md:min-h-0 md:h-10 rounded-xl text-xs font-bold transition-colors duration-150 flex items-center active:scale-98 cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg border border-sidebar-border text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text"
           >
-            <div className="w-11 h-10 flex items-center justify-center shrink-0">
+            <div className="w-11 min-h-[44px] md:min-h-0 md:h-10 flex items-center justify-center shrink-0">
               <span className="material-symbols-outlined text-lg text-sidebar-icon [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text transition-colors duration-150">swap_horiz</span>
             </div>
 
@@ -618,9 +618,9 @@ export function Sidebar({ mobileOpen = false, setMobileOpen }: SidebarProps) {
         <button 
           onClick={handleLogout}
           aria-label="Sign Out"
-          className="group relative w-full h-10 rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text transition-colors duration-150 flex items-center cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg"
+          className="group relative w-full min-h-[44px] md:min-h-0 md:h-10 rounded-xl text-xs font-semibold border border-sidebar-border text-sidebar-icon [@media(hover:hover)]:hover:bg-nav-hover [@media(hover:hover)]:hover:text-text focus-visible:bg-nav-hover focus-visible:text-text transition-colors duration-150 flex items-center cursor-pointer focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-sidebar-bg"
         >
-          <div className="w-11 h-10 flex items-center justify-center shrink-0">
+          <div className="w-11 min-h-[44px] md:min-h-0 md:h-10 flex items-center justify-center shrink-0">
             <span className="material-symbols-outlined text-lg text-sidebar-icon [@media(hover:hover)]:group-hover:text-primary-text group-focus-visible:text-primary-text transition-colors duration-150">logout</span>
           </div>
 

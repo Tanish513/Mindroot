@@ -41,7 +41,7 @@ export function SuggestedPeersCard({
         <button
           type="button"
           onClick={onBrowseAll}
-          className="self-start sm:self-auto text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer min-h-[32px] sm:min-h-0 flex items-center"
+          className="self-start sm:self-auto text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center"
         >
           Browse all &rarr;
         </button>
@@ -67,7 +67,7 @@ export function SuggestedPeersCard({
           {peers.map((peer) => (
             <div
               key={peer.id}
-              className="p-4 rounded-xl border border-border bg-surface hover:border-primary/30 transition-all flex flex-col justify-between gap-3.5 shadow-2xs"
+              className="p-2.5 md:p-4 rounded-xl border border-border bg-surface hover:border-primary/30 transition-all flex flex-col justify-between gap-2 md:gap-3.5 shadow-2xs"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
@@ -78,7 +78,7 @@ export function SuggestedPeersCard({
                         'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=256&q=80'
                       }
                       alt={peer.name}
-                      className="w-10 h-10 rounded-full object-cover border border-border"
+                      className="w-9 h-9 md:w-10 md:h-10 rounded-full object-cover border border-border"
                     />
                     {peer.isAvailableNow && (
                       <span
@@ -103,7 +103,7 @@ export function SuggestedPeersCard({
                 ) : null}
               </div>
 
-              <div className="flex items-center justify-between pt-2 border-t border-border/60">
+              <div className="flex items-center justify-between pt-1.5 md:pt-2 border-t border-border/60">
                 {peer.isNew || peer.rating === 'New' || !peer.rating ? (
                   <span className="px-2 py-0.5 rounded-full bg-accent/10 text-accent font-semibold text-xs border border-accent/20">
                     New
@@ -120,7 +120,7 @@ export function SuggestedPeersCard({
                 <button
                   type="button"
                   onClick={() => onConnect(peer.id)}
-                  className="px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer min-h-[44px] md:min-h-0 flex items-center justify-center"
+                  className="px-3 md:px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer min-h-[44px] md:min-h-0 flex items-center justify-center"
                 >
                   Connect
                 </button>

@@ -54,7 +54,7 @@ function FormattedContent({ text }: { text: string }) {
               className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded bg-primary-container text-on-primary-container font-bold hover:bg-primary-container/80 transition-colors underline decoration-primary/40"
             >
               {title}
-              <span className="material-symbols-outlined text-[10px]">open_in_new</span>
+              <span className="material-symbols-outlined text-xs md:text-[10px]">open_in_new</span>
             </button>
           );
           lastIndex = linkRegex.lastIndex;
@@ -136,7 +136,7 @@ export function AIAssistant() {
   }
 
   return (
-    <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-3 md:gap-4">
+    <div className="fixed bottom-[72px] right-3 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-3 md:gap-4">
       {/* Chat Window */}
       <AnimatePresence>
         {open && (
@@ -155,7 +155,7 @@ export function AIAssistant() {
                 </div>
                 <div>
                   <h4 className="font-extrabold text-sm leading-tight text-on-primary">Mindroot AI Assistant</h4>
-                  <p className="text-[9px] text-on-primary/80 uppercase tracking-widest font-extrabold flex items-center gap-1">
+                  <p className="text-xs md:text-[9px] text-on-primary/80 uppercase tracking-widest font-extrabold flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-on-primary animate-pulse" /> Interactive Assistant
                   </p>
                 </div>
@@ -220,7 +220,7 @@ export function AIAssistant() {
                   key={cIdx}
                   onClick={() => sendQuery(chip)}
                   disabled={loading}
-                  className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-surface border border-border text-[11px] font-semibold text-text hover:bg-primary-tint hover:text-primary-text hover:border-primary/30 transition-all shrink-0 shadow"
+                  className="whitespace-nowrap px-2.5 py-1 rounded-lg bg-surface border border-border text-xs md:text-[11px] font-semibold text-text hover:bg-primary-tint hover:text-primary-text hover:border-primary/30 transition-all shrink-0 shadow"
                 >
                   {chip}
                 </button>
@@ -259,7 +259,7 @@ export function AIAssistant() {
         whileTap={{ scale: 0.94 }}
         transition={{ type: 'spring', stiffness: 500, damping: 25 }}
         onClick={() => setOpen(o => !o)}
-        className="w-12 h-12 min-w-[48px] min-h-[48px] bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-md flex items-center justify-center relative cursor-pointer"
+        className="w-11 h-11 min-w-[44px] min-h-[44px] md:w-12 md:h-12 md:min-w-[48px] md:min-h-[48px] bg-primary hover:bg-primary-hover text-on-primary rounded-full shadow-md flex items-center justify-center relative cursor-pointer"
         aria-label="Open AI Assistant"
       >
         {!open && (

@@ -1,0 +1,897 @@
+{
+  "320": {
+    "dashboard": {
+      "overflow": {
+        "scrollWidth": 320,
+        "clientWidth": 320,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Good evening, Aarav",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": {
+          "text": "Get started",
+          "fontSize": "14px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 3,
+        "firstCard": {
+          "padding": "12px",
+          "height": 99,
+          "top": 140
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "local_fire_department0-da",
+          "height": 26,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "15px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "marketplace": {
+      "overflow": {
+        "scrollWidth": 320,
+        "clientWidth": 320,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Find Peers & Mentors",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "4px",
+          "height": 54,
+          "top": 170
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "All Mentors",
+          "height": 36,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "schedule": {
+      "overflow": {
+        "scrollWidth": 320,
+        "clientWidth": 320,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Schedule & Bookings",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "20px",
+          "height": 190,
+          "top": 216
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "addNew Booking",
+          "height": 28,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "messages": {
+      "overflow": {
+        "scrollWidth": 320,
+        "clientWidth": 320,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Messages",
+          "fontSize": "20px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 0,
+        "firstCard": null,
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": null,
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "18px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "wallet": {
+      "overflow": {
+        "scrollWidth": 320,
+        "clientWidth": 320,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": null,
+        "h2": {
+          "text": "Payments & Tuition Wallet",
+          "fontSize": "18px"
+        },
+        "h3": {
+          "text": "₹0",
+          "fontSize": "24px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 5,
+        "firstCard": {
+          "padding": "20px",
+          "height": 176,
+          "top": 198
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "send_moneyPay Mentor Dire",
+          "height": 40,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    }
+  },
+  "340": {
+    "dashboard": {
+      "overflow": {
+        "scrollWidth": 340,
+        "clientWidth": 340,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Good evening, Aarav",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": {
+          "text": "Get started",
+          "fontSize": "14px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 4,
+        "firstCard": {
+          "padding": "12px",
+          "height": 135,
+          "top": 101
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "local_fire_department9-da",
+          "height": 26,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "15px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "marketplace": {
+      "overflow": {
+        "scrollWidth": 340,
+        "clientWidth": 340,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Find Peers & Mentors",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "4px",
+          "height": 54,
+          "top": 170
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "All Mentors",
+          "height": 36,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "schedule": {
+      "overflow": {
+        "scrollWidth": 340,
+        "clientWidth": 340,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Schedule & Bookings",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "20px",
+          "height": 190,
+          "top": 216
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "addNew Booking",
+          "height": 28,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "messages": {
+      "overflow": {
+        "scrollWidth": 340,
+        "clientWidth": 340,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Messages",
+          "fontSize": "20px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 0,
+        "firstCard": null,
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": null,
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "18px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "wallet": {
+      "overflow": {
+        "scrollWidth": 340,
+        "clientWidth": 340,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": null,
+        "h2": {
+          "text": "Payments & Tuition Wallet",
+          "fontSize": "18px"
+        },
+        "h3": {
+          "text": "₹0",
+          "fontSize": "24px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 5,
+        "firstCard": {
+          "padding": "20px",
+          "height": 176,
+          "top": 198
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "send_moneyPay Mentor Dire",
+          "height": 40,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    }
+  },
+  "360": {
+    "dashboard": {
+      "overflow": {
+        "scrollWidth": 360,
+        "clientWidth": 360,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Good evening, Aarav",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": {
+          "text": "Get started",
+          "fontSize": "14px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 4,
+        "firstCard": {
+          "padding": "12px",
+          "height": 135,
+          "top": 101
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "local_fire_department9-da",
+          "height": 26,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "15px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "marketplace": {
+      "overflow": {
+        "scrollWidth": 360,
+        "clientWidth": 360,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Find Peers & Mentors",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 8,
+        "firstCard": {
+          "padding": "4px",
+          "height": 54,
+          "top": 170
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "All Mentors",
+          "height": 36,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "schedule": {
+      "overflow": {
+        "scrollWidth": 360,
+        "clientWidth": 360,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Schedule & Bookings",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "20px",
+          "height": 190,
+          "top": 216
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "addNew Booking",
+          "height": 28,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "messages": {
+      "overflow": {
+        "scrollWidth": 360,
+        "clientWidth": 360,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Messages",
+          "fontSize": "20px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 0,
+        "firstCard": null,
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": null,
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "18px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "wallet": {
+      "overflow": {
+        "scrollWidth": 360,
+        "clientWidth": 360,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": null,
+        "h2": {
+          "text": "Payments & Tuition Wallet",
+          "fontSize": "18px"
+        },
+        "h3": {
+          "text": "₹0",
+          "fontSize": "24px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 5,
+        "firstCard": {
+          "padding": "20px",
+          "height": 176,
+          "top": 198
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "send_moneyPay Mentor Dire",
+          "height": 40,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    }
+  },
+  "390": {
+    "dashboard": {
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Good evening, Aarav",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": {
+          "text": "Get started",
+          "fontSize": "14px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 4,
+        "firstCard": {
+          "padding": "12px",
+          "height": 135,
+          "top": 101
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "local_fire_department9-da",
+          "height": 26,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "15px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "marketplace": {
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Find Peers & Mentors",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 9,
+        "firstCard": {
+          "padding": "4px",
+          "height": 54,
+          "top": 170
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "All Mentors",
+          "height": 36,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "schedule": {
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Schedule & Bookings",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "20px",
+          "height": 190,
+          "top": 216
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "addNew Booking",
+          "height": 28,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "messages": {
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Messages",
+          "fontSize": "20px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 0,
+        "firstCard": null,
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": null,
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "18px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "wallet": {
+      "overflow": {
+        "scrollWidth": 390,
+        "clientWidth": 390,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": null,
+        "h2": {
+          "text": "Payments & Tuition Wallet",
+          "fontSize": "18px"
+        },
+        "h3": {
+          "text": "₹0",
+          "fontSize": "24px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "20px",
+          "height": 176,
+          "top": 198
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "send_moneyPay Mentor Dire",
+          "height": 40,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    }
+  },
+  "412": {
+    "dashboard": {
+      "overflow": {
+        "scrollWidth": 412,
+        "clientWidth": 412,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Good evening, Aarav",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": {
+          "text": "Get started",
+          "fontSize": "14px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 5,
+        "firstCard": {
+          "padding": "12px",
+          "height": 135,
+          "top": 101
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "local_fire_department9-da",
+          "height": 26,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "15px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "marketplace": {
+      "overflow": {
+        "scrollWidth": 412,
+        "clientWidth": 412,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Find Peers & Mentors",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 9,
+        "firstCard": {
+          "padding": "4px",
+          "height": 54,
+          "top": 170
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "All Mentors",
+          "height": 36,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "schedule": {
+      "overflow": {
+        "scrollWidth": 412,
+        "clientWidth": 412,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Schedule & Bookings",
+          "fontSize": "18px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 6,
+        "firstCard": {
+          "padding": "20px",
+          "height": 190,
+          "top": 216
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "addNew Booking",
+          "height": 28,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "messages": {
+      "overflow": {
+        "scrollWidth": 412,
+        "clientWidth": 412,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": {
+          "text": "Messages",
+          "fontSize": "20px",
+          "lineHeight": "28px"
+        },
+        "h2": null,
+        "h3": null,
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 0,
+        "firstCard": null,
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": null,
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "18px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    },
+    "wallet": {
+      "overflow": {
+        "scrollWidth": 412,
+        "clientWidth": 412,
+        "hasOverflow": false
+      },
+      "metrics": {
+        "h1": null,
+        "h2": {
+          "text": "Payments & Tuition Wallet",
+          "fontSize": "18px"
+        },
+        "h3": {
+          "text": "₹0",
+          "fontSize": "24px"
+        },
+        "mainPadding": "12px 12px 80px",
+        "cardCountAboveFold": 7,
+        "firstCard": {
+          "padding": "20px",
+          "height": 176,
+          "top": 198
+        },
+        "mentorCard": null,
+        "mentorCardsAboveFold": 0,
+        "primaryButton": {
+          "text": "send_moneyPay Mentor Dire",
+          "height": 40,
+          "fontSize": "12px"
+        },
+        "avatarSample": null,
+        "iconSample": {
+          "fontSize": "16px"
+        },
+        "viewportMeta": "width=device-width, initial-scale=1.0",
+        "bodyFontSize": "16px"
+      }
+    }
+  }
+}

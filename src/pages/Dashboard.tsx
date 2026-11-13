@@ -654,7 +654,7 @@ export function Dashboard() {
 
   return (
     <>
-      <div className="max-w-[1200px] mx-auto space-y-3.5 sm:space-y-5 md:space-y-6 px-0 md:px-6 pb-6 md:pb-20 select-none">
+      <div className="max-w-[1200px] mx-auto space-y-3 md:space-y-6 px-0 md:px-6 pb-4 md:pb-20 select-none">
 
       {/* Search Results Banner when search query is active */}
       {query && (
@@ -808,7 +808,7 @@ export function Dashboard() {
           <div 
             key={i} 
             onClick={() => navigate(stat.path)}
-            className="p-2.5 sm:px-5 sm:py-3.5 flex items-center gap-2 sm:gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150 min-w-0"
+            className="p-2 sm:p-2.5 sm:px-5 sm:py-3.5 flex items-center gap-2 sm:gap-3.5 hover:bg-surface-2/60 cursor-pointer transition-colors duration-150 min-w-0"
           >
             <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary shrink-0">
               <span className="material-symbols-outlined text-[15px] sm:text-[18px]" aria-hidden="true">
@@ -816,12 +816,12 @@ export function Dashboard() {
               </span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] sm:text-xs text-muted font-medium whitespace-normal leading-tight lg:truncate">{stat.label}</p>
+              <p className="text-xs sm:text-xs text-muted font-medium whitespace-normal leading-tight lg:truncate">{stat.label}</p>
               <div className="flex items-baseline mt-0.5 min-w-0 flex-wrap sm:flex-nowrap">
                 <span className="text-base sm:text-xl lg:text-2xl font-bold text-text leading-tight tracking-tight tabular-nums truncate">
                   {stat.value}
                 </span>
-                <span className="text-[10px] sm:text-xs text-muted font-normal ml-1 shrink-0">
+                <span className="text-xs sm:text-xs text-muted font-normal ml-1 shrink-0">
                   {stat.unit}
                 </span>
               </div>
@@ -831,7 +831,7 @@ export function Dashboard() {
       </div>
 
       {/* Main Row 1: Your Next Step (8 cols) & Upcoming Sessions (4 cols) - Equal Height Stretch */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3.5 md:gap-6 lg:items-stretch">
         {/* Left Column (8 cols): Your next step */}
         <div className="lg:col-span-8 flex flex-col">
           {showOnboarding ? (

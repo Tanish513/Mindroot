@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import clsx from 'clsx';
 
-export type DrawingTool = 'pen' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'arrow';
+export type DrawingTool = 'pen' | 'highlighter' | 'eraser' | 'stroke_eraser' | 'line' | 'rect' | 'circle' | 'arrow';
 
 export interface WhiteboardCanvasProps {
   canvasRef: React.RefObject<HTMLCanvasElement | null>;
@@ -17,6 +17,8 @@ export interface WhiteboardCanvasProps {
   beginDraw: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   continueDraw: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   endDraw: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
 }
 
 export function WhiteboardCanvas({
@@ -31,16 +33,24 @@ export function WhiteboardCanvas({
   downloadWhiteboard,
   beginDraw,
   continueDraw,
-  endDraw
+  endDraw,
+  onUndo,
+  onRedo
 }: WhiteboardCanvasProps) {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [paperGrid, setPaperGrid] = useState(true);
   const [showShapesMenu, setShowShapesMenu] = useState(false);
+  const [showColorPopover, setShowColorPopover] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
-  const [undoStack, setUndoStack] = useState<ImageData[]>([]);
-  const [redoStack, setRedoStack] = useState<ImageData[]>([]);
+  const [undoStack, setUndoStack] = useState<string[]>([]);
+  const [redoStack, setRedoStack] = useState<string[]>([]);
 
-  const colors = ['#0A1612', '#FFFFFF', '#2563EB', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+  const shapesMenuRef = useRef<HTMLDivElement>(null);
+  const colorPopoverRef = useRef<HTMLDivElement>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
+
+  // High-contrast ink colors that stay clearly visible on the Midnight Indigo canvas
+  const colors = ['#FFFFFF', '#ECEBFA', '#10B981', '#38BDF8', '#F59E0B', '#EF4444', '#A78BFA'];
   const strokeSizes = [
     { width: 2, dot: 3 },
     { width: 4, dot: 6 },
@@ -48,24 +58,83 @@ export function WhiteboardCanvas({
     { width: 14, dot: 13 }
   ];
 
+  // Auto-map dark ink (#0A1612, black, or dark blue) to clean white for high contrast on dark canvas
+  useEffect(() => {
+    if (drawColor === '#0A1612' || drawColor === '#000000' || drawColor === '#0F1020' || drawColor === '#2563eb') {
+      setDrawColor('#FFFFFF');
+    }
+  }, [drawColor, setDrawColor]);
+
+  // Click-outside listener without blocking full-screen backdrops
+  useEffect(() => {
+    const handlePointerDown = (e: PointerEvent) => {
+      const target = e.target as Node;
+      if (shapesMenuRef.current && !shapesMenuRef.current.contains(target)) {
+        setShowShapesMenu(false);
+      }
+      if (colorPopoverRef.current && !colorPopoverRef.current.contains(target)) {
+        setShowColorPopover(false);
+      }
+      if (moreMenuRef.current && !moreMenuRef.current.contains(target)) {
+        setShowMoreMenu(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, []);
+
   const saveCanvasState = () => {
     const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext('2d');
-    if (!ctx) return;
+    if (!c || c.width === 0 || c.height === 0) return;
     try {
-      const imgData = ctx.getImageData(0, 0, c.width, c.height);
-      setUndoStack(prev => [...prev.slice(-20), imgData]);
+      const dataUrl = c.toDataURL('image/png');
+      setUndoStack(prev => {
+        if (prev.length > 0 && prev[prev.length - 1] === dataUrl) {
+          return prev;
+        }
+        return [...prev.slice(-20), dataUrl];
+      });
       setRedoStack([]);
     } catch {}
   };
 
+  // Synchronize internal canvas bitmap resolution with display dimensions
   useEffect(() => {
-    const timer = setTimeout(() => {
-      saveCanvasState();
-    }, 400);
-    return () => clearTimeout(timer);
-  }, []);
+    const c = canvasRef.current;
+    if (!c) return;
+
+    const syncCanvasSize = () => {
+      const rect = c.getBoundingClientRect();
+      const targetW = Math.max(300, Math.round(rect.width || c.clientWidth || 800));
+      const targetH = Math.max(150, Math.round(rect.height || c.clientHeight || 500));
+
+      if (c.width !== targetW || c.height !== targetH) {
+        // Save existing drawing buffer before updating dimensions
+        const ctx = c.getContext('2d');
+        let tempCanvas: HTMLCanvasElement | null = null;
+        if (ctx && c.width > 0 && c.height > 0) {
+          tempCanvas = document.createElement('canvas');
+          tempCanvas.width = c.width;
+          tempCanvas.height = c.height;
+          tempCanvas.getContext('2d')?.drawImage(c, 0, 0);
+        }
+
+        c.width = targetW;
+        c.height = targetH;
+
+        if (tempCanvas && ctx) {
+          ctx.drawImage(tempCanvas, 0, 0);
+        }
+        saveCanvasState();
+      }
+    };
+
+    syncCanvasSize();
+    const ro = new ResizeObserver(() => syncCanvasSize());
+    ro.observe(c);
+
+    return () => ro.disconnect();
+  }, [canvasRef]);
 
   const handlePointerUp = () => {
     endDraw();
@@ -75,37 +144,51 @@ export function WhiteboardCanvas({
   const handleUndo = () => {
     const c = canvasRef.current;
     if (!c || undoStack.length <= 1) return;
+    const currentUrl = undoStack[undoStack.length - 1];
+    const prevUrl = undoStack[undoStack.length - 2];
+    setRedoStack(r => [...r, currentUrl]);
+    setUndoStack(u => u.slice(0, -1));
+
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    const currentImg = undoStack[undoStack.length - 1];
-    const prevImg = undoStack[undoStack.length - 2];
-    setRedoStack(r => [...r, currentImg]);
-    setUndoStack(u => u.slice(0, -1));
-    ctx.putImageData(prevImg, 0, 0);
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      onUndo?.();
+    };
+    img.src = prevUrl;
   };
 
   const handleRedo = () => {
     const c = canvasRef.current;
     if (!c || redoStack.length === 0) return;
+    const nextUrl = redoStack[redoStack.length - 1];
+    setUndoStack(u => [...u, nextUrl]);
+    setRedoStack(r => r.slice(0, -1));
+
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    const nextImg = redoStack[redoStack.length - 1];
-    setUndoStack(u => [...u, nextImg]);
-    setRedoStack(r => r.slice(0, -1));
-    ctx.putImageData(nextImg, 0, 0);
+    const img = new Image();
+    img.onload = () => {
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      onRedo?.();
+    };
+    img.src = nextUrl;
   };
 
   const isShapeActive = ['line', 'arrow', 'rect', 'circle'].includes(drawingTool);
 
   return (
-    <div className="relative h-full w-full bg-surface flex flex-col overflow-hidden">
-      {/* Whiteboard Floating Toolbar */}
+    <div className="relative h-full w-full bg-[#171830] flex flex-col overflow-hidden text-[#ECEBFA]">
+      {/* Whiteboard Floating Toolbar (overflow-visible to prevent popover clipping) */}
       <div 
         role="toolbar" 
         aria-label="Whiteboard toolbar"
-        className="absolute left-2.5 top-2.5 z-20 flex flex-wrap items-center gap-1 sm:gap-1.5 rounded-2xl bg-surface/95 backdrop-blur-md border border-border p-1.5 text-xs text-text shadow-elevation-2 max-w-[calc(100%-20px)] overflow-x-auto custom-scrollbar select-none"
+        className="absolute left-2.5 top-2.5 z-20 flex flex-wrap items-center gap-1 sm:gap-1.5 rounded-2xl bg-[#171830]/95 backdrop-blur-md border border-white/[0.07] p-1.5 text-xs text-[#ECEBFA] shadow-xl max-w-[calc(100%-20px)] overflow-visible select-none"
       >
-        {/* GROUP 1: Core Tools (Pen, Highlighter, Eraser) */}
+        {/* GROUP 1: Tools (Pen, Highlighter, Eraser, Shapes) */}
         <div className="flex items-center gap-0.5 sm:gap-1" role="group" aria-label="Drawing tools">
           <button
             onClick={() => {
@@ -113,8 +196,8 @@ export function WhiteboardCanvas({
               setShowShapesMenu(false);
             }}
             className={clsx(
-              "px-2 py-1 rounded-xl flex items-center gap-1 font-semibold text-xs transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-              drawingTool === 'pen' ? "bg-primary text-white shadow-xs" : "hover:bg-surface-2 text-text"
+              "px-2 py-1 rounded-xl flex items-center gap-1 font-medium text-xs transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+              drawingTool === 'pen' ? "bg-[#10B981] text-white shadow-xs" : "hover:bg-[#202244] text-[#A5A3C7] hover:text-[#ECEBFA]"
             )}
             title="Pen tool"
             aria-label="Pen tool"
@@ -129,8 +212,8 @@ export function WhiteboardCanvas({
               setShowShapesMenu(false);
             }}
             className={clsx(
-              "px-2 py-1 rounded-xl flex items-center gap-1 font-semibold text-xs transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-              drawingTool === 'highlighter' ? "bg-accent/20 text-accent font-bold border border-accent/30 shadow-xs" : "hover:bg-surface-2 text-text"
+              "px-2 py-1 rounded-xl flex items-center gap-1 font-medium text-xs transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+              drawingTool === 'highlighter' ? "bg-amber-400/20 text-amber-300 font-semibold border border-amber-400/30 shadow-xs" : "hover:bg-[#202244] text-[#A5A3C7] hover:text-[#ECEBFA]"
             )}
             title="Highlighter tool"
             aria-label="Highlighter tool"
@@ -141,14 +224,30 @@ export function WhiteboardCanvas({
 
           <button
             onClick={() => {
+              setDrawingTool('stroke_eraser');
+              setShowShapesMenu(false);
+            }}
+            className={clsx(
+              "px-2 py-1 rounded-xl flex items-center gap-1 font-medium text-xs transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+              drawingTool === 'stroke_eraser' ? "bg-[#202244] text-[#10B981] font-semibold border border-[#10B981]/30 shadow-xs" : "hover:bg-[#202244] text-[#A5A3C7] hover:text-[#ECEBFA]"
+            )}
+            title="Stroke Eraser (erases whole strokes on touch)"
+            aria-label="Stroke eraser tool"
+          >
+            <span className="material-symbols-outlined text-base">auto_fix_normal</span>
+            <span className="hidden sm:inline">Stroke Eraser</span>
+          </button>
+
+          <button
+            onClick={() => {
               setDrawingTool('eraser');
               setShowShapesMenu(false);
             }}
             className={clsx(
-              "px-2 py-1 rounded-xl flex items-center gap-1 font-semibold text-xs transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-              drawingTool === 'eraser' ? "bg-surface-2 text-primary font-bold border border-primary/20 shadow-xs" : "hover:bg-surface-2 text-muted"
+              "px-2 py-1 rounded-xl flex items-center gap-1 font-medium text-xs transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+              drawingTool === 'eraser' ? "bg-[#202244] text-[#10B981] font-semibold border border-[#10B981]/30 shadow-xs" : "hover:bg-[#202244] text-[#A5A3C7] hover:text-[#ECEBFA]"
             )}
-            title="Eraser tool"
+            title="Pixel Eraser (standard brush eraser)"
             aria-label="Eraser tool"
           >
             <span className="material-symbols-outlined text-base">ink_eraser</span>
@@ -156,12 +255,12 @@ export function WhiteboardCanvas({
           </button>
 
           {/* Shapes Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={shapesMenuRef}>
             <button
               onClick={() => setShowShapesMenu(v => !v)}
               className={clsx(
-                "px-2 py-1 rounded-xl flex items-center gap-1 text-xs transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-                isShapeActive ? "bg-primary-tint text-primary font-bold" : "hover:bg-surface-2 text-muted"
+                "px-2 py-1 rounded-xl flex items-center gap-1 text-xs transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                isShapeActive ? "bg-[#202244] text-[#10B981] font-semibold" : "hover:bg-[#202244] text-[#A5A3C7] hover:text-[#ECEBFA]"
               )}
               title="Shapes"
               aria-label="Select shape tool"
@@ -176,55 +275,129 @@ export function WhiteboardCanvas({
             </button>
 
             {showShapesMenu && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setShowShapesMenu(false)} />
-                <div className="absolute top-8 left-0 z-40 bg-surface rounded-xl border border-border shadow-md p-1 flex items-center gap-1 animate-in fade-in duration-150">
-                  <button
-                    onClick={() => { setDrawingTool('line'); setShowShapesMenu(false); }}
-                    className={clsx("p-1.5 rounded-lg hover:bg-surface-2 cursor-pointer", drawingTool === 'line' && "bg-primary-tint text-primary")}
-                    title="Line"
-                    aria-label="Draw Line"
-                  >
-                    <span className="material-symbols-outlined text-base">horizontal_rule</span>
-                  </button>
-                  <button
-                    onClick={() => { setDrawingTool('arrow'); setShowShapesMenu(false); }}
-                    className={clsx("p-1.5 rounded-lg hover:bg-surface-2 cursor-pointer", drawingTool === 'arrow' && "bg-primary-tint text-primary")}
-                    title="Arrow"
-                    aria-label="Draw Arrow"
-                  >
-                    <span className="material-symbols-outlined text-base">arrow_forward</span>
-                  </button>
-                  <button
-                    onClick={() => { setDrawingTool('rect'); setShowShapesMenu(false); }}
-                    className={clsx("p-1.5 rounded-lg hover:bg-surface-2 cursor-pointer", drawingTool === 'rect' && "bg-primary-tint text-primary")}
-                    title="Rectangle"
-                    aria-label="Draw Rectangle"
-                  >
-                    <span className="material-symbols-outlined text-base">rectangle</span>
-                  </button>
-                  <button
-                    onClick={() => { setDrawingTool('circle'); setShowShapesMenu(false); }}
-                    className={clsx("p-1.5 rounded-lg hover:bg-surface-2 cursor-pointer", drawingTool === 'circle' && "bg-primary-tint text-primary")}
-                    title="Circle"
-                    aria-label="Draw Circle"
-                  >
-                    <span className="material-symbols-outlined text-base">radio_button_unchecked</span>
-                  </button>
-                </div>
-              </>
+              <div className="absolute top-full mt-1.5 left-0 z-50 bg-[#171830] rounded-xl border border-white/[0.07] shadow-2xl p-1 flex items-center gap-1 animate-in fade-in duration-150 backdrop-blur-md">
+                <button
+                  onClick={() => { setDrawingTool('line'); setShowShapesMenu(false); }}
+                  className={clsx("p-1.5 rounded-lg hover:bg-[#202244] cursor-pointer text-[#A5A3C7] hover:text-[#ECEBFA]", drawingTool === 'line' && "bg-[#202244] text-[#10B981]")}
+                  title="Line"
+                  aria-label="Draw Line"
+                >
+                  <span className="material-symbols-outlined text-base">horizontal_rule</span>
+                </button>
+                <button
+                  onClick={() => { setDrawingTool('arrow'); setShowShapesMenu(false); }}
+                  className={clsx("p-1.5 rounded-lg hover:bg-[#202244] cursor-pointer text-[#A5A3C7] hover:text-[#ECEBFA]", drawingTool === 'arrow' && "bg-[#202244] text-[#10B981]")}
+                  title="Arrow"
+                  aria-label="Draw Arrow"
+                >
+                  <span className="material-symbols-outlined text-base">arrow_forward</span>
+                </button>
+                <button
+                  onClick={() => { setDrawingTool('rect'); setShowShapesMenu(false); }}
+                  className={clsx("p-1.5 rounded-lg hover:bg-[#202244] cursor-pointer text-[#A5A3C7] hover:text-[#ECEBFA]", drawingTool === 'rect' && "bg-[#202244] text-[#10B981]")}
+                  title="Rectangle"
+                  aria-label="Draw Rectangle"
+                >
+                  <span className="material-symbols-outlined text-base">rectangle</span>
+                </button>
+                <button
+                  onClick={() => { setDrawingTool('circle'); setShowShapesMenu(false); }}
+                  className={clsx("p-1.5 rounded-lg hover:bg-[#202244] cursor-pointer text-[#A5A3C7] hover:text-[#ECEBFA]", drawingTool === 'circle' && "bg-[#202244] text-[#10B981]")}
+                  title="Circle"
+                  aria-label="Draw Circle"
+                >
+                  <span className="material-symbols-outlined text-base">radio_button_unchecked</span>
+                </button>
+              </div>
             )}
           </div>
         </div>
 
-        <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+        <div className="h-5 w-px bg-white/[0.07] mx-0.5 shrink-0" />
 
-        {/* GROUP 2: Undo / Redo */}
+        {/* GROUP 2: Color + Size (Collapsed Color Swatch Popover + Stroke Size Dots) */}
+        <div className="flex items-center gap-1 sm:gap-1.5" role="group" aria-label="Color and stroke size">
+          {/* Collapsed Color Swatch Trigger & Popover */}
+          <div className="relative" ref={colorPopoverRef}>
+            <button
+              onClick={() => setShowColorPopover(v => !v)}
+              className="flex items-center gap-1 px-2 py-1 rounded-xl bg-[#202244] hover:bg-[#202244]/80 text-[#ECEBFA] border border-white/[0.07] transition-all duration-200 cursor-pointer focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none"
+              title="Stroke color popover"
+              aria-label="Select stroke color"
+            >
+              <span
+                className="w-4 h-4 rounded-full border border-white/20 shadow-xs shrink-0"
+                style={{ backgroundColor: drawColor }}
+              />
+              <span className="material-symbols-outlined text-[14px] text-[#A5A3C7]">palette</span>
+              <span className="material-symbols-outlined text-[13px] text-[#A5A3C7]">expand_more</span>
+            </button>
+
+            {/* Popover palette with accessible swatches (persisted in DOM) */}
+            <div className={clsx(
+              "absolute top-full mt-1.5 left-0 z-50 bg-[#171830] rounded-xl border border-white/[0.07] shadow-2xl p-2 items-center gap-1.5 animate-in fade-in duration-150 backdrop-blur-md",
+              showColorPopover ? "flex" : "hidden"
+            )}>
+              {colors.map(color => {
+                const isSelected = drawingTool !== 'eraser' && drawingTool !== 'stroke_eraser' && drawColor === color;
+                return (
+                  <button
+                    key={color}
+                    onClick={() => {
+                      setDrawColor(color);
+                      if (drawingTool === 'eraser' || drawingTool === 'stroke_eraser') setDrawingTool('pen');
+                      setShowColorPopover(false);
+                    }}
+                    className={clsx(
+                      "w-5 h-5 rounded-full border border-white/20 shadow-2xs transition-all duration-150 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                      isSelected
+                        ? "scale-125 ring-2 ring-[#10B981] ring-offset-2 ring-offset-[#171830] z-10"
+                        : "hover:scale-110 opacity-90 hover:opacity-100"
+                    )}
+                    style={{ backgroundColor: color }}
+                    title={`Color ${color}`}
+                    aria-label={`Select color ${color}`}
+                  />
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Size Dots (4 widths) */}
+          <div className="flex items-center gap-0.5" role="group" aria-label="Stroke size selector">
+            {strokeSizes.map(({ width, dot }) => {
+              const isSelected = drawWidth === width;
+              return (
+                <button
+                  key={width}
+                  onClick={() => setDrawWidth(width)}
+                  className={clsx(
+                    "w-6 h-6 rounded-lg flex items-center justify-center transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                    isSelected
+                      ? "bg-[#10B981] text-white shadow-xs"
+                      : "text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244]"
+                  )}
+                  title={`${width}px stroke size`}
+                  aria-label={`Stroke width ${width} pixels`}
+                >
+                  <span
+                    className="rounded-full bg-current transition-all"
+                    style={{ width: `${dot}px`, height: `${dot}px` }}
+                  />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="h-5 w-px bg-white/[0.07] mx-0.5 shrink-0" />
+
+        {/* GROUP 3: Undo / Redo */}
         <div className="flex items-center gap-0.5" role="group" aria-label="History actions">
           <button
             onClick={handleUndo}
             disabled={undoStack.length <= 1}
-            className="p-1 rounded-lg text-muted hover:text-text hover:bg-surface-2 transition-all disabled:opacity-30 cursor-pointer"
+            className="p-1 rounded-lg text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244] transition-all duration-200 disabled:opacity-30 cursor-pointer"
             title="Undo stroke"
             aria-label="Undo stroke"
           >
@@ -233,7 +406,7 @@ export function WhiteboardCanvas({
           <button
             onClick={handleRedo}
             disabled={redoStack.length === 0}
-            className="p-1 rounded-lg text-muted hover:text-text hover:bg-surface-2 transition-all disabled:opacity-30 cursor-pointer"
+            className="p-1 rounded-lg text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244] transition-all duration-200 disabled:opacity-30 cursor-pointer"
             title="Redo stroke"
             aria-label="Redo stroke"
           >
@@ -241,70 +414,15 @@ export function WhiteboardCanvas({
           </button>
         </div>
 
-        <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
+        <div className="h-5 w-px bg-white/[0.07] mx-0.5 shrink-0" />
 
-        {/* GROUP 3: Colour Swatches (min 5, accessible labels) */}
-        <div className="flex items-center gap-1" role="group" aria-label="Stroke color palette">
-          {colors.map(color => {
-            const isSelected = drawingTool !== 'eraser' && drawColor === color;
-            return (
-              <button
-                key={color}
-                onClick={() => {
-                  setDrawColor(color);
-                  if (drawingTool === 'eraser') setDrawingTool('pen');
-                }}
-                className={clsx(
-                  "w-5 h-5 rounded-full border border-border shadow-2xs transition-all duration-150 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-                  isSelected
-                    ? "scale-125 ring-2 ring-primary ring-offset-2 ring-offset-surface z-10"
-                    : "hover:scale-110 opacity-90 hover:opacity-100"
-                )}
-                style={{ backgroundColor: color }}
-                title={`Color ${color}`}
-                aria-label={`Select color ${color}`}
-              />
-            );
-          })}
-        </div>
-
-        <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-
-        {/* GROUP 4: Size Dots (4 widths) */}
-        <div className="flex items-center gap-0.5" role="group" aria-label="Stroke size selector">
-          {strokeSizes.map(({ width, dot }) => {
-            const isSelected = drawWidth === width;
-            return (
-              <button
-                key={width}
-                onClick={() => setDrawWidth(width)}
-                className={clsx(
-                  "w-6 h-6 rounded-lg flex items-center justify-center transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-                  isSelected
-                    ? "bg-primary text-white shadow-xs"
-                    : "text-muted hover:text-text hover:bg-surface-2"
-                )}
-                title={`${width}px stroke size`}
-                aria-label={`Stroke width ${width} pixels`}
-              >
-                <span
-                  className="rounded-full bg-current transition-all"
-                  style={{ width: `${dot}px`, height: `${dot}px` }}
-                />
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="h-5 w-px bg-border mx-0.5 shrink-0" />
-
-        {/* GROUP 5: More Menu (Grid, Save) + Clear confirmation */}
+        {/* GROUP 4: More Menu (Grid, Save) + Clear confirmation */}
         <div className="flex items-center gap-1" role="group" aria-label="Whiteboard actions">
           {/* More Popover */}
-          <div className="relative">
+          <div className="relative" ref={moreMenuRef}>
             <button
               onClick={() => setShowMoreMenu(v => !v)}
-              className="px-2 py-1 rounded-xl text-xs font-semibold text-muted hover:text-text hover:bg-surface-2 border border-border flex items-center gap-1 transition-all cursor-pointer"
+              className="px-2 py-1 rounded-xl text-xs font-medium text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244] border border-white/[0.07] flex items-center gap-1 transition-all duration-200 cursor-pointer"
               title="More options (Grid, Save)"
               aria-label="More options"
             >
@@ -313,55 +431,54 @@ export function WhiteboardCanvas({
             </button>
 
             {showMoreMenu && (
-              <>
-                <div className="fixed inset-0 z-30" onClick={() => setShowMoreMenu(false)} />
-                <div className="absolute top-8 left-0 z-40 bg-surface rounded-xl border border-border shadow-md p-1.5 flex flex-col gap-1 min-w-[120px] animate-in fade-in duration-150">
-                  <button
-                    onClick={() => {
-                      setPaperGrid(v => !v);
-                      setShowMoreMenu(false);
-                    }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-text hover:bg-surface-2 flex items-center gap-2 cursor-pointer"
-                    aria-label="Toggle paper dot grid surface"
-                  >
-                    <span className="material-symbols-outlined text-sm">{paperGrid ? 'grid_4x4' : 'check_box_outline_blank'}</span>
-                    <span>{paperGrid ? 'Dot Grid' : 'Plain Paper'}</span>
-                  </button>
+              <div className="absolute top-full mt-1.5 left-0 z-50 bg-[#171830] rounded-xl border border-white/[0.07] shadow-2xl p-1.5 flex flex-col gap-1 min-w-[130px] animate-in fade-in duration-150 backdrop-blur-md">
+                <button
+                  onClick={() => {
+                    setPaperGrid(v => !v);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#ECEBFA] hover:bg-[#202244] flex items-center gap-2 cursor-pointer transition-colors duration-200"
+                  aria-label="Toggle paper dot grid surface"
+                >
+                  <span className="material-symbols-outlined text-sm text-[#10B981]">{paperGrid ? 'grid_4x4' : 'check_box_outline_blank'}</span>
+                  <span>{paperGrid ? 'Dot Grid' : 'Plain Canvas'}</span>
+                </button>
 
-                  <button
-                    onClick={() => {
-                      downloadWhiteboard();
-                      setShowMoreMenu(false);
-                    }}
-                    className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-text hover:bg-surface-2 flex items-center gap-2 cursor-pointer"
-                    aria-label="Export Whiteboard as Image"
-                  >
-                    <span className="material-symbols-outlined text-sm">download</span>
-                    <span>Save Image</span>
-                  </button>
-                </div>
-              </>
+                <button
+                  onClick={() => {
+                    downloadWhiteboard();
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium text-[#ECEBFA] hover:bg-[#202244] flex items-center gap-2 cursor-pointer transition-colors duration-200"
+                  aria-label="Export Whiteboard as Image"
+                >
+                  <span className="material-symbols-outlined text-sm text-[#38BDF8]">download</span>
+                  <span>Save Image</span>
+                </button>
+              </div>
             )}
           </div>
 
           {/* Destructive Clear Button with Confirmation */}
-          <div className="ml-0.5 pl-0.5 border-l border-border">
+          <div className="ml-1 pl-1 border-l border-white/[0.07]">
             {showClearConfirm ? (
-              <div className="flex items-center gap-1 bg-surface-2 p-1 rounded-xl border border-danger/40 animate-in fade-in slide-in-from-right-1 duration-150">
-                <span className="text-xs font-bold text-danger px-1">Clear all?</span>
+              <div className="flex items-center gap-1 bg-[#202244] p-1 rounded-xl border border-red-500/30 animate-in fade-in slide-in-from-right-1 duration-150">
+                <span className="text-xs font-semibold text-red-400 px-1">Clear all?</span>
                 <button
                   onClick={() => {
                     clearBoard();
                     setShowClearConfirm(false);
+                    setUndoStack([]);
+                    setRedoStack([]);
                   }}
-                  className="px-2 py-0.5 bg-danger text-white rounded-lg text-xs font-bold hover:opacity-90 active:scale-95 transition-all shadow-xs cursor-pointer"
+                  className="px-2 py-0.5 bg-red-600 hover:bg-red-500 text-white rounded-lg text-xs font-medium active:scale-95 transition-all shadow-xs cursor-pointer"
                   aria-label="Confirm clear whiteboard"
                 >
                   Yes
                 </button>
                 <button
                   onClick={() => setShowClearConfirm(false)}
-                  className="px-2 py-0.5 bg-surface text-text rounded-lg text-xs font-bold hover:bg-surface-2 border border-border active:scale-95 transition-all cursor-pointer"
+                  className="px-2 py-0.5 bg-[#171830] text-[#ECEBFA] rounded-lg text-xs font-medium hover:bg-[#171830]/80 border border-white/[0.07] active:scale-95 transition-all cursor-pointer"
                   aria-label="Cancel clear whiteboard"
                 >
                   Cancel
@@ -370,7 +487,7 @@ export function WhiteboardCanvas({
             ) : (
               <button
                 onClick={() => setShowClearConfirm(true)}
-                className="px-2 py-1 rounded-xl text-xs font-semibold text-muted hover:text-danger hover:bg-danger/10 border border-border transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                className="px-2 py-1 rounded-xl text-xs font-medium text-red-400 hover:bg-red-500/15 border border-red-500/20 transition-all duration-200 flex items-center gap-1 active:scale-95 cursor-pointer"
                 title="Clear entire whiteboard"
                 aria-label="Clear whiteboard"
               >
@@ -382,7 +499,7 @@ export function WhiteboardCanvas({
         </div>
       </div>
 
-      {/* Canvas with subtle dot grid surface pattern option */}
+      {/* Canvas with subtle dot grid surface pattern on Midnight Indigo background */}
       <canvas
         ref={canvasRef}
         onPointerDown={beginDraw}
@@ -390,8 +507,9 @@ export function WhiteboardCanvas({
         onPointerUp={handlePointerUp}
         onPointerLeave={handlePointerUp}
         className={clsx(
-          "flex-1 w-full h-full touch-none cursor-crosshair transition-colors duration-300",
-          paperGrid ? "bg-[radial-gradient(#94a3b8_1px,transparent_1px)] [background-size:24px_24px] bg-surface" : "bg-surface"
+          "flex-1 w-full h-full touch-none transition-colors duration-200 bg-[#171830]",
+          drawingTool === 'stroke_eraser' ? "cursor-cell" : "cursor-crosshair",
+          paperGrid && "bg-[radial-gradient(rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:24px_24px]"
         )}
       />
     </div>

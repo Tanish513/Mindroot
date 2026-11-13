@@ -416,3 +416,11 @@
     - Playwright acceptance suite: 35/35 passed (100% pass rate).
     - Mobile horizontal overflow: `scrollWidth = 390px` at 390px viewport (0 overflow across all screens).
     - Desktop isolation: Confirmed 100% pixel-identical at 1280px.
+
+- **2026-11-11**: Part 20: Supabase Cloud Egress Quota Remediation & Database Resilience Architecture.
+  - Scope: Architectural mitigation and plan for Supabase Free Tier monthly network egress limit reached (5.083 GB / 5.0 GB).
+  - Additions:
+    1. **Part 20 Specification (`mindroot_implementation_plan_antigravity.md` & `docs/mindroot_implementation_plan_antigravity.md`)**: Full root cause analysis, 3-option decision matrix (Local Docker vs Fresh Cloud Project vs Spend Cap toggle), and step-by-step tasks.
+    2. **Architecture Decision (`.project-memory/decisions.md`)**: Added `DEC-020` mandating local container isolation for testing and diagnostic scripts to preserve cloud bandwidth.
+    3. **Project Memory (`.project-memory/master.md`)**: Added item 12 under Current State.
+

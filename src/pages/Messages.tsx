@@ -210,7 +210,7 @@ export function Messages() {
   });
 
   return (
-    <div className="max-w-6xl mx-auto h-[calc(100vh-140px)] flex flex-col space-y-4">
+    <div className="max-w-6xl mx-auto h-[calc(100vh-140px)] flex flex-col space-y-3 md:space-y-4">
       {/* Dedicated Mobile Chat Thread (< md) */}
       <div className="block md:hidden flex-1 min-h-0">
         <MobileMessagesView

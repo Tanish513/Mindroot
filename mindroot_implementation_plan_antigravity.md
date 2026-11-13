@@ -1,5 +1,5 @@
 ---
-title: "Mindroot - Antigravity Implementation Plans: Part 1 Mentor UPI VPA (F10) + Part 2 Live-Room Roles & Booking Decisions + Part 3 Verification Fixes [IN PROGRESS]"
+title: "Mindroot - Antigravity Implementation Plans: Parts 1-19 + Part 20 Supabase Egress Remediation [IN PROGRESS]"
 tags:
   - project/student-to-student
   - plan
@@ -9,7 +9,7 @@ tags:
   - status/in-progress
 status: in-progress
 created: 2026-09-29
-last_updated: 2026-11-05
+last_updated: 2026-11-11
 latest_commit: "ce76cc2fd3d5041cd6a1902ae84a596718e2b60b"
 repo_head: "ce76cc2fd3d5041cd6a1902ae84a596718e2b60b (Run 18 clean archive baseline; main checkout pre-existing edits preserved; no code edits/commit/push)"
 author: "[[ANTIGRAVITY]]"
@@ -1989,3 +1989,90 @@ graph TD
 | **Desktop (1280px)** | **Marketplace & Filters** | `screenshots/phase6_final/desktop_marketplace_1280.png` | Multi-column layout with category sidebar, search filters, and desktop mentor cards. |
 | **Desktop (1280px)** | **Schedule Week/Month** | `screenshots/phase6_final/desktop_schedule_1280.png` | Full calendar grid with Day/Week/Month views, session slots, and timezone selector. |
 | **Desktop (1280px)** | **Messages Studio** | `screenshots/phase6_final/desktop_messages_1280.png` | Desktop split-pane view with chat thread on right and contacts on left. |
+
+---
+
+## Part 20: Supabase Cloud Egress Quota Remediation & Database Resilience Architecture [PLANNED / IN PROGRESS]
+
+### 20.1 Incident Context & Telemetry (2026-11-11)
+During end-to-end test execution and baseline validation runs (`diagnose_p526.cjs`, `capture_p526_after.cjs`, Playwright suites), the Supabase project **Mindroot** exceeded its Free Plan outbound network bandwidth cap:
+* **Egress Usage**: **`5.083 GB / 5.0 GB (102%)`** [CRITICAL ALERT]
+* **Database Size**: `0.028 / 0.5 GB (6%)` (Storage usage is nominal at ~28 MB)
+* **Realtime / Storage / Edge Functions**: `0%`
+* **Billing Cycle Window**: `04 Nov 2026 – 04 Dec 2026`
+* **Current Operational Impact**: Supabase warning banner active; project at risk of outbound throttling, pooler restrictions, or read-only degradation prior to the December 4 quota reset.
+
+### 20.2 Root Cause Analysis (RCA)
+1. **Remote Cloud Pooler Targeted by Test Fixtures**:
+   * Local verification suites and diagnosis scripts connected directly over WAN to the Supabase connection pooler in Tokyo (`aws-0-ap-northeast-1.pooler.supabase.com:6543`).
+   * Iterative test runs, multi-step browser diagnostics, and visual screenshot verification routines repeatedly queried and downloaded relation data across public internet hops.
+2. **Unbounded Prisma Fetch Projections**:
+   * Several high-traffic endpoints (`GET /api/sessions`, `GET /api/users`, `GET /api/messages`) relied on default `prisma.<model>.findMany()` patterns without granular `select` column masks or mandatory cursor/page size bounding (`take: N`).
+   * Full serialized payloads (including JSON metadata, history, and status dumps) were repeatedly transported across the WAN.
+3. **Absence of Dev/Test Quarantine Guard**:
+   * Automated test commands did not assert an environment guard preventing connection to remote cloud hostnames (`*.supabase.com`), leading to unintentional consumption of production/hackathon quota during local dev cycles.
+
+### 20.3 Strategy & Options Matrix
+
+```mermaid
+flowchart TD
+    QuotaAlert["Supabase Egress Exceeded (5.083 / 5.0 GB)"] --> StrategyFork{"Workload Isolation"}
+    
+    StrategyFork -->|"Dev / Test Workloads"| LocalDB["Local Docker PostgreSQL (mindroot-db)"]
+    StrategyFork -->|"Public Demo / Hackathon Judges"| CloudDB["Cloud Deployment Resilience"]
+    
+    LocalDB --> ZeroEgress["0 GB Network Egress (Localhost 5432)"]
+    LocalDB --> InstantLatency["Sub-millisecond DB Response Time"]
+    LocalDB --> UnlimitedRuns["Unrestricted Playwright & Test Runs"]
+    
+    CloudDB --> OptionA["Option A (Zero-Cost): Secondary Supabase or Neon Project"]
+    CloudDB --> OptionB["Option B (Minimal-Cost): Disable Supabase Spend Cap ($0.09/GB overage)"]
+    
+    OptionA --> FreshQuota["Fresh 5.0 GB Quota for Vercel Demo"]
+    OptionB --> UnrestrictedProd["Current URLs remain 100% active (~$0.01 current overage)"]
+```
+
+| Strategy Dimension | Option 1: Local Docker Container (Recommended for Dev/Test) | Option 2: Cloud Instance Refresh (Neon / Supabase #2) | Option 3: Disable Spend Cap (Pay-As-You-Go) |
+|---|---|---|---|
+| **Primary Scope** | Local dev server, Playwright, diagnosis, integration suites | Public Vercel frontend, judge evaluation, external demos | Live zero-migration unblock for existing project ID |
+| **Direct Cost** | **$0.00** | **$0.00** | **~$0.01 – $0.50** ($0.09 / GB overage) |
+| **Quota Limits** | Unlimited storage & bandwidth | Fresh 5.0 GB monthly quota | Unrestricted bandwidth |
+| **Latency Profile** | < 1ms local loopback | ~150-250ms WAN pooler roundtrip | ~150-250ms WAN pooler roundtrip |
+| **Setup Time** | 2 minutes (`docker compose up -d db`) | 3 minutes (dashboard project creation) | 1 minute (billing toggle) |
+
+### 20.4 Detailed Remediation Tasks
+
+#### Task 20.1: Immediate Local Test & Dev Quarantine (Zero-Egress Mode)
+* **Action**: Transition all local testing, diagnosis scripts, and dev server execution to the pre-configured local Docker Postgres container (`postgres:16-alpine`, service `mindroot-db`).
+* **Configuration**:
+  - Update `server/.env` local testing configuration:
+    ```env
+    DATABASE_URL="postgresql://postgres:postgres@localhost:5432/mindroot?schema=public"
+    DIRECT_URL="postgresql://postgres:postgres@localhost:5432/mindroot?schema=public"
+    ```
+  - Run container and push schema:
+    ```bash
+    docker compose up -d db
+    cd server && npx prisma db push
+    python ../scripts/seed_demo_data.py
+    ```
+* **Effect**: Eliminates all cloud egress during automated browser suites, Playwright passes, and developer debugging.
+
+#### Task 20.2: Cloud Demo Database Continuity for Evaluation & Vercel
+* **Action**: Ensure cloud-hosted frontend (Vercel) remains backed by an active, unthrottled database for hackathon evaluators.
+* **Procedures**:
+  - **Option A (Preferred Zero-Cost)**: Initialize a secondary free project in Supabase (or Neon Serverless Postgres), push schema via `npx prisma db push`, and update Vercel environment variables.
+  - **Option B (Spend Cap Toggle)**: If retaining existing project credentials (`holdkrodqeezgzwzruil`) is preferred, disable the Spend Cap in Supabase Organization Settings. Because overage is billed at **$0.09 per GB**, the current 0.083 GB overage incurs less than **$0.01** total charge.
+
+#### Task 20.3: Prisma Query Payload Hardening & Test Safeguard
+* **Action**:
+  1. Add an automated test pre-flight assertion in `server/test/` and `playwright.config.ts` verifying that `DATABASE_URL` does NOT contain `supabase.com` during automated test runs.
+  2. Audit `server/src/index.ts` and routes to ensure high-frequency queries enforce `select` column filtering and `take: 50` pagination bounds to minimize wire payload transfer.
+
+### 20.5 Verification & Acceptance Criteria
+- [ ] Local Docker DB successfully launched (`docker compose up -d db`) and validated with `pg_isready`.
+- [ ] Schema synced cleanly via `npx prisma db push` against local target.
+- [ ] Demo seed script (`seed_demo_data.py`) executed against local DB without errors.
+- [ ] Diagnostic and Playwright suites execute with zero WAN network calls to Supabase.
+- [ ] Production cloud database restored to normal operating status (either via spend cap or fresh project).
+

@@ -298,7 +298,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
             <button
               type="button"
               onClick={() => updateSocketAuth()}
-              className="px-2 sm:px-2.5 py-0.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-xs border border-amber-500/30 transition-colors cursor-pointer"
+              className="px-2 sm:px-2.5 py-0.5 min-h-[44px] sm:min-h-0 inline-flex items-center justify-center rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-900 dark:text-amber-100 font-bold text-xs border border-amber-500/30 transition-colors cursor-pointer"
             >
               Reconnect
             </button>
@@ -311,7 +311,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                 } catch {}
               }}
               aria-label="Dismiss banner"
-              className="p-1 rounded-lg hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 transition-colors cursor-pointer"
+              className="p-1 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 inline-flex items-center justify-center rounded-lg hover:bg-amber-500/20 text-amber-800 dark:text-amber-200 transition-colors cursor-pointer"
               title="Dismiss"
             >
               <span className="material-symbols-outlined text-sm leading-none block">close</span>
@@ -319,7 +319,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           </div>
         </div>
       )}
-      <header className="h-[54px] sm:h-[64px] flex items-center justify-between px-3 sm:px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
+      <header className="h-[50px] md:h-[64px] flex items-center justify-between px-3 sm:px-4 md:px-8 w-full bg-surface-2 border-b border-border z-40 shrink-0 select-none">
       <div className="flex items-center gap-2 sm:gap-4 flex-1">
         {/* Mobile Menu Hamburger Button */}
         {onOpenMobileMenu && (
@@ -337,13 +337,13 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
         {/* Mobile Brand Logo & Name */}
         <Link 
           to="/dashboard"
-          className="md:hidden flex items-center gap-2 select-none group mr-1 shrink-0"
+          className="md:hidden flex items-center gap-2 select-none group mr-1 shrink-0 min-h-[44px]"
           title="Mindroot Home"
         >
-          <div className="w-8 h-8 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-black shrink-0 group-hover:scale-105 transition-transform">
-            <span className="material-symbols-outlined text-lg">psychology</span>
+          <div className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center text-primary font-black shrink-0 group-hover:scale-105 transition-transform">
+            <span className="material-symbols-outlined text-base">psychology</span>
           </div>
-          <span className="text-base font-black tracking-tight text-text">Mindroot</span>
+          <span className="text-sm font-black tracking-tight text-text">Mindroot</span>
         </Link>
 
         {/* Mobile Search Toggle Button */}
@@ -422,14 +422,14 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                 <div className="p-6 text-center text-muted text-xs">
                   <span className="material-symbols-outlined text-3xl text-muted mb-1">search_off</span>
                   <p className="font-bold text-text">No results found for "{searchQuery}"</p>
-                  <p className="text-[11px] text-muted mt-1">Try searching for "React", "Python", "Maya", or "Cohort"</p>
+                  <p className="text-xs md:text-[11px] text-muted mt-1">Try searching for "React", "Python", "Maya", or "Cohort"</p>
                 </div>
               ) : (
                 <div className="p-2 space-y-3">
                   {/* Matching Peers / Mentors */}
                   {matchingPeers.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
+                      <div className="text-xs md:text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
                         <span className="material-symbols-outlined text-xs text-primary">group</span>
                         <span>Mentors & Peers</span>
                       </div>
@@ -444,12 +444,12 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                               <img src={peer.avatar || 'https://i.pravatar.cc/150?img=11'} alt={peer.name} className="w-7 h-7 rounded-full object-cover border border-border" />
                               <div className="min-w-0">
                                 <p className="text-xs font-bold text-text truncate">{peer.name}</p>
-                                <p className="text-[10px] text-muted truncate">
+                                <p className="text-xs md:text-[10px] text-muted truncate">
                                   Teaches: {Array.isArray(peer.skillsTaught) ? peer.skillsTaught.join(', ') : 'Coding & Design'}
                                 </p>
                               </div>
                             </div>
-                            <span className="text-[11px] font-bold text-primary shrink-0">
+                            <span className="text-xs md:text-[11px] font-bold text-primary shrink-0">
                               ₹{peer.hourlyRate || 399}/hr
                             </span>
                           </div>
@@ -461,7 +461,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   {/* Matching Skills */}
                   {matchingSkills.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
+                      <div className="text-xs md:text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
                         <span className="material-symbols-outlined text-xs text-primary">school</span>
                         <span>Skills & Topics</span>
                       </div>
@@ -484,7 +484,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   {/* Matching Sessions */}
                   {matchingSessions.length > 0 && (
                     <div>
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
+                      <div className="text-xs md:text-[10px] font-semibold uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
                         <span className="material-symbols-outlined text-xs text-primary">videocam</span>
                         <span>Live Classes & Cohorts</span>
                       </div>
@@ -497,11 +497,11 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                           >
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-text truncate">{session.title}</p>
-                              <p className="text-[10px] text-muted">
+                              <p className="text-xs md:text-[10px] text-muted">
                                 {session.maxCapacity ? `${session.maxCapacity}-Student Batch` : '1-on-1'} · Teacher: {session.teacher?.name || 'Mentor'}
                               </p>
                             </div>
-                            <span className="px-2 py-0.5 bg-surface-2 text-primary border border-border text-[10px] font-semibold rounded-md shrink-0">
+                            <span className="px-2 py-0.5 bg-surface-2 text-primary border border-border text-xs md:text-[10px] font-semibold rounded-md shrink-0">
                               Join Room
                             </span>
                           </div>
@@ -512,7 +512,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
 
                   {/* Quick Platform Navigation Pages */}
                   <div>
-                    <div className="text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
+                    <div className="text-xs md:text-[10px] font-black uppercase tracking-wider text-muted px-2.5 py-1 flex items-center gap-1">
                       <span className="material-symbols-outlined text-xs text-muted">explore</span>
                       <span>Quick Navigation</span>
                     </div>
@@ -526,7 +526,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                           <span className="material-symbols-outlined text-base text-muted">{page.icon}</span>
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-text">{page.label}</p>
-                            <p className="text-[10px] text-muted truncate">{page.desc}</p>
+                            <p className="text-xs md:text-[10px] text-muted truncate">{page.desc}</p>
                           </div>
                           <span className="material-symbols-outlined text-xs text-muted">chevron_right</span>
                         </div>
@@ -537,7 +537,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               )}
 
               {/* Dropdown Footer */}
-              <div className="p-2 border-t border-border bg-surface-2 flex items-center justify-between text-[11px] text-muted font-medium px-3">
+              <div className="p-2 border-t border-border bg-surface-2 flex items-center justify-between text-xs md:text-[11px] text-muted font-medium px-3">
                 <span>Press <strong className="font-mono text-text">Enter</strong> to search all in Marketplace</span>
                 <span><strong className="font-mono text-text">Esc</strong> to close</span>
               </div>
@@ -562,7 +562,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           <div ref={demoContainerRef} className="relative">
             <button
               onClick={() => setShowDemoMenu(prev => !prev)}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-surface hover:bg-primary-tint hover:text-primary-text text-text border border-border rounded-xl text-xs font-bold transition-colors cursor-pointer min-h-[44px] md:min-h-0"
               title="Switch Demo Persona or Seed 1-Minute Live Demo"
             >
               <span className="material-symbols-outlined text-base">bolt</span>
@@ -710,7 +710,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           >
             <span className="material-symbols-outlined text-sm">mark_email_unread</span>
             <span className="hidden sm:inline">Requests</span>
-            <span className="min-w-4 h-4 px-1 rounded-full bg-amber-600 text-white text-[10px] font-black flex items-center justify-center">
+            <span className="min-w-4 h-4 px-1 rounded-full bg-amber-600 text-white text-xs md:text-[10px] font-black flex items-center justify-center">
               {pendingCount > 9 ? '9+' : pendingCount}
             </span>
           </Link>
@@ -726,12 +726,12 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               }
             }}
             aria-label="Notifications"
-            className="p-2 bg-transparent text-text hover:bg-surface rounded-full transition-colors relative cursor-pointer"
+            className="p-2 bg-transparent text-text hover:bg-surface rounded-full transition-colors relative cursor-pointer min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex md:inline-block items-center justify-center"
             title="View Notifications"
           >
             <span className="material-symbols-outlined text-text">notifications</span>
             {unreadCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white rounded-full text-[10px] font-bold flex items-center justify-center ring-2 ring-surface-2">
+              <span className="absolute top-1 right-1 w-4 h-4 bg-danger text-white rounded-full text-xs md:text-[10px] font-bold flex items-center justify-center ring-2 ring-surface-2">
                 {unreadCount > 9 ? '9+' : unreadCount}
               </span>
             )}
@@ -743,7 +743,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                 <div className="flex items-center gap-2">
                   <h4 className="text-sm font-bold text-text">Notifications</h4>
                   {unreadCount > 0 && (
-                    <span className="bg-primary-tint text-primary-text text-[10px] font-bold px-2 py-0.5 rounded-full">
+                    <span className="bg-primary-tint text-primary-text text-xs md:text-[10px] font-bold px-2 py-0.5 rounded-full">
                       {unreadCount} new
                     </span>
                   )}
@@ -772,7 +772,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   <div className="p-8 text-center text-muted space-y-2">
                     <span className="material-symbols-outlined text-3xl text-muted">notifications_off</span>
                     <p className="text-xs font-semibold text-text">No notifications yet</p>
-                    <p className="text-[11px] text-muted">You'll receive alerts for messages & session reminders here.</p>
+                    <p className="text-xs md:text-[11px] text-muted">You'll receive alerts for messages & session reminders here.</p>
                   </div>
                 ) : (
                   notifications.map((item) => (
@@ -788,9 +788,9 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                       <div className="flex-1 min-w-0">
                         <div className="flex justify-between items-baseline mb-0.5">
                           <h5 className="text-xs font-bold text-text truncate">{item.title}</h5>
-                          <span className="text-[10px] font-medium text-muted shrink-0">{item.time}</span>
+                          <span className="text-xs md:text-[10px] font-medium text-muted shrink-0">{item.time}</span>
                         </div>
-                        <p className="text-[11px] text-muted font-medium line-clamp-2 leading-relaxed">{item.body}</p>
+                        <p className="text-xs md:text-[11px] text-muted font-medium line-clamp-2 leading-relaxed">{item.body}</p>
                       </div>
                     </Link>
                   ))
@@ -800,7 +800,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           )}
         </div>
 
-        <Link to="/profile" className="flex items-center gap-2.5 pl-2 border-l border-border group cursor-pointer">
+        <Link to="/profile" className="flex items-center gap-2.5 pl-2 border-l border-border group cursor-pointer min-h-[44px] min-w-[44px] md:min-h-0 md:min-w-0">
           <div className="relative">
             <img 
               alt="User Profile"
@@ -831,11 +831,11 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
               <div className="min-w-0">
                 <p className="text-xs font-black text-on-surface flex items-center gap-1.5">
                   <span>Student UPI Payment Submitted</span>
-                  <span className="px-1.5 py-0.2 bg-learning-amber/20 text-learning-amber rounded text-[10px] font-mono font-bold">
+                  <span className="px-1.5 py-0.2 bg-learning-amber/20 text-learning-amber rounded text-xs md:text-[10px] font-mono font-bold">
                     UTR: {incomingPaymentAlert.utrNumber}
                   </span>
                 </p>
-                <p className="text-[11px] text-on-surface-variant truncate">
+                <p className="text-xs md:text-[11px] text-on-surface-variant truncate">
                   <strong>{incomingPaymentAlert.studentName}</strong> sent <strong>₹{incomingPaymentAlert.amount}</strong> via UPI.
                 </p>
               </div>
@@ -876,7 +876,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
           <div className="bg-surface border border-outline-variant rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-elevation-3 p-6 space-y-5">
             <div className="flex items-start justify-between border-b border-outline-variant/60 pb-3">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-[11px] font-bold mb-1">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary/10 text-primary text-xs md:text-[11px] font-bold mb-1">
                   <span className="material-symbols-outlined text-xs">school</span>
                   <span>5th Semester Academic Project Specifications</span>
                 </div>
@@ -900,7 +900,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   <span className="material-symbols-outlined text-base">devices</span>
                   <span>Frontend Architecture</span>
                 </div>
-                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                <p className="text-xs md:text-[11px] text-on-surface-variant leading-relaxed">
                   React 19 with TypeScript, Vite bundler, Tailwind CSS design system, and Zustand global state store. Responsive across mobile and desktop.
                 </p>
               </div>
@@ -910,7 +910,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   <span className="material-symbols-outlined text-base">dns</span>
                   <span>Backend & Real-Time Engine</span>
                 </div>
-                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                <p className="text-xs md:text-[11px] text-on-surface-variant leading-relaxed">
                   Node.js Express REST API, Socket.io bidirectional signaling channel, WebRTC peer-to-peer video mesh, and automated email trigger workers.
                 </p>
               </div>
@@ -920,7 +920,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   <span className="material-symbols-outlined text-base">qr_code_scanner</span>
                   <span>P2P UPI Settlement Layer</span>
                 </div>
-                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                <p className="text-xs md:text-[11px] text-on-surface-variant leading-relaxed">
                   Zero-fee student-to-mentor direct UPI transfers with dynamic QR generation, UTR verification, provisional access, and Admin dispute escalation.
                 </p>
               </div>
@@ -930,7 +930,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
                   <span className="material-symbols-outlined text-base">verified_user</span>
                   <span>Academic Credential Verification</span>
                 </div>
-                <p className="text-[11px] text-on-surface-variant leading-relaxed">
+                <p className="text-xs md:text-[11px] text-on-surface-variant leading-relaxed">
                   College/Faculty ID upload and validation, verified trust badges, downloadable mentorship certificates, and community moderation.
                 </p>
               </div>
@@ -939,7 +939,7 @@ export function TopBar({ onOpenMobileMenu }: TopBarProps) {
             {/* Quick Summary for Professor */}
             <div className="p-4 bg-primary/5 rounded-2xl border border-primary/20 space-y-1">
               <p className="text-xs font-black text-primary">Academic Evaluation Highlights:</p>
-              <ul className="text-[11px] text-on-surface-variant space-y-1 list-disc list-inside">
+              <ul className="text-xs md:text-[11px] text-on-surface-variant space-y-1 list-disc list-inside">
                 <li>Eliminates corporate intermediary fees by routing funds peer-to-peer directly into mentor accounts.</li>
                 <li>Built-in collaborative study scratchpad that auto-saves session notes to student dashboards.</li>
                 <li>Standard RFC-5545 `.ics` and Google Calendar 1-click scheduling sync.</li>

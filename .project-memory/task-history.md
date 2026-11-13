@@ -42,7 +42,8 @@
   - Result: Fully resolved false slot conflict collisions and false "Requested Slot Booked" warnings. Added dedicated pre-flight availability check (`GET /api/teachers/:teacherId/slot-check`) and single source of truth (`GET /api/teachers/:teacherId/booked-slots` & `getTeacherBookedSlots`). Updated frontend modals (`Marketplace.tsx` and `Schedule.tsx`) with 250ms debounced checking, `AbortController`, real-time visual feedback ("Checking availability...", "Time slot is available"), and button disabling.
   - Files affected: `server/src/bookingRules.ts`, `src/lib/bookingRules.ts`, `server/src/index.ts`, `src/lib/api/index.ts`, `src/pages/Marketplace.tsx`, `src/pages/Schedule.tsx`, `server/test/slot_availability_precision.test.ts`.
   - Verification: `slot_availability_precision.test.ts` (12/12 passing), `pricing_and_booking_bugs.test.ts` (10/10 passing), server typecheck 0 errors, Vite production build clean in 2.72s. Obsidian Vault synchronized.
-- **2026-10-19** (Update 2): Client-Server Authentication Token Self-Healing & Session Reservation Fix ("Unauthorized: Missing or invalid authentication token.").
+
+- **2026-10-19** (Update 2): Client-Server Authentication Token Self-Healing & Session Reservation Fix ("Unauthorized: Missing or invalid authentication token.").
   - Result: Resolved authentication token loss/expiration during lecture reservation. Enhanced `getHeaders()` in `src/lib/api/index.ts` to automatically populate and cache `dev-token-${userId}` from `localStorage.getItem('mindroot_current_user')` when token is missing. Enhanced `safeParse()` to clean up expired JWTs and restore valid dev session credentials. Added a transparent 1-time retry on 401 in `postSession()`. Guaranteed `mindroot_auth_token` persistence during store hydration, login, and profile updates. Hardened Express/Socket auth middleware defaults (`userRole: 'student'`). Updated UI modals with clear user-friendly session expiry messaging.
   - Files affected: `src/lib/api/index.ts`, `src/store/useAppStore.ts`, `server/src/index.ts`, `src/pages/Marketplace.tsx`, `src/pages/Schedule.tsx`, `.project-memory/changes.md`, `.project-memory/task-history.md`, Obsidian Vault notes.
   - Verification: `slot_availability_precision.test.ts` (12/12 passing), `pricing_and_booking_bugs.test.ts` (10/10 passing), `cross_user_auth.test.ts` (4/4 passing), server typecheck 0 errors, Vite production build clean (0 errors in 2.58s). Obsidian Vault synchronized.
@@ -143,3 +144,29 @@
   - `npx playwright test --project=acceptance`: 35 passed / 0 failed (100% pass rate).
   - Responsive: 0 horizontal overflow at 390px mobile viewport (`scrollWidth = 390px`).
   - Desktop 1280px: Pixel-identical, sidebar intact, bottom nav & mobile tools hub hidden.
+
+## [2026-11-11T16:58:00.000Z] Part 20: Supabase Cloud Egress Quota Remediation & Database Resilience Plan
+- **Task**: Formulate implementation plan for Supabase Free Plan egress quota exhaustion (5.083 GB / 5.0 GB - 102%) and update vault specifications.
+- **Files Modified**:
+  - `mindroot_implementation_plan_antigravity.md`: Added Part 20 comprehensive remediation specification, RCA, and execution tasks.
+  - `docs/mindroot_implementation_plan_antigravity.md`: Mirrored Part 20 specification.
+  - `.project-memory/decisions.md`: Logged DEC-020 (Remote Egress Quarantine & Local Container Database).
+  - `.project-memory/master.md`: Updated Current State with item 12 (Part 20 Egress Remediation).
+  - `.project-memory/changes.md`: Logged vault plan synchronization.
+- **Verification**:
+  - SHA256 integrity check matching between root and docs plan mirrors.
+  - Markdown syntax and mermaid diagram validation.
+
+## [2026-11-11T17:15:00.000Z] Option 1 Execution: Local PostgreSQL Transition Completed
+- **Task**: Transition backend from remote Supabase pooler to local native PostgreSQL 18 on localhost:5432 to eliminate cloud egress.
+- **Actions**:
+  - Archived cloud credentials to server/.env.supabase.backup.
+  - Updated server/.env to localhost:5432/mindroot.
+  - Created database mindroot on local PostgreSQL.
+  - Ran npx prisma db push (337ms) and synced all 12 tables.
+  - Ran npx tsx prisma/seed.ts (seeded core skills and users).
+- **Verification Evidence**:
+  - Query test confirmed 12 tables, 3 users, 6 skills.
+  - Server typecheck passed (0 errors).
+  - live_room_end_and_kick.test.ts passed 100%.
+  - Server /api/health returned ok with active PostgreSQL pool.

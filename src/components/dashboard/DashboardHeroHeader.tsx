@@ -41,11 +41,11 @@ export function DashboardHeroHeader({
   onClaimBonus
 }: DashboardHeroHeaderProps) {
   return (
-    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 py-1 select-none">
+    <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5 sm:gap-4 py-1 select-none">
       {/* Left: Greeting + Streak Chip + Subtitle (Directly on page background) */}
       <div className="space-y-1 min-w-0">
         <div className="flex items-center gap-3 flex-wrap">
-          <h1 className="text-xl sm:text-2xl font-bold text-text tracking-tight">
+          <h1 className="text-lg sm:text-2xl font-bold text-text tracking-tight">
             {greeting}, {userName}
           </h1>
 
@@ -53,7 +53,7 @@ export function DashboardHeroHeader({
           <div className="relative group inline-flex items-center">
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary-text border border-primary/20 text-xs font-semibold hover:bg-primary/15 transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 text-primary-text border border-primary/20 text-xs font-semibold hover:bg-primary/15 transition-colors cursor-pointer min-h-[44px] sm:min-h-0"
               aria-label={`${streakCount > 0 ? streakCount : 0}-day streak. Hover to view weekly calendar.`}
             >
               <span className="material-symbols-outlined text-[15px] text-primary" aria-hidden="true">
@@ -156,7 +156,7 @@ export function DashboardHeroHeader({
           </div>
         </div>
 
-        <p className="text-sm text-muted">
+        <p className="text-xs sm:text-sm text-muted">
           {roleSubtitle}
         </p>
       </div>

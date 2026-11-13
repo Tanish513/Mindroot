@@ -69,7 +69,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
 
         <TopBar onOpenMobileMenu={undefined} />
-        <main className="flex-1 overflow-y-auto p-3.5 pb-24 sm:p-5 md:p-8 md:pb-8">
+        <main className="flex-1 overflow-y-auto p-3 pb-32 sm:p-5 md:p-8 md:pb-8">
           {children}
         </main>
       </div>

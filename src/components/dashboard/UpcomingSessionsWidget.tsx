@@ -41,7 +41,7 @@ export function UpcomingSessionsWidget({
           <button
             type="button"
             onClick={onOpenSchedule}
-            className="self-start sm:self-auto text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer min-h-[32px] sm:min-h-0 flex items-center"
+            className="self-start sm:self-auto text-xs font-semibold text-primary hover:text-primary-hover transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center"
           >
             Calendar &rarr;
           </button>

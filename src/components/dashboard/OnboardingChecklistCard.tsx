@@ -53,18 +53,18 @@ export function OnboardingChecklistCard({
   const progressPercent = Math.round((completedCount / steps.length) * 100);
 
   return (
-    <section className="bg-primary/[0.06] border border-primary/20 border-l-4 border-l-primary rounded-xl p-3.5 sm:p-5 shadow-xs space-y-2.5 sm:space-y-3.5 h-full flex flex-col justify-between">
+    <section className="bg-primary/[0.06] border border-primary/20 border-l-4 border-l-primary rounded-xl p-2.5 sm:p-5 shadow-xs space-y-2 sm:space-y-3.5 h-full flex flex-col justify-between">
       {/* Header */}
       <div>
         <div className="flex items-center justify-between">
           <h3 className="text-sm sm:text-base font-bold text-text">Get started</h3>
-          <span className="text-[11px] sm:text-xs font-semibold text-primary">
+          <span className="text-xs font-semibold text-primary">
             Step {currentStepNumber} of {steps.length}
           </span>
         </div>
 
         {/* Thin 4px progress bar with green fill */}
-        <div className="w-full h-1 bg-primary/15 rounded-full overflow-hidden mt-2.5">
+        <div className="w-full h-1 bg-primary/15 rounded-full overflow-hidden mt-2 sm:mt-2.5">
           <div
             className="h-full bg-primary rounded-full transition-all duration-300 ease-out"
             style={{ width: `${progressPercent}%` }}
@@ -80,7 +80,7 @@ export function OnboardingChecklistCard({
           return (
             <div
               key={step.id}
-              className="py-2 sm:py-3 first:pt-1 last:pb-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3"
+              className="py-1.5 sm:py-3 first:pt-0.5 sm:first:pt-1 last:pb-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 sm:gap-3"
             >
               <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
                 <div
@@ -98,7 +98,7 @@ export function OnboardingChecklistCard({
                   <p className={`text-xs sm:text-sm font-semibold ${step.isDone ? 'text-text/70 line-through' : 'text-text'}`}>
                     {step.title}
                   </p>
-                  <p className="text-[11px] sm:text-xs text-muted line-clamp-2 leading-relaxed">
+                  <p className="text-xs sm:text-xs text-muted line-clamp-2 leading-relaxed">
                     {step.description}
                   </p>
                 </div>
@@ -114,7 +114,7 @@ export function OnboardingChecklistCard({
                   <button
                     type="button"
                     onClick={step.onAction}
-                    className="px-3.5 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-hover rounded-lg shadow-xs transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
+                    className="px-3 sm:px-3.5 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-hover rounded-lg shadow-xs transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
                   >
                     {step.actionLabel}
                   </button>
@@ -122,7 +122,7 @@ export function OnboardingChecklistCard({
                   <button
                     type="button"
                     onClick={step.onAction}
-                    className="px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
+                    className="px-3 sm:px-3.5 py-1.5 text-xs font-medium text-text bg-surface hover:bg-surface-2 border border-border rounded-lg transition-colors cursor-pointer min-h-[44px] sm:min-h-0 flex items-center justify-center"
                   >
                     {step.actionLabel}
                   </button>

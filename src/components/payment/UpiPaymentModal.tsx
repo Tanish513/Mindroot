@@ -166,7 +166,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
         
         {/* Success / Receipt Screen */}
         {successDetails ? (
-          <div className="p-6 md:p-8 text-center space-y-5 overflow-y-auto flex-1">
+          <div className="p-4 sm:p-6 md:p-8 text-center space-y-4 sm:space-y-5 overflow-y-auto flex-1">
             <div className="inline-flex items-center justify-center h-20 w-20 rounded-full bg-primary-tint text-primary-text border border-primary/20 ring-8 ring-primary/5 animate-bounce">
               <span className="material-symbols-outlined text-4xl">verified</span>
             </div>
@@ -187,7 +187,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
               <span className="material-symbols-outlined text-lg shrink-0 mt-0.5">bolt</span>
               <div>
                 <p className="font-bold">Instant Provisional Access Granted!</p>
-                <p className="text-[11px] opacity-90 mt-0.5 font-normal">
+                <p className="text-xs md:text-[11px] opacity-90 mt-0.5 font-normal">
                   Your classroom link is active now. The mentor has been alerted to acknowledge your UPI payment ({successDetails.utr}).
                 </p>
               </div>
@@ -213,7 +213,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
               </div>
               <div className="flex justify-between items-center text-xs border-t border-border pt-2">
                 <span className="text-muted font-semibold">Ref / UTR</span>
-                <span className="text-primary-text font-mono text-[11px] font-bold">{successDetails.utr}</span>
+                <span className="text-primary-text font-mono text-xs md:text-[11px] font-bold">{successDetails.utr}</span>
               </div>
             </div>
 
@@ -234,9 +234,9 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
         ) : (
           <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
             {/* Header */}
-            <div className="p-6 border-b border-border flex items-start justify-between shrink-0">
+            <div className="p-4 sm:p-6 border-b border-border flex items-start justify-between shrink-0">
               <div>
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-[11px] font-bold mb-2">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-xs md:text-[11px] font-bold mb-2">
                   <span className="material-symbols-outlined text-xs">lock</span>
                   <span>Mindroot Guaranteed Peer Settlement</span>
                 </div>
@@ -254,7 +254,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             </div>
 
             {/* Price Banner */}
-            <div className="bg-surface-2 px-6 py-3.5 border-b border-border flex items-center justify-between shrink-0">
+            <div className="bg-surface-2 px-4 sm:px-6 py-3 sm:py-3.5 border-b border-border flex items-center justify-between shrink-0">
               <span className="text-xs font-bold text-muted">Total Amount Due</span>
               <div className="flex items-baseline gap-1">
                 <span className="text-xs text-muted font-bold">INR</span>
@@ -291,7 +291,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
             )}
 
             {/* Content Body */}
-            <div className="p-6 overflow-y-auto flex-1 min-h-0">
+            <div className="p-4 sm:p-6 overflow-y-auto flex-1 min-h-0">
               {activeTab === 'qr' ? (
                 <div className="space-y-4">
                   {/* Error Alert if any */}
@@ -312,7 +312,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                           <p className="text-xs text-muted mt-1 leading-relaxed">
                             This mentor (<strong>{mentorName}</strong>) has not yet registered a valid UPI payout address (VPA). Direct peer UPI transfers cannot be processed for this session.
                           </p>
-                          <div className="mt-3 p-3 bg-surface-2 rounded-xl border border-border text-[11px] text-text space-y-1">
+                          <div className="mt-3 p-3 bg-surface-2 rounded-xl border border-border text-xs md:text-[11px] text-text space-y-1">
                             <p className="font-bold">Alternative Options:</p>
                             <ul className="list-disc list-inside space-y-0.5 text-muted">
                               <li>Book using <strong>Skill Tokens</strong> (1 token per hour).</li>
@@ -335,9 +335,9 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                             <div>
                               <p className="font-extrabold text-primary-text flex items-center gap-1">
                                 <span>Official Verified Mentor</span>
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary text-on-primary uppercase">ID Checked</span>
+                                <span className="text-xs md:text-[10px] px-1.5 py-0.2 rounded bg-primary text-on-primary uppercase">ID Checked</span>
                               </p>
-                              <p className="text-[11px] text-muted font-medium">
+                              <p className="text-xs md:text-[11px] text-muted font-medium">
                                 {mentorDetails.officialIdType === 'college_id' ? 'University Student ID Confirmed' :
                                  mentorDetails.officialIdType === 'faculty_id' ? 'Faculty / Professor ID Confirmed' :
                                  mentorDetails.officialIdType === 'govt_id' ? 'Government Photo ID Confirmed' :
@@ -359,12 +359,12 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                                 alt="Teacher's Official UPI QR Code"
                                 className="w-48 h-48 object-contain rounded-xl border border-slate-200 shadow-sm"
                               />
-                              <div className="absolute top-2 right-2 bg-primary text-on-primary text-[9px] font-black px-2 py-0.5 rounded-md shadow uppercase tracking-wide flex items-center gap-1">
-                                <span className="material-symbols-outlined text-[11px]">verified</span>
+                              <div className="absolute top-2 right-2 bg-primary text-on-primary text-xs md:text-[11px] font-black px-2 py-0.5 rounded-md shadow uppercase tracking-wide flex items-center gap-1">
+                                <span className="material-symbols-outlined text-xs">verified</span>
                                 Teacher's Own QR
                               </div>
                             </div>
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            <span className="text-xs md:text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                               Official Mentor QR Code
                             </span>
                           </div>
@@ -375,12 +375,12 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                               alt="UPI QR Code"
                               className="w-44 h-44 object-contain rounded-lg"
                             />
-                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                            <span className="text-xs md:text-[10px] font-bold text-slate-500 uppercase tracking-wider">
                               Dynamic Session QR Code
                             </span>
                           </div>
                         )}
-                        <div className="flex items-center gap-1.5 mt-2 text-[11px] font-bold text-slate-700">
+                        <div className="flex items-center gap-1.5 mt-2 text-xs md:text-[11px] font-bold text-slate-700">
                           <span className="material-symbols-outlined text-sm text-primary">security</span>
                           <span>Scan with GPay, PhonePe, Paytm, BHIM, or Any Banking App</span>
                         </div>
@@ -416,21 +416,21 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                       {/* UPI ID Copy Field with Truthful Verification Label */}
                       <div>
                         <div className="flex items-center justify-between mb-1">
-                          <label className="text-[11px] font-bold text-muted flex items-center gap-1.5">
+                          <label className="text-xs md:text-[11px] font-bold text-muted flex items-center gap-1.5">
                             <span>Mentor's UPI ID (VPA)</span>
                             {mentorDetails?.vpaVerified ? (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-[10px] font-black uppercase tracking-wider">
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-primary-tint text-primary-text border border-primary/20 text-xs md:text-[10px] font-black uppercase tracking-wider">
                                 <span className="material-symbols-outlined text-xs">verified</span>
                                 Verified
                               </span>
                             ) : (
-                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-surface-2 text-muted border border-border text-[10px] font-semibold">
+                              <span className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-full bg-surface-2 text-muted border border-border text-xs md:text-[10px] font-semibold">
                                 Unverified
                               </span>
                             )}
                           </label>
                           {mentorDetails?.upiQrImage && (
-                            <span className="text-[10px] font-bold text-primary-text flex items-center gap-0.5">
+                            <span className="text-xs md:text-[10px] font-bold text-primary-text flex items-center gap-0.5">
                               <span className="material-symbols-outlined text-xs">check_circle</span>
                               QR & UPI Matched
                             </span>
@@ -457,7 +457,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                           <span className="text-muted font-medium">Payee Name</span>
                           <span className="text-text font-bold">{mentorDetails?.accountHolderName || mentorName}</span>
                         </div>
-                        <p className="text-[11px] text-muted font-normal">
+                        <p className="text-xs md:text-[11px] text-muted font-normal">
                           ⚠️ Verify in your UPI app that the recipient name matches <strong>{mentorDetails?.accountHolderName || mentorName}</strong> before completing payment.
                         </p>
                       </div>
@@ -467,10 +467,10 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                       {/* Mandatory 12-Digit UTR Input */}
                       <div className="border-t border-border pt-3 space-y-1.5">
                         <div className="flex justify-between items-center">
-                          <label className="text-[11px] font-bold text-muted">
+                          <label className="text-xs md:text-[11px] font-bold text-muted">
                             12-Digit UPI Reference Number (UTR) <span className="text-danger">*</span>
                           </label>
-                          <span className={`text-[10px] font-mono ${utrInput.length === 12 ? 'text-primary-text font-bold' : 'text-muted'}`}>
+                          <span className={`text-xs md:text-[10px] font-mono ${utrInput.length === 12 ? 'text-primary-text font-bold' : 'text-muted'}`}>
                             {utrInput.length} / 12 digits
                           </span>
                         </div>
@@ -488,7 +488,7 @@ export function UpiPaymentModal({ isOpen, onClose, session, onSuccess }: UpiPaym
                           className="w-full px-3 py-2.5 bg-surface-2 rounded-xl text-base md:text-xs font-mono text-text border border-border focus:outline-none focus:ring-2 focus:ring-primary/20 min-h-[44px]"
                         />
                         {utrInput.length > 0 && utrInput.length < 12 && (
-                          <p className="text-[10px] text-accent font-medium">
+                          <p className="text-xs md:text-[10px] text-accent font-medium">
                             UTR must be exactly 12 numeric digits from your bank SMS or payment receipt.
                           </p>
                         )}

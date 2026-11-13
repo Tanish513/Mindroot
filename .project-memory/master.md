@@ -95,3 +95,7 @@ Mindroot is a peer-to-peer knowledge and skill-sharing platform connecting stude
 ### Phase 6 Status Update (2026-11-06)
 - **Status**: Implemented & Verified.
 - **Highlights**: Dedicated mobile views for Dashboard, Marketplace, Booking Drawer, Schedule, Messages, and Profile Tools Hub. Deprecated mobile hamburger menu; established 5-tab bottom dock (`MobileBottomNav.tsx`) as single primary navigation. Desktop viewports (1024px+) 100% pixel-identical and untouched. All 35 Playwright acceptance tests pass.
+  12. Part 20 (Supabase Cloud Egress Quota Remediation & Local Database Isolation):
+      - Identified root cause of 5.083 GB (102%) Supabase egress on Free Tier due to automated test/diagnostic suites querying Tokyo pooler over WAN.
+      - Defined DEC-020 isolating all testing, Playwright, and local dev workloads to the local Docker Postgres service (`mindroot-db`).
+      - Established dual-track cloud continuity plan (secondary Supabase/Neon project or $0.09/GB spend cap toggle) for uninterrupted hackathon evaluations.

@@ -222,7 +222,7 @@ export function VideoTile({
   raised, 
   cameraOff, 
   micOff,
-  accent,
+  accent: _accent,
   onSwitchCamera,
   hasMultipleCameras,
   isRemote,
@@ -283,7 +283,7 @@ export function VideoTile({
 
   return (
     <div className={clsx(
-      "group relative overflow-hidden rounded-2xl border border-border bg-surface-2 shadow-xs transition-all duration-200 flex items-center justify-center select-none",
+      "group relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#171830] shadow-xs transition-all duration-200 flex items-center justify-center select-none",
       className || "aspect-video"
     )}>
       <StreamVideo
@@ -292,13 +292,13 @@ export function VideoTile({
         cameraOff={cameraOff}
         isRemote={isRemote}
         onUnlockAudio={onUnlockAudio}
-        className="h-full w-full bg-surface-2 object-cover"
+        className="h-full w-full bg-[#171830] object-cover"
       />
 
       {hasMultipleCameras && onSwitchCamera && (
         <button
           onClick={onSwitchCamera}
-          className="absolute top-2 left-2 bg-surface/85 hover:bg-primary text-text hover:text-on-primary p-1 rounded-lg backdrop-blur-md transition-all border border-border shadow-xs flex items-center gap-1 px-2 text-xs font-bold z-20 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+          className="absolute top-2 left-2 bg-[#202244]/85 hover:bg-[#10B981] text-[#ECEBFA] hover:text-white p-1 rounded-lg backdrop-blur-md transition-all duration-200 border border-white/[0.07] shadow-xs flex items-center gap-1 px-2 text-xs font-medium z-20 active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none"
           title="Switch Camera"
           aria-label="Switch Camera"
         >
@@ -308,38 +308,38 @@ export function VideoTile({
       )}
 
       {showPlaceholder && (
-        <div className="absolute inset-0 flex flex-col items-center justify-center bg-slate-900 border border-slate-800 p-2 text-center z-10">
-          <div className={clsx('grid h-11 w-11 place-items-center rounded-2xl text-base font-bold text-white shadow-xs', accent || 'bg-primary')}>
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#171830] border border-white/[0.07] p-2 text-center z-10">
+          <div className={clsx('grid h-11 w-11 place-items-center rounded-2xl text-base font-semibold text-white shadow-xs', isTeacher ? 'bg-[#10B981]' : 'bg-[#202244]')}>
             {waiting ? <span className="material-symbols-outlined animate-pulse text-lg">person_search</span> : cleanDisplayName.slice(0, 1).toUpperCase()}
           </div>
-          <p className="text-xs font-semibold text-slate-300 mt-1.5">
+          <p className="text-xs font-medium text-[#A5A3C7] mt-1.5">
             {waiting ? 'Connecting…' : (cameraOff ? 'Camera Off' : 'Waiting for video…')}
           </p>
         </div>
       )}
 
       {/* Role Pill & Name Badge on bottom left */}
-      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-slate-700 bg-slate-950/85 text-white px-2 py-0.5 text-xs font-bold shadow-xs backdrop-blur-md z-20 max-w-[88%]">
-        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-amber-400" : "bg-emerald-400 animate-pulse")} />
+      <div className="absolute bottom-2 left-2 flex items-center gap-1.5 rounded-lg border border-white/[0.07] bg-[#0F1020]/90 text-[#ECEBFA] px-2 py-0.5 text-xs font-medium shadow-xs backdrop-blur-md z-20 max-w-[88%]">
+        <span className={clsx("h-2 w-2 rounded-full shrink-0", waiting ? "bg-amber-400" : "bg-[#10B981] animate-pulse")} />
         <span className="truncate">{cleanDisplayName}</span>
         <span className={clsx(
-          "text-[10px] uppercase px-1.5 py-0.5 rounded font-black tracking-wider shrink-0",
-          isTeacher ? 'bg-primary text-white' : 'bg-slate-700 text-slate-200'
+          "text-[10px] uppercase px-1.5 py-0.5 rounded font-semibold tracking-wider shrink-0",
+          isTeacher ? 'bg-[#10B981] text-white' : 'bg-[#202244] text-[#A5A3C7]'
         )}>
           {isTeacher ? 'Teacher' : 'Student'}
         </span>
       </div>
 
-      {/* Mic Status Badge on bottom right (neutral dark, slash icon) */}
+      {/* Mic Status Badge on bottom right (soft red state when muted) */}
       {micOff && (
-        <div className="absolute bottom-2 right-2 bg-slate-800 border border-slate-700 text-slate-300 p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Muted" aria-label="Microphone muted">
+        <div className="absolute bottom-2 right-2 bg-red-500/15 border border-red-500/30 text-red-400 p-1 rounded-md shadow-xs z-20 flex items-center justify-center" title="Microphone muted" aria-label="Microphone muted">
           <span className="material-symbols-outlined text-sm">mic_off</span>
         </div>
       )}
 
       {/* Hand Raise Badge on top right */}
       {raised && (
-        <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-accent text-on-primary shadow-xs animate-bounce z-20" aria-label="Hand raised">
+        <div className="absolute right-2 top-2 grid h-7 w-7 place-items-center rounded-full bg-[#10B981] text-white shadow-xs animate-bounce z-20" aria-label="Hand raised">
           <span className="material-symbols-outlined text-sm">pan_tool</span>
         </div>
       )}
@@ -352,7 +352,7 @@ export function VideoTile({
             e.stopPropagation();
             onKick();
           }}
-          className="absolute top-2 right-2 bg-red-600/85 hover:bg-red-600 text-white px-2 py-1 rounded-lg backdrop-blur-md transition-all border border-red-500/50 shadow-xs flex items-center gap-1 text-[11px] font-bold z-20 cursor-pointer active:scale-95"
+          className="absolute top-2 right-2 bg-red-500/15 hover:bg-red-500/30 text-red-400 px-2 py-1 rounded-lg backdrop-blur-md transition-all duration-200 border border-red-500/30 shadow-xs flex items-center gap-1 text-[11px] font-medium z-20 cursor-pointer active:scale-95"
           title={`Remove ${cleanDisplayName} from class`}
           aria-label={`Remove ${cleanDisplayName} from class`}
           data-testid="remove-student-btn"
@@ -412,59 +412,75 @@ export function VideoGrid({
   overflowAudioParticipants,
   totalParticipantsCount,
   unlockAudio,
-  onOpenWhiteboardStudio,
+  onOpenWhiteboardStudio: _onOpenWhiteboardStudio,
   onSimulateStudents,
   isTeacher,
   isDevOrDemo,
   onKickParticipant
 }: VideoGridProps) {
+  const [copiedLink, setCopiedLink] = useState(false);
+
+  const handleCopyLink = () => {
+    try {
+      navigator.clipboard.writeText(window.location.href);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {}
+  };
+
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-2 p-2 bg-slate-950 rounded-2xl border border-slate-800 shadow-inner overflow-hidden">
-      <div className="flex items-center justify-between px-2 text-xs text-slate-300 font-bold shrink-0">
+    <div className="flex-1 min-h-0 flex flex-col gap-2 p-2 bg-[#0F1020] rounded-2xl border border-white/[0.07] shadow-inner overflow-hidden text-[#ECEBFA]">
+      <div className="flex items-center justify-between px-2 text-xs text-[#A5A3C7] font-medium shrink-0">
         <span className="flex items-center gap-2">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>Gallery View · {totalParticipantsCount} {totalParticipantsCount === 1 ? 'Participant' : 'Participants'}</span>
+          <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
+          <span className="font-semibold text-[#ECEBFA]">Gallery View</span>
+          <span>·</span>
+          <span>{totalParticipantsCount} {totalParticipantsCount === 1 ? 'Participant' : 'Participants'}</span>
           {remoteParticipants.some(p => p.isSimulated) && (
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-[#202244] text-[#ECEBFA] border border-white/[0.07]">
               Demo: simulated participants
             </span>
           )}
         </span>
-        <button
-          onClick={onOpenWhiteboardStudio}
-          className="flex items-center gap-1 px-3 py-1 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-extrabold shadow-elevation-1 active:scale-95 transition-all cursor-pointer"
-        >
-          <span className="material-symbols-outlined text-sm">draw</span>
-          <span>Open Whiteboard Studio</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {isDevOrDemo && onSimulateStudents && !remoteParticipants.some(p => p.isSimulated) && (
+            <button
+              type="button"
+              onClick={() => onSimulateStudents(3)}
+              className="px-2.5 py-1 rounded-lg bg-[#202244] hover:bg-[#202244]/80 text-[#10B981] border border-white/[0.07] text-xs font-medium cursor-pointer transition-colors"
+              title="Simulate 3 students joining for testing"
+              aria-label="Simulate 3 students joining"
+            >
+              + Simulate 3 Students
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Audio-only Overflow Explainer Banner */}
       {overflowAudioParticipants.length > 0 && (
-        <div className="mx-2 px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs flex items-center justify-between gap-2 shrink-0 animate-in fade-in duration-200">
-          <div className="flex items-center gap-1.5 font-medium truncate">
-            <span className="material-symbols-outlined text-sm text-amber-400 shrink-0">info</span>
+        <div className="mx-2 px-3 py-1.5 rounded-xl bg-[#171830] border border-white/[0.07] text-[#A5A3C7] text-xs flex items-center justify-between gap-2 shrink-0 animate-in fade-in duration-200">
+          <div className="flex items-center gap-1.5 font-normal truncate">
+            <span className="material-symbols-outlined text-sm text-[#10B981] shrink-0">info</span>
             <span className="truncate">
-              <strong>Bandwidth Mesh Cap Active:</strong> Max 4 concurrent video feeds. {overflowAudioParticipants.map(p => p.name).join(', ')} connected via real-time audio to maintain low latency for cohort batch.
+              <strong className="text-[#ECEBFA] font-semibold">Bandwidth Mesh Cap Active:</strong> Max 4 concurrent video feeds. {overflowAudioParticipants.map(p => p.name).join(', ')} connected via real-time audio.
             </span>
           </div>
-          <span className="text-[10px] font-black uppercase tracking-wider bg-amber-400/20 px-2 py-0.5 rounded border border-amber-400/30 shrink-0">
+          <span className="text-[10px] font-medium uppercase tracking-wider bg-[#202244] text-[#A5A3C7] px-2 py-0.5 rounded border border-white/[0.07] shrink-0">
             Audio Overflow ({overflowAudioParticipants.length})
           </span>
         </div>
       )}
 
-      {/* Dynamic Gallery Grid based on participant count */}
+      {/* Adaptive Gallery Grid based on participant count */}
       <div className={`flex-1 min-h-0 grid gap-2.5 p-1 ${
         totalParticipantsCount === 1
           ? 'grid-cols-1 md:grid-cols-2'
           : totalParticipantsCount === 2
           ? 'grid-cols-1 md:grid-cols-2'
-          : totalParticipantsCount === 3
-          ? 'grid-cols-1 sm:grid-cols-3'
-          : totalParticipantsCount === 4
+          : totalParticipantsCount === 3 || totalParticipantsCount === 4
           ? 'grid-cols-2 grid-rows-2'
-          : 'grid-cols-2 sm:grid-cols-3 grid-rows-2'
+          : 'grid-cols-2 sm:grid-cols-3 auto-rows-fr'
       }`}>
         {/* Local Participant */}
         <VideoTile 
@@ -476,7 +492,7 @@ export function VideoGrid({
           raised={raisedHand} 
           cameraOff={!cameraOn} 
           micOff={!micOn}
-          accent={isTeacher ? "bg-teaching-emerald" : "bg-learning-amber"}
+          accent={isTeacher ? "bg-[#10B981]" : "bg-[#202244]"}
           onSwitchCamera={cycleNextCamera}
           hasMultipleCameras={videoDevices.length > 1}
           isHardware={hardwareCam}
@@ -494,7 +510,7 @@ export function VideoGrid({
             waiting={false} 
             raised={p.handRaised} 
             isSimulated={p.isSimulated}
-            accent={p.role === 'teacher' ? "bg-teaching-emerald" : "bg-learning-amber"} 
+            accent={p.role === 'teacher' ? "bg-[#10B981]" : "bg-[#202244]"} 
             isRemote
             onUnlockAudio={unlockAudio}
             onKick={isTeacher && p.role !== 'teacher' && onKickParticipant ? () => onKickParticipant(p) : undefined}
@@ -506,8 +522,8 @@ export function VideoGrid({
         {overflowAudioParticipants.map(p => (
           <div 
             key={p.id}
-            className="relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/90 p-4 flex flex-col items-center justify-center text-center shadow-sm h-full w-full group"
-            title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth for up to 5 cohort members"
+            className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#171830] p-4 flex flex-col items-center justify-center text-center shadow-xs h-full w-full group"
+            title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth for cohort"
           >
             {isTeacher && p.role !== 'teacher' && onKickParticipant && (
               <button
@@ -516,7 +532,7 @@ export function VideoGrid({
                   e.stopPropagation();
                   onKickParticipant(p);
                 }}
-                className="absolute top-2 right-2 bg-red-600/85 hover:bg-red-600 text-white px-2 py-1 rounded-lg backdrop-blur-md transition-all border border-red-500/50 shadow-xs flex items-center gap-1 text-[11px] font-bold z-20 cursor-pointer active:scale-95 opacity-0 group-hover:opacity-100"
+                className="absolute top-2 right-2 bg-red-500/15 hover:bg-red-500/30 text-red-400 px-2 py-1 rounded-lg backdrop-blur-md transition-all border border-red-500/30 shadow-xs flex items-center gap-1 text-[11px] font-medium z-20 cursor-pointer active:scale-95 opacity-0 group-hover:opacity-100"
                 title={`Remove ${p.name} from class`}
                 aria-label={`Remove ${p.name} from class`}
                 data-testid="remove-student-btn"
@@ -525,34 +541,49 @@ export function VideoGrid({
                 <span className="hidden sm:inline">Remove</span>
               </button>
             )}
-            <div className="h-12 w-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-sm mb-2 shadow-inner">
+            <div className="h-12 w-12 rounded-full bg-[#202244] border border-white/[0.07] flex items-center justify-center text-[#ECEBFA] font-semibold text-sm mb-2 shadow-inner">
               {p.name.slice(0, 1).toUpperCase()}
             </div>
-            <div className="text-xs font-bold text-white truncate max-w-[140px]">{p.name}</div>
-            <span className="text-[10px] text-amber-400 font-bold mt-1.5 flex items-center gap-1 bg-amber-400/10 px-2 py-0.5 rounded-full border border-amber-400/20">
+            <div className="text-xs font-semibold text-[#ECEBFA] truncate max-w-[140px]">{p.name}</div>
+            <span className="text-[10px] text-[#A5A3C7] font-medium mt-1.5 flex items-center gap-1 bg-[#202244] px-2 py-0.5 rounded-full border border-white/[0.07]">
               <span className="material-symbols-outlined text-[13px]">volume_up</span> Audio-Only (Mesh Cap)
             </span>
           </div>
         ))}
 
-        {/* Waiting Slots when alone */}
+        {/* With 1 participant: show one large tile plus an "Invite classmates" card with a copy-link button */}
         {remoteParticipants.length === 0 && (
-          <div className="relative overflow-hidden rounded-2xl border-2 border-dashed border-slate-700 bg-slate-900/80 flex flex-col items-center justify-center p-4 text-center h-full w-full shadow-sm">
-            <div className="w-12 h-12 rounded-full bg-primary-container/30 text-primary flex items-center justify-center mb-2">
-              <span className="material-symbols-outlined text-2xl">groups</span>
+          <div className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#171830] flex flex-col items-center justify-center p-6 text-center h-full w-full shadow-xs">
+            <div className="w-12 h-12 rounded-full bg-[#202244] border border-white/[0.07] text-[#10B981] flex items-center justify-center mb-2.5">
+              <span className="material-symbols-outlined text-2xl">group_add</span>
             </div>
-            <h4 className="text-sm font-bold text-white">Waiting for classmates</h4>
-            <p className="text-xs text-slate-400 mt-1 max-w-[240px]">
-              Share the session link to invite peers.
+            <h4 className="text-sm font-semibold text-[#ECEBFA]">Invite classmates</h4>
+            <p className="text-xs text-[#A5A3C7] mt-1 max-w-[260px]">
+              Share the session link to invite peers. Students will appear here once connected.
             </p>
-            {isDevOrDemo && onSimulateStudents && (
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <button
-                onClick={() => onSimulateStudents(3)}
-                className="mt-3 px-3.5 py-1.5 rounded-xl bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold shadow-md active:scale-95 transition-all cursor-pointer"
+                type="button"
+                onClick={handleCopyLink}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#202244] hover:bg-[#202244]/80 text-[#ECEBFA] border border-white/[0.07] text-xs font-medium transition-all duration-200 active:scale-95 cursor-pointer"
+                title="Copy Room Invitation Link"
+                aria-label="Copy Room Invitation Link"
               >
-                + Simulate 3 Students
+                <span className="material-symbols-outlined text-sm">{copiedLink ? 'check' : 'content_copy'}</span>
+                <span>{copiedLink ? 'Link Copied' : 'Copy Invite Link'}</span>
               </button>
-            )}
+              {isDevOrDemo && onSimulateStudents && (
+                <button
+                  type="button"
+                  onClick={() => onSimulateStudents(3)}
+                  className="px-3 py-1.5 rounded-xl bg-[#10B981] hover:bg-[#10B981]/90 text-white text-xs font-medium shadow-xs active:scale-95 transition-all duration-200 cursor-pointer"
+                  title="Simulate 3 students joining for testing"
+                  aria-label="Simulate 3 students joining"
+                >
+                  + Simulate 3 Students
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

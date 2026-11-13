@@ -354,12 +354,12 @@ export function Marketplace() {
 
   return (
     <>
-      <div className="max-w-6xl mx-auto space-y-6 select-none">
+      <div className="max-w-6xl mx-auto space-y-3 sm:space-y-6 select-none">
       {/* Header with Switcher Tabs */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
         <div>
           <div className="flex flex-col items-start gap-1.5 sm:flex-row sm:items-center sm:gap-2">
-            <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-text">Find Peers & Mentors</h1>
+            <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-text">Find Peers & Mentors</h1>
             <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-primary-tint text-primary-text border border-primary/20 whitespace-nowrap">
               ₹0 Upfront • Pay After Class
             </span>
@@ -412,18 +412,18 @@ export function Marketplace() {
 
       {/* Trust Guarantee Banner */}
       {activeTab !== 'swaps' && (
-        <div className="bg-primary-tint/50 border border-primary/20 rounded-xl sm:rounded-2xl p-3 sm:p-4 flex items-start sm:items-center gap-2.5 sm:gap-3">
+        <div className="bg-primary-tint/50 border border-primary/20 rounded-xl sm:rounded-2xl p-2.5 sm:p-4 flex items-start sm:items-center gap-2 sm:gap-3">
           <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-primary text-on-primary flex items-center justify-center shrink-0 mt-0.5 sm:mt-0">
             <span className="material-symbols-outlined text-base sm:text-lg">verified_user</span>
           </div>
-          <div className="text-[11px] sm:text-xs text-text leading-relaxed flex-1 min-w-0">
+          <div className="text-xs sm:text-xs text-text leading-relaxed flex-1 min-w-0">
             <p className={clsx("sm:block", !isGuaranteeExpanded && "line-clamp-2 sm:line-clamp-none")}>
               <strong className="text-primary-text font-bold">100% Student Guarantee:</strong> Reserve your seat for ₹0 upfront today. You attend the live interactive classroom first, and settle the mentoring fee directly via UPI only after your lecture is completed.
             </p>
             <button
               type="button"
               onClick={() => setIsGuaranteeExpanded(prev => !prev)}
-              className="text-[11px] font-bold text-primary sm:hidden mt-0.5 hover:underline cursor-pointer"
+              className="text-xs font-bold text-primary sm:hidden mt-0.5 hover:underline cursor-pointer min-h-[44px] inline-flex items-center"
             >
               {isGuaranteeExpanded ? 'Read less' : 'Read more'}
             </button>
@@ -448,7 +448,7 @@ export function Marketplace() {
                 <button
                   key={rf.id}
                   onClick={() => setRoleFilter(rf.id as 'all' | 'teacher' | 'both')}
-                  className={`whitespace-nowrap shrink-0 px-3 py-1 rounded-lg font-semibold transition-all border cursor-pointer min-h-[36px] sm:min-h-0 flex items-center ${
+                  className={`whitespace-nowrap shrink-0 px-3 py-1 rounded-lg font-semibold transition-all border cursor-pointer min-h-[44px] sm:min-h-0 flex items-center ${
                     roleFilter === rf.id
                       ? 'bg-primary text-on-primary border-primary shadow-xs'
                       : 'bg-surface text-muted border-border hover:border-primary/40 hover:text-text'
@@ -466,7 +466,7 @@ export function Marketplace() {
               <button
                 key={cat}
                 onClick={() => setActiveCategory(cat)}
-                className={`whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer ${
+                className={`whitespace-nowrap px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all border cursor-pointer min-h-[44px] sm:min-h-0 flex items-center ${
                   activeCategory === cat 
                     ? 'bg-primary text-on-primary border-primary shadow-xs' 
                     : 'bg-surface text-muted border-border hover:bg-surface-2 hover:text-text'
@@ -482,7 +482,7 @@ export function Marketplace() {
       {activeTab === 'mentors' ? (
         /* MENTORS LISTING */
         loading ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
             {[1, 2, 3, 4, 5, 6].map(k => (
               <SkeletonCard key={k} />
             ))}
@@ -496,7 +496,7 @@ export function Marketplace() {
             onAction={() => { setActiveCategory('All Skills'); setRoleFilter('all'); }}
           />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-5">
             {sortedPeers.map((peer, i) => {
               const teachesList = (peer.userSkills || []).filter((s: any) => s && s.type === 'teaches');
               const fallbackTeaches = Array.isArray(peer.skillsTaught) ? peer.skillsTaught : [];
@@ -507,11 +507,11 @@ export function Marketplace() {
                 <Card 
                   key={peer.id} 
                   variant="interactive" 
-                  className={`flex flex-col h-full justify-between p-3.5 sm:p-5 space-y-3 sm:space-y-4 ${
+                  className={`flex flex-col h-full justify-between !p-2.5 sm:!p-5 space-y-2 sm:space-y-4 ${
                     peer.isFeatured ? 'ring-2 ring-accent/60 border-accent/40' : ''
                   }`}
                 >
-                  <div className="space-y-3 sm:space-y-4">
+                  <div className="space-y-2 sm:space-y-4">
                     {/* Header: Avatar, Name, Trust & Hourly Rate */}
                     <div className="flex justify-between items-start gap-2.5 sm:gap-3">
                       <div className="flex gap-2.5 sm:gap-3 items-center min-w-0">
@@ -519,7 +519,7 @@ export function Marketplace() {
                           <img 
                             src={peer.avatar || `https://i.pravatar.cc/150?img=${i + 10}`} 
                             alt={`${peer.name}'s avatar`} 
-                            className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl object-cover border border-border" 
+                            className="w-9 h-9 sm:w-12 sm:h-12 rounded-xl object-cover border border-border" 
                           />
                           <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 sm:w-3 sm:h-3 bg-primary rounded-full ring-2 ring-surface" />
                         </div>
@@ -546,7 +546,7 @@ export function Marketplace() {
                       </div>
 
                       <div className="text-right shrink-0">
-                        <div className="text-base font-extrabold text-primary">
+                        <div className="text-sm sm:text-base font-extrabold text-primary">
                           ₹{peer.hourlyRate || 499}
                           <span className="text-xs font-normal text-muted">/hr</span>
                         </div>
@@ -556,18 +556,18 @@ export function Marketplace() {
 
                     {/* Bio Snippet if present */}
                     {peer.bio && (
-                      <p className="text-xs text-muted line-clamp-2 leading-relaxed">
+                      <p className="text-xs text-muted line-clamp-1 sm:line-clamp-2 leading-snug sm:leading-relaxed">
                         {peer.bio}
                       </p>
                     )}
 
                     {/* Dual-Sided Skill Tags: Teaches & Learns */}
-                    <div className="space-y-2.5 pt-1">
+                    <div className="space-y-1.5 sm:space-y-2.5 pt-0.5 sm:pt-1">
                       <div>
                         <span className="text-xs font-bold text-primary-text tracking-wider uppercase block mb-1">
                           Teaches
                         </span>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-1 sm:gap-1.5">
                           {teachesList.length > 0 ? (
                             teachesList.slice(0, 3).map((s: any, idx: number) => (
                               <SkillTag key={s.id || idx} label={s.skill?.name || s.name || 'Skill'} type="teaching" size="sm" />
@@ -582,11 +582,11 @@ export function Marketplace() {
                         </div>
                       </div>
 
-                      <div>
+                      <div className="hidden sm:block">
                         <span className="text-xs font-bold text-accent-text tracking-wider uppercase block mb-1">
                           Learning
                         </span>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap gap-1 sm:gap-1.5">
                           {learnsList.length > 0 ? (
                             learnsList.slice(0, 3).map((s: any, idx: number) => (
                               <SkillTag key={s.id || idx} label={s.skill?.name || s.name || 'Skill'} type="learning" size="sm" />
@@ -603,7 +603,7 @@ export function Marketplace() {
                     </div>
 
                     {/* Group Discount Pill */}
-                    <div className="p-2.5 bg-surface-2 border border-border rounded-xl text-xs flex items-center justify-between">
+                    <div className="py-1.5 px-2.5 sm:p-2.5 bg-surface-2 border border-border rounded-lg sm:rounded-xl text-xs flex items-center justify-between">
                       <span className="flex items-center gap-1.5 font-medium text-text">
                         <span className="material-symbols-outlined text-base text-primary">groups</span>
                         Group Cohort:
@@ -627,7 +627,7 @@ export function Marketplace() {
                           >
                             Chat with Mentor
                           </Button>
-                          <div className="flex items-center justify-center gap-1 text-[11px] text-muted font-medium text-center">
+                          <div className="flex items-center justify-center gap-1 text-xs sm:text-[11px] text-muted font-medium text-center">
                             <span className="material-symbols-outlined text-xs">info</span>
                             <span>Payments Not Set Up • Booking unavailable</span>
                           </div>

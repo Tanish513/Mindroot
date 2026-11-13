@@ -250,10 +250,10 @@ export function Wallet() {
   const selectedPeerObj = peers.find(p => p.id === selectedPeerId);
 
   return (
-    <div className="max-w-container_max mx-auto space-y-6 select-none">
+    <div className="max-w-container_max mx-auto space-y-3 sm:space-y-6 select-none">
       <header className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-4">
         <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-text tracking-tight">
+          <h2 className="text-lg sm:text-2xl font-bold text-text tracking-tight">
             {isTeacherRole 
               ? 'Mentoring Revenue & Earnings Wallet' 
               : (isStudentRole ? 'Payments & Tuition Wallet' : 'Payments & Earnings Wallet')}
@@ -299,7 +299,7 @@ export function Wallet() {
               setPaymentSuccess(null);
               setIsPayModalOpen(true);
             }}
-            className="font-extrabold text-xs px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5"
+            className="font-extrabold text-xs px-4 py-2 rounded-xl shadow-sm flex items-center gap-1.5 min-h-[44px] sm:min-h-0"
           >
             <span className="material-symbols-outlined text-base">send_money</span>
             Pay Mentor Directly
@@ -318,7 +318,7 @@ export function Wallet() {
           >
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-[11px] uppercase tracking-wider font-bold text-muted">Total Mentoring Fees Paid</p>
+                <p className="text-xs md:text-[11px] md:leading-[17.6px] uppercase tracking-wider font-bold text-muted">Total Mentoring Fees Paid</p>
                 <h3 className="text-2xl sm:text-3xl font-bold text-primary mt-1">₹{totalSpent.toLocaleString('en-IN')}</h3>
               </div>
               <div className="w-10 h-10 rounded-xl bg-primary-tint border border-primary/20 text-primary-text flex items-center justify-center">
@@ -330,7 +330,7 @@ export function Wallet() {
                 <span className="material-symbols-outlined text-sm">receipt_long</span>
                 {spentList.length} session payment{spentList.length !== 1 ? 's' : ''} recorded
               </span>
-              <span className="text-[10px] bg-primary-tint text-primary-text px-2 py-0.5 rounded-full font-extrabold">
+              <span className="text-xs md:text-[10px] bg-primary-tint text-primary-text px-2 py-0.5 rounded-full font-extrabold">
                 Payment history
               </span>
             </div>
@@ -343,13 +343,13 @@ export function Wallet() {
             <div className="flex justify-between items-start">
               <div>
                 <div className="flex items-center gap-1.5">
-                  <p className="text-[11px] uppercase tracking-wider font-bold text-muted">Payment Left / Due</p>
+                  <p className="text-xs md:text-[11px] md:leading-[17.6px] uppercase tracking-wider font-bold text-muted">Payment Left / Due</p>
                   {pendingDue > 0 && <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />}
                 </div>
                 <h3 className={`text-2xl sm:text-3xl font-bold mt-1 ${pendingDue > 0 ? 'text-accent-text' : 'text-text'}`}>
                   ₹{pendingDue.toLocaleString('en-IN')}
                 </h3>
-                <p className="text-[11px] text-muted font-medium mt-0.5">
+                <p className="text-xs md:text-[11px] md:leading-[17.6px] text-muted font-medium mt-0.5">
                   {pendingStudentSessions.length > 0 ? `${pendingStudentSessions.length} session(s) pending post-lecture payment` : 'All sessions fully paid & settled'}
                 </p>
               </div>
@@ -363,7 +363,7 @@ export function Wallet() {
                 {pendingDue > 0 ? 'Pay After Class' : 'No Pending Due'}
               </span>
               {pendingDue > 0 && (
-                <button onClick={() => setIsPayModalOpen(true)} className="text-[11px] text-primary font-bold hover:underline">
+                <button onClick={() => setIsPayModalOpen(true)} className="text-xs sm:text-[11px] text-primary font-bold hover:underline min-h-[44px] sm:min-h-0 inline-flex sm:inline items-center">
                   Pay Now →
                 </button>
               )}
@@ -378,13 +378,13 @@ export function Wallet() {
                   <span className="material-symbols-outlined text-sm">qr_code_scanner</span>
                   Pay Directly via UPI
                 </div>
-                <span className="px-2 py-0.5 bg-primary text-on-primary rounded text-[10px] font-bold">UPI</span>
+                <span className="px-2 py-0.5 bg-primary text-on-primary rounded text-xs md:text-[10px] font-bold">UPI</span>
               </div>
               <p className="text-xs text-muted font-medium">
                 Pay your mentor after each session using any UPI app. No upfront fees.
               </p>
             </div>
-            <div className="text-[11px] font-mono text-muted flex items-center justify-between pt-2 border-t border-border">
+            <div className="text-xs md:text-[11px] md:leading-[17.6px] font-mono text-muted flex items-center justify-between pt-2 border-t border-border">
               <span>How it works</span>
               <span className="font-bold text-text">Pay mentor directly</span>
             </div>
@@ -400,7 +400,7 @@ export function Wallet() {
           >
             <div className="flex justify-between items-start">
               <div>
-                <p className="text-[11px] uppercase tracking-wider font-bold text-muted">Total Mentoring Revenue</p>
+                <p className="text-xs md:text-[11px] uppercase tracking-wider font-bold text-muted">Total Mentoring Revenue</p>
                 <h3 className="text-2xl sm:text-3xl font-bold text-primary mt-1">₹{totalEarned.toLocaleString('en-IN')}</h3>
               </div>
               <div className="w-10 h-10 rounded-xl bg-primary-tint border border-primary/20 text-primary-text flex items-center justify-center">
@@ -412,7 +412,7 @@ export function Wallet() {
                 <span className="material-symbols-outlined text-sm">trending_up</span>
                 {earnedList.length} student payouts
               </span>
-              <span className="text-[10px] bg-primary-tint text-primary-text px-2 py-0.5 rounded-full font-extrabold border border-primary/20">
+              <span className="text-xs md:text-[10px] bg-primary-tint text-primary-text px-2 py-0.5 rounded-full font-extrabold border border-primary/20">
                 Ready for Payout
               </span>
             </div>
@@ -426,7 +426,7 @@ export function Wallet() {
             >
               <div className="flex justify-between items-start">
                 <div>
-                  <p className="text-[11px] uppercase tracking-wider font-bold text-muted">Total Spent on Learning</p>
+                  <p className="text-xs md:text-[11px] uppercase tracking-wider font-bold text-muted">Total Spent on Learning</p>
                   <h3 className="text-2xl sm:text-3xl font-bold text-primary mt-1">₹{totalSpent.toLocaleString('en-IN')}</h3>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-primary-tint border border-primary/20 text-primary-text flex items-center justify-center">
@@ -438,7 +438,7 @@ export function Wallet() {
                   <span className="material-symbols-outlined text-sm">receipt_long</span>
                   {spentList.length} sessions paid
                 </span>
-                <span className="text-[10px] bg-primary-tint text-primary-text px-2 py-0.5 rounded-full font-extrabold border border-primary/20">
+                <span className="text-xs md:text-[10px] bg-primary-tint text-primary-text px-2 py-0.5 rounded-full font-extrabold border border-primary/20">
                   Net: ₹{availableBalance.toLocaleString('en-IN')}
                 </span>
               </div>
@@ -451,13 +451,13 @@ export function Wallet() {
               <div className="flex justify-between items-start">
                 <div>
                   <div className="flex items-center gap-1.5">
-                    <p className="text-[11px] uppercase tracking-wider font-bold text-muted">Teacher Payout Account</p>
+                    <p className="text-xs md:text-[11px] uppercase tracking-wider font-bold text-muted">Teacher Payout Account</p>
                     <span className="w-2 h-2 rounded-full bg-primary" />
                   </div>
                   <h3 className="text-base font-bold text-text mt-1 truncate max-w-[200px]">
                     {payoutAccount.payoutMethod === 'upi' ? payoutAccount.upiId : `${payoutAccount.bankName} (${payoutAccount.accountNumber})`}
                   </h3>
-                  <p className="text-[11px] text-muted font-medium mt-0.5">{payoutAccount.accountHolderName}</p>
+                  <p className="text-xs md:text-[11px] md:leading-[17.6px] text-muted font-medium mt-0.5">{payoutAccount.accountHolderName}</p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-primary-tint border border-primary/20 text-primary-text flex items-center justify-center">
                   <span className="material-symbols-outlined text-xl">account_balance</span>
@@ -468,7 +468,7 @@ export function Wallet() {
                   <span className="material-symbols-outlined text-sm">verified_user</span>
                   UPI / Bank Linked
                 </span>
-                <span className="text-[11px] text-primary font-bold hover:underline">Edit details →</span>
+                <span className="text-xs md:text-[11px] text-primary font-bold hover:underline">Edit details →</span>
               </div>
             </div>
           )}
@@ -481,11 +481,11 @@ export function Wallet() {
                   <span className="material-symbols-outlined text-sm">payments</span>
                   Direct Mentor Payouts
                 </div>
-                <span className="px-2 py-0.5 bg-primary text-on-primary rounded text-[10px] font-bold">Direct UPI</span>
+                <span className="px-2 py-0.5 bg-primary text-on-primary rounded text-xs md:text-[10px] font-bold">Direct UPI</span>
               </div>
               <p className="text-xs text-muted font-medium">Receive direct UPI and bank settlements from students upon lesson completion.</p>
             </div>
-            <div className="text-[11px] font-mono text-muted flex items-center justify-between pt-2 border-t border-border">
+            <div className="text-xs md:text-[11px] md:leading-[17.6px] font-mono text-muted flex items-center justify-between pt-2 border-t border-border">
               <span>Settlement:</span>
               <span className="font-bold text-text">Direct P2P Transfer</span>
             </div>
@@ -506,7 +506,7 @@ export function Wallet() {
                     </div>
                     <div>
                       <h3 className="text-base font-black text-text">Pay Mentor Directly</h3>
-                      <p className="text-[11px] text-muted">Fast, direct transfer via UPI</p>
+                      <p className="text-xs md:text-[11px] text-muted">Fast, direct transfer via UPI</p>
                     </div>
                   </div>
                   <button 
@@ -663,7 +663,7 @@ export function Wallet() {
                     Successfully sent <strong className="text-primary font-bold">₹{paymentSuccess.amount}</strong> to <strong className="text-text">{paymentSuccess.mentorName}</strong>.
                   </p>
                 </div>
-                <div className="p-3.5 bg-surface-2 border border-border rounded-xl text-left font-mono text-[11px] text-muted space-y-1">
+                <div className="p-3.5 bg-surface-2 border border-border rounded-xl text-left font-mono text-xs md:text-[11px] text-muted space-y-1">
                   <p><strong>Ref ID:</strong> {paymentSuccess.paymentId}</p>
                   <p><strong>Status:</strong> <span className="text-primary font-bold">PAID & SETTLED</span></p>
                   <p><strong>Note:</strong> {paymentSuccess.note}</p>
@@ -694,7 +694,7 @@ export function Wallet() {
                     </div>
                     <div>
                       <h3 className="text-base font-black text-text">Withdraw Earnings [Simulated Demo Payout]</h3>
-                      <p className="text-[11px] text-muted">Instant IMPS / UPI payout (Demo Simulation)</p>
+                      <p className="text-xs md:text-[11px] text-muted">Instant IMPS / UPI payout (Demo Simulation)</p>
                     </div>
                   </div>
                   <button 
@@ -729,14 +729,14 @@ export function Wallet() {
                         : `${payoutAccount.bankName} (${payoutAccount.accountNumber})`}
                     </span>
                   </div>
-                  <p className="text-[11px] text-muted">Beneficiary: {payoutAccount.accountHolderName}</p>
+                  <p className="text-xs md:text-[11px] text-muted">Beneficiary: {payoutAccount.accountHolderName}</p>
                 </div>
 
                 {/* Amount input */}
                 <div className="space-y-1.5">
                   <div className="flex justify-between items-center">
                     <label className="block text-xs font-bold text-text">Withdrawal Amount (₹ INR)</label>
-                    <span className="text-[11px] text-muted">Available: <strong className="text-primary-text font-bold">₹{totalEarned}</strong></span>
+                    <span className="text-xs md:text-[11px] text-muted">Available: <strong className="text-primary-text font-bold">₹{totalEarned}</strong></span>
                   </div>
                   <div className="flex gap-2 mb-2">
                     {[500, 1000, 2500, 5000].map(amt => (
@@ -802,7 +802,7 @@ export function Wallet() {
                     Successfully simulated transfer of <strong className="text-primary-text font-bold">₹{withdrawSuccess.amount}</strong> to your bank/UPI account.
                   </p>
                 </div>
-                <div className="p-3.5 bg-surface-2 border border-border rounded-xl text-left font-mono text-[11px] text-muted space-y-1">
+                <div className="p-3.5 bg-surface-2 border border-border rounded-xl text-left font-mono text-xs md:text-[11px] text-muted space-y-1">
                   <p><strong>Payout Ref:</strong> {withdrawSuccess.payoutId}</p>
                   <p><strong>Destination:</strong> {withdrawSuccess.account.payoutMethod === 'upi' ? withdrawSuccess.account.upiId : withdrawSuccess.account.accountNumber}</p>
                   <p><strong>Status:</strong> <span className="text-primary-text font-bold">CREDITED & SETTLED (IMPS)</span></p>
@@ -831,7 +831,7 @@ export function Wallet() {
                 </div>
                 <div>
                   <h3 className="text-base font-black text-text">Teacher Bank / UPI Details</h3>
-                  <p className="text-[11px] text-muted">Configure where you receive student payments</p>
+                  <p className="text-xs md:text-[11px] text-muted">Configure where you receive student payments</p>
                 </div>
               </div>
               <button 
@@ -887,7 +887,7 @@ export function Wallet() {
                       placeholder="e.g. yourname@okhdfcbank or 9876543210@paytm"
                       className="w-full px-3.5 py-2.5 bg-surface border border-border rounded-xl text-xs font-bold text-text focus:outline-none focus:ring-2 focus:ring-primary/20"
                     />
-                    <p className="text-[10px] text-muted">Supports Google Pay, PhonePe, Paytm, BHIM, and all bank UPI apps.</p>
+                    <p className="text-xs md:text-[10px] text-muted">Supports Google Pay, PhonePe, Paytm, BHIM, and all bank UPI apps.</p>
                   </div>
 
                   {/* Upload Custom UPI QR */}
@@ -895,7 +895,7 @@ export function Wallet() {
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-text">Official UPI QR Code</label>
                       {payoutAccount.upiQrImage && (
-                        <span className="text-[10px] font-bold text-primary-text flex items-center gap-0.5">
+                        <span className="text-xs md:text-[10px] font-bold text-primary-text flex items-center gap-0.5">
                           <span className="material-symbols-outlined text-xs">check_circle</span> Active
                         </span>
                       )}
@@ -914,7 +914,7 @@ export function Wallet() {
                             className="absolute -top-1.5 -right-1.5 bg-danger text-white rounded-full p-0.5 shadow hover:scale-110 transition-all"
                             title="Remove QR"
                           >
-                            <span className="material-symbols-outlined text-[10px]">close</span>
+                            <span className="material-symbols-outlined text-xs md:text-[10px]">close</span>
                           </button>
                         </div>
                       ) : (
@@ -937,7 +937,7 @@ export function Wallet() {
                           <span className="material-symbols-outlined text-sm">upload</span>
                           <span>{payoutAccount.upiQrImage ? 'Change QR Image' : 'Upload QR Screenshot'}</span>
                         </label>
-                        <p className="text-[10px] text-muted mt-0.5">
+                        <p className="text-xs md:text-[10px] text-muted mt-0.5">
                           Students scan this exact QR to pay for direct sessions.
                         </p>
                       </div>
@@ -951,12 +951,12 @@ export function Wallet() {
                         {payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified' ? 'verified_user' : 'badge'}
                       </span>
                       <div>
-                        <p className="font-bold text-text text-[11px]">
+                        <p className="font-bold text-text text-xs md:text-[11px]">
                           {payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified'
                             ? 'Official Teacher ID Verified'
                             : 'Official ID Pending / Unverified'}
                         </p>
-                        <p className="text-[10px] text-muted">
+                        <p className="text-xs md:text-[10px] text-muted">
                           {payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified'
                             ? 'Your credentials display a verified trust badge'
                             : 'Upload student/faculty card in Profile for trust badge'}
@@ -964,7 +964,7 @@ export function Wallet() {
                       </div>
                     </div>
                     {(payoutAccount.officialIdStatus === 'verified' || currentUser?.officialIdStatus === 'verified') && (
-                      <span className="px-1.5 py-0.5 rounded bg-primary-tint text-primary-text border border-primary/20 text-[9px] font-black uppercase">
+                      <span className="px-1.5 py-0.5 rounded bg-primary-tint text-primary-text border border-primary/20 text-xs md:text-[9px] font-black uppercase">
                         Verified
                       </span>
                     )}
@@ -1052,7 +1052,7 @@ export function Wallet() {
             <div className="text-center py-2 space-y-1">
               <p className="text-xs text-muted font-medium">{selectedReceipt.title}</p>
               <h2 className="text-3xl font-extrabold text-text">₹{selectedReceipt.amount}</h2>
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-primary-tint border border-primary/20 text-primary-text rounded-full text-[11px] font-bold">
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-primary-tint border border-primary/20 text-primary-text rounded-full text-xs md:text-[11px] font-bold">
                 <span className="material-symbols-outlined text-xs">verified</span>
                 Payment Verified & Settled
               </span>
@@ -1116,7 +1116,7 @@ export function Wallet() {
                       <p className="font-extrabold text-xs text-text truncate max-w-[200px]">{sess.title}</p>
                       <span className="font-black text-sm text-primary-text">₹{amt}</span>
                     </div>
-                    <p className="text-[11px] text-muted font-semibold mt-0.5">Teacher: {teacherName}</p>
+                    <p className="text-xs md:text-[11px] text-muted font-semibold mt-0.5">Teacher: {teacherName}</p>
                   </div>
                   <button
                     onClick={() => handlePaySessionDirect(sess)}
@@ -1145,20 +1145,20 @@ export function Wallet() {
           <div className="flex items-center gap-1 bg-surface-2 p-1 rounded-xl text-xs font-bold border border-border">
             <button
               onClick={() => setActiveTab('ALL')}
-              className={`px-3 py-1 rounded-lg transition-all ${activeTab === 'ALL' ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text'}`}
+              className={`px-3 py-1 rounded-lg transition-all min-h-[44px] sm:min-h-0 flex sm:inline-block items-center ${activeTab === 'ALL' ? 'bg-surface text-text shadow-sm' : 'text-muted hover:text-text'}`}
             >
               All ({transactions.length})
             </button>
             <button
               onClick={() => setActiveTab('EARNED')}
-              className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 ${activeTab === 'EARNED' ? 'bg-surface text-primary-text shadow-sm font-extrabold' : 'text-muted hover:text-text'}`}
+              className={`px-3 py-1 rounded-lg transition-all min-h-[44px] sm:min-h-0 flex items-center gap-1 ${activeTab === 'EARNED' ? 'bg-surface text-primary-text shadow-sm font-extrabold' : 'text-muted hover:text-text'}`}
             >
               <span className="material-symbols-outlined text-xs text-primary-text">payments</span>
               Received ({earnedList.length})
             </button>
             <button
               onClick={() => setActiveTab('SPENT')}
-              className={`px-3 py-1 rounded-lg transition-all flex items-center gap-1 ${activeTab === 'SPENT' ? 'bg-surface text-primary-text shadow-sm font-extrabold' : 'text-muted hover:text-text'}`}
+              className={`px-3 py-1 rounded-lg transition-all min-h-[44px] sm:min-h-0 flex items-center gap-1 ${activeTab === 'SPENT' ? 'bg-surface text-primary-text shadow-sm font-extrabold' : 'text-muted hover:text-text'}`}
             >
               <span className="material-symbols-outlined text-xs text-primary-text">shopping_cart</span>
               Paid ({spentList.length})
@@ -1192,14 +1192,14 @@ export function Wallet() {
                   <p className="font-bold text-xs text-text group-hover:text-primary-text transition-colors">
                     {tx.title || (tx.type === 'EARNED' ? `Mentoring Payout` : `Session Payment`)}
                   </p>
-                  <div className="flex flex-wrap items-center gap-2 text-[11px] text-muted font-medium mt-0.5">
+                  <div className="flex flex-wrap items-center gap-2 text-xs md:text-[11px] text-muted font-medium mt-0.5">
                     <span>{tx.type === 'EARNED' ? `From: ${tx.peerName}` : `To: ${tx.peerName}`}</span>
                     <span>•</span>
                     <span>{new Date(tx.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                     {tx.paymentId && (
                       <>
                         <span>•</span>
-                        <span className="font-mono text-[10px] bg-surface-2 text-muted px-1.5 py-0.5 rounded border border-border">
+                        <span className="font-mono text-xs md:text-[10px] bg-surface-2 text-muted px-1.5 py-0.5 rounded border border-border">
                           {tx.paymentId}
                         </span>
                       </>
@@ -1211,7 +1211,7 @@ export function Wallet() {
                 <p className={`font-black text-xs ${tx.type === 'EARNED' ? 'text-primary-text' : 'text-text'}`}> 
                   {tx.type === 'EARNED' ? `+₹${tx.amount}` : `-₹${tx.amount}` }
                 </p>
-                <span className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold mt-0.5 ${tx.type === 'EARNED' ? 'bg-primary-tint text-primary-text border border-primary/20' : 'bg-surface-2 text-muted border border-border'}`}>
+                <span className={`inline-block px-2 py-0.5 rounded text-xs md:text-[10px] font-bold mt-0.5 ${tx.type === 'EARNED' ? 'bg-primary-tint text-primary-text border border-primary/20' : 'bg-surface-2 text-muted border border-border'}`}>
                   {tx.type === 'EARNED' ? 'Revenue Received' : 'Paid via UPI'}
                 </span>
               </div>

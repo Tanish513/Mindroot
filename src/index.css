@@ -137,28 +137,28 @@
 
   [data-theme="dark"],
   .dark {
-    /* Mindroot Semantic Design Tokens - Dark */
-    --bg: #0A1612;
-    --surface: #11201B;
-    --surface-2: #142A26;
-    --border: #233A33;
-    --text: #E8F1EE;
-    --muted: #97ADA5;
-    --primary: #2BC48A;
-    --primary-hover: #34D399;
-    --on-primary: #04241A;
-    --primary-tint: rgba(43, 196, 138, 0.14);
-    --primary-text: #6EE7B7;
-    --accent: #FBBF24;
-    --accent-tint: rgba(251, 191, 36, 0.12);
+    /* Mindroot Semantic Design Tokens - Dark (Option A: Neutral Slate & Emerald) */
+    --bg: #090A0F;
+    --surface: #12141A;
+    --surface-2: #181B22;
+    --border: #222630;
+    --text: #F3F4F6;
+    --muted: #9CA3AF;
+    --primary: #10B981;
+    --primary-hover: #059669;
+    --on-primary: #022318;
+    --primary-tint: rgba(16, 185, 129, 0.14);
+    --primary-text: #34D399;
+    --accent: #F59E0B;
+    --accent-tint: rgba(245, 158, 11, 0.14);
     --accent-text: #FCD34D;
-    --accent-deep: #FCD34D;
-    --accent-glow: rgba(251, 191, 36, 0.40);
-    --missed-dot: #475569;
-    --missed-text: #94A3B8;
+    --accent-deep: #F59E0B;
+    --accent-glow: rgba(245, 158, 11, 0.35);
+    --missed-dot: #4B5563;
+    --missed-text: #9CA3AF;
     --danger: #F87171;
     --hero: var(--surface);
-    --shadow: none;
+    --shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5), 0 2px 6px -1px rgba(0, 0, 0, 0.3);
 
     /* Aliases & Fallbacks */
     --text-muted: var(--muted);
@@ -168,11 +168,11 @@
     --warning: var(--accent);
     --info: var(--primary);
 
-    --sidebar-bg: #142A26;
-    --sidebar-border: var(--border);
-    --sidebar-icon: #A9C9BE;
+    --sidebar-bg: #0D0E14;
+    --sidebar-border: #1F232D;
+    --sidebar-icon: #94A3B8;
     --sidebar-icon-hover: var(--primary-text);
-    --nav-hover: rgba(255, 255, 255, 0.07);
+    --nav-hover: rgba(255, 255, 255, 0.05);
     --sidebar-hover-bg: var(--nav-hover);
     --sidebar-active-bg: var(--primary-tint);
     --sidebar-active-icon: var(--primary-text);
@@ -181,59 +181,59 @@
     --sidebar-logo-tile: var(--surface);
 
     /* Legacy RGB Fallbacks for backward compatibility */
-    --color-primary: 43 196 138;
-    --color-primary-hover: 110 231 183;
-    --color-primary-active: 167 243 208;
-    --color-primary-container: 17 32 27;
-    --color-on-primary: 4 36 26;
-    --color-on-primary-container: 110 231 183;
+    --color-primary: 16 185 129;
+    --color-primary-hover: 5 150 105;
+    --color-primary-active: 4 120 87;
+    --color-primary-container: 18 20 26;
+    --color-on-primary: 2 35 24;
+    --color-on-primary-container: 52 211 153;
 
-    --color-secondary: 151 173 165;
-    --color-secondary-hover: 232 241 238;
-    --color-secondary-container: 23 42 36;
-    --color-on-secondary: 232 241 238;
-    --color-on-secondary-container: 232 241 238;
+    --color-secondary: 156 163 175;
+    --color-secondary-hover: 243 244 246;
+    --color-secondary-container: 24 27 34;
+    --color-on-secondary: 243 244 246;
+    --color-on-secondary-container: 243 244 246;
 
-    --color-background: 10 22 18;
-    --color-surface: 17 32 27;
-    --color-surface-bright: 23 42 36;
-    --color-surface-container-lowest: 10 22 18;
-    --color-surface-container-low: 17 32 27;
-    --color-surface-container: 23 42 36;
-    --color-surface-container-high: 35 58 51;
-    --color-surface-container-highest: 45 74 65;
-    --color-on-background: 232 241 238;
-    --color-on-surface: 232 241 238;
-    --color-on-surface-variant: 151 173 165;
-    --color-outline: 35 58 51;
-    --color-outline-variant: 35 58 51;
-    --color-neutral-subtle: 151 173 165;
-    --color-neutral-muted: 151 173 165;
-    --color-neutral-dark: 232 241 238;
+    --color-background: 9 10 15;
+    --color-surface: 18 20 26;
+    --color-surface-bright: 24 27 34;
+    --color-surface-container-lowest: 9 10 15;
+    --color-surface-container-low: 18 20 26;
+    --color-surface-container: 24 27 34;
+    --color-surface-container-high: 34 38 48;
+    --color-surface-container-highest: 45 50 62;
+    --color-on-background: 243 244 246;
+    --color-on-surface: 243 244 246;
+    --color-on-surface-variant: 156 163 175;
+    --color-outline: 34 38 48;
+    --color-outline-variant: 34 38 48;
+    --color-neutral-subtle: 156 163 175;
+    --color-neutral-muted: 156 163 175;
+    --color-neutral-dark: 243 244 246;
 
-    --color-teaching-emerald: 43 196 138;
-    --color-teaching-emerald-hover: 110 231 183;
-    --color-teaching-emerald-container: 17 32 27;
-    --color-on-teaching-emerald: 4 36 26;
-    --color-on-teaching-emerald-container: 110 231 183;
+    --color-teaching-emerald: 16 185 129;
+    --color-teaching-emerald-hover: 5 150 105;
+    --color-teaching-emerald-container: 18 20 26;
+    --color-on-teaching-emerald: 2 35 24;
+    --color-on-teaching-emerald-container: 52 211 153;
 
-    --color-learning-amber: 251 191 36;
-    --color-learning-amber-hover: 252 211 77;
-    --color-learning-amber-container: 40 32 15;
-    --color-on-learning-amber: 30 20 5;
+    --color-learning-amber: 245 158 11;
+    --color-learning-amber-hover: 217 119 6;
+    --color-learning-amber-container: 45 35 15;
+    --color-on-learning-amber: 40 25 5;
     --color-on-learning-amber-container: 252 211 77;
 
-    --color-electric-cyan: 43 196 138;
-    --color-electric-cyan-container: 17 32 27;
-    --color-on-electric-cyan-container: 110 231 183;
+    --color-electric-cyan: 16 185 129;
+    --color-electric-cyan-container: 18 20 26;
+    --color-on-electric-cyan-container: 52 211 153;
 
-    --color-trust-purple: 43 196 138;
-    --color-trust-purple-container: 17 32 27;
-    --color-on-trust-purple-container: 110 231 183;
+    --color-trust-purple: 16 185 129;
+    --color-trust-purple-container: 18 20 26;
+    --color-on-trust-purple-container: 52 211 153;
 
-    --color-sky-blue: 43 196 138;
-    --color-sky-blue-container: 17 32 27;
-    --color-on-sky-blue-container: 110 231 183;
+    --color-sky-blue: 16 185 129;
+    --color-sky-blue-container: 18 20 26;
+    --color-on-sky-blue-container: 52 211 153;
 
     --color-alert-rose: 248 113 113;
     --color-alert-rose-hover: 252 165 165;
@@ -247,15 +247,15 @@
     --color-on-error: 45 10 10;
     --color-on-error-container: 248 113 113;
 
-    --shadow-elevation-1: none;
-    --shadow-elevation-2: none;
-    --shadow-elevation-3: none;
-    --shadow-lifted: none;
-    --shadow-lifted-hover: none;
+    --shadow-elevation-1: 0 2px 8px -1px rgba(0, 0, 0, 0.4);
+    --shadow-elevation-2: 0 6px 20px -2px rgba(0, 0, 0, 0.5);
+    --shadow-elevation-3: 0 12px 36px -4px rgba(0, 0, 0, 0.6);
+    --shadow-lifted: 0 10px 25px -3px rgba(0, 0, 0, 0.5);
+    --shadow-lifted-hover: 0 16px 32px -4px rgba(0, 0, 0, 0.6);
 
-    --scrollbar-track: 17 32 27;
-    --scrollbar-thumb: 35 58 51;
-    --scrollbar-thumb-hover: 60 90 80;
+    --scrollbar-track: 9 10 15;
+    --scrollbar-thumb: 34 38 48;
+    --scrollbar-thumb-hover: 50 56 70;
 
     --color-sidebar-bg: var(--sidebar-bg);
     --color-sidebar-border: var(--sidebar-border);
@@ -299,6 +299,40 @@
   textarea::placeholder {
     color: var(--text-muted);
   }
+
+  [data-theme="dark"] input,
+  [data-theme="dark"] textarea,
+  [data-theme="dark"] select,
+  .dark input,
+  .dark textarea,
+  .dark select {
+    background-color: #0E0F14;
+    color: var(--text);
+    border-color: #222630;
+  }
+
+  [data-theme="dark"] input::placeholder,
+  [data-theme="dark"] textarea::placeholder,
+  .dark input::placeholder,
+  .dark textarea::placeholder {
+    color: #64748B;
+  }
+
+  [data-theme="dark"] input:focus,
+  [data-theme="dark"] textarea:focus,
+  [data-theme="dark"] select:focus,
+  .dark input:focus,
+  .dark textarea:focus,
+  .dark select:focus {
+    border-color: #10B981;
+    box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+  }
+
+  /* Prevent broken avatar images from spilling text */
+  img {
+    color: transparent;
+  }
+
 }
 
 @layer utilities {

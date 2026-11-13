@@ -11,11 +11,11 @@ export const Card = forwardRef<HTMLDivElement, CardProps>(
   ({ children, className, variant = 'default', hoverable = false, onClick, ...props }, ref) => {
     const isInteractive = hoverable || variant === 'interactive' || Boolean(onClick);
 
-    const baseStyles = "rounded-2xl transition-all duration-200 border";
+    const baseStyles = "rounded-2xl transition-all duration-200 border dark:shadow-[0_4px_20px_-2px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)]";
     
     const variantStyles = {
       default: "bg-surface border-border shadow-elevation-1",
-      interactive: "bg-surface border-border shadow-elevation-1 hover:border-primary/40 hover:shadow-elevation-2 cursor-pointer",
+      interactive: "bg-surface border-border shadow-elevation-1 hover:border-primary/50 hover:shadow-elevation-2 cursor-pointer dark:hover:shadow-[0_8px_25px_-4px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.07)]",
       outlined: "bg-surface border-border",
       subtle: "bg-surface-2/60 border-border/60"
     };

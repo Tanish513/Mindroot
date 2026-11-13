@@ -19,7 +19,91 @@ const safeUUID = () => {
 
 type Workspace = 'whiteboard' | 'notes' | 'code' | 'screenshare' | 'none';
 type ChatMessage = { id: string; sender: string; text: string; role?: string; own?: boolean };
-type DrawingTool = 'pen' | 'highlighter' | 'eraser' | 'line' | 'arrow' | 'rect' | 'circle';
+export type DrawingTool = 'pen' | 'highlighter' | 'eraser' | 'stroke_eraser' | 'line' | 'arrow' | 'rect' | 'circle';
+
+export type FreehandStroke = {
+  id: string;
+  tool: 'pen' | 'highlighter';
+  color: string;
+  width: number;
+  points: { x: number; y: number }[];
+};
+
+export type ShapeStroke = {
+  id: string;
+  tool: 'line' | 'arrow' | 'rect' | 'circle';
+  color: string;
+  width: number;
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+};
+
+export type WhiteboardStroke = FreehandStroke | ShapeStroke;
+
+function distToSegmentSquared(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  if (l2 === 0) {
+    const dpx = px - x1;
+    const dpy = py - y1;
+    return dpx * dpx + dpy * dpy;
+  }
+  let t = ((px - x1) * dx + (py - y1) * dy) / l2;
+  t = Math.max(0, Math.min(1, t));
+  const projX = x1 + t * dx;
+  const projY = y1 + t * dy;
+  const diffX = px - projX;
+  const diffY = py - projY;
+  return diffX * diffX + diffY * diffY;
+}
+
+function isStrokeHit(stroke: WhiteboardStroke, px: number, py: number, baseThreshold: number): boolean {
+  const threshold = baseThreshold + stroke.width / 2;
+  const threshSq = threshold * threshold;
+
+  if (stroke.tool === 'pen' || stroke.tool === 'highlighter') {
+    const pts = stroke.points;
+    if (pts.length === 0) return false;
+    if (pts.length === 1) {
+      const d2 = (px - pts[0].x) * (px - pts[0].x) + (py - pts[0].y) * (py - pts[0].y);
+      return d2 <= threshSq;
+    }
+    for (let i = 0; i < pts.length - 1; i++) {
+      if (distToSegmentSquared(px, py, pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y) <= threshSq) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  if (stroke.tool === 'line' || stroke.tool === 'arrow') {
+    return distToSegmentSquared(px, py, stroke.startX, stroke.startY, stroke.endX, stroke.endY) <= threshSq;
+  }
+
+  if (stroke.tool === 'rect') {
+    const minX = Math.min(stroke.startX, stroke.endX);
+    const maxX = Math.max(stroke.startX, stroke.endX);
+    const minY = Math.min(stroke.startY, stroke.endY);
+    const maxY = Math.max(stroke.startY, stroke.endY);
+
+    if (distToSegmentSquared(px, py, minX, minY, maxX, minY) <= threshSq) return true;
+    if (distToSegmentSquared(px, py, maxX, minY, maxX, maxY) <= threshSq) return true;
+    if (distToSegmentSquared(px, py, maxX, maxY, minX, maxY) <= threshSq) return true;
+    if (distToSegmentSquared(px, py, minX, maxY, minX, minY) <= threshSq) return true;
+    return false;
+  }
+
+  if (stroke.tool === 'circle') {
+    const r = Math.hypot(stroke.endX - stroke.startX, stroke.endY - stroke.startY);
+    const d = Math.hypot(px - stroke.startX, py - stroke.startY);
+    return Math.abs(d - r) <= threshold;
+  }
+
+  return false;
+}
 
 export type Participant = {
   id: string;
@@ -124,7 +208,7 @@ export function LiveRoom() {
   const [isPeerScreenSharing, setIsPeerScreenSharing] = useState(false);
   const [sharerName, setSharerName] = useState('');
   const [raisedHand, setRaisedHand] = useState(false);
-  const [chatOpen, setChatOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(() => typeof window !== 'undefined' ? window.innerWidth >= 1024 : true);
   const [chatText, setChatText] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -186,7 +270,7 @@ export function LiveRoom() {
   };
 
   // Whiteboard drawing tools
-  const [drawColor, setDrawColor] = useState('#2563eb');
+  const [drawColor, setDrawColor] = useState('#FFFFFF');
   const [drawWidth, setDrawWidth] = useState(4);
   const [drawingTool, setDrawingTool] = useState<DrawingTool>('pen');
 
@@ -615,6 +699,123 @@ export function LiveRoom() {
       context.stroke(); 
     }
     context.restore();
+  }, []);
+
+  const strokesRef = useRef<WhiteboardStroke[]>([]);
+  const currentStrokeRef = useRef<FreehandStroke | null>(null);
+  const strokeHistoryRef = useRef<WhiteboardStroke[][]>([[]]);
+  const strokeRedoHistoryRef = useRef<WhiteboardStroke[][]>([]);
+  const hasErasedStrokesRef = useRef<boolean>(false);
+
+  const redrawWhiteboardCanvas = useCallback(() => {
+    const c = canvas.current;
+    if (!c) return;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, c.width, c.height);
+
+    for (const s of strokesRef.current) {
+      ctx.save();
+      if (s.tool === 'highlighter') {
+        ctx.globalAlpha = 0.35;
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width * 3;
+        ctx.lineCap = 'square';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        for (let i = 0; i < s.points.length; i++) {
+          if (i === 0) ctx.moveTo(s.points[i].x, s.points[i].y);
+          else ctx.lineTo(s.points[i].x, s.points[i].y);
+        }
+        ctx.stroke();
+      } else if (s.tool === 'pen') {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        for (let i = 0; i < s.points.length; i++) {
+          if (i === 0) ctx.moveTo(s.points[i].x, s.points[i].y);
+          else ctx.lineTo(s.points[i].x, s.points[i].y);
+        }
+        ctx.stroke();
+      } else if (s.tool === 'line') {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(s.startX, s.startY);
+        ctx.lineTo(s.endX, s.endY);
+        ctx.stroke();
+      } else if (s.tool === 'arrow') {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(s.startX, s.startY);
+        ctx.lineTo(s.endX, s.endY);
+        const headLen = Math.max(12, s.width * 3);
+        const angle = Math.atan2(s.endY - s.startY, s.endX - s.startX);
+        ctx.lineTo(s.endX - headLen * Math.cos(angle - Math.PI / 6), s.endY - headLen * Math.sin(angle - Math.PI / 6));
+        ctx.moveTo(s.endX, s.endY);
+        ctx.lineTo(s.endX - headLen * Math.cos(angle + Math.PI / 6), s.endY - headLen * Math.sin(angle + Math.PI / 6));
+        ctx.stroke();
+      } else if (s.tool === 'rect') {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.strokeRect(s.startX, s.startY, s.endX - s.startX, s.endY - s.startY);
+      } else if (s.tool === 'circle') {
+        ctx.strokeStyle = s.color;
+        ctx.lineWidth = s.width;
+        ctx.beginPath();
+        const r = Math.hypot(s.endX - s.startX, s.endY - s.startY);
+        ctx.arc(s.startX, s.startY, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }, []);
+
+  const eraseStrokeAtPoint = useCallback((x: number, y: number) => {
+    if (strokesRef.current.length === 0) return;
+    const hitThreshold = Math.max(16, drawWidth * 3);
+    const initialCount = strokesRef.current.length;
+
+    const remaining = strokesRef.current.filter(stroke => !isStrokeHit(stroke, x, y, hitThreshold));
+    if (remaining.length !== initialCount) {
+      strokesRef.current = remaining;
+      hasErasedStrokesRef.current = true;
+      redrawWhiteboardCanvas();
+    }
+  }, [drawWidth, redrawWhiteboardCanvas]);
+
+  const commitStrokeState = useCallback(() => {
+    strokeHistoryRef.current.push(JSON.parse(JSON.stringify(strokesRef.current)));
+    if (strokeHistoryRef.current.length > 30) {
+      strokeHistoryRef.current.shift();
+    }
+    strokeRedoHistoryRef.current = [];
+  }, []);
+
+  const handleWhiteboardUndo = useCallback(() => {
+    if (strokeHistoryRef.current.length > 1) {
+      const current = strokeHistoryRef.current.pop();
+      if (current) {
+        strokeRedoHistoryRef.current.push(current);
+      }
+      const prev = strokeHistoryRef.current[strokeHistoryRef.current.length - 1] || [];
+      strokesRef.current = JSON.parse(JSON.stringify(prev));
+    }
+  }, []);
+
+  const handleWhiteboardRedo = useCallback(() => {
+    if (strokeRedoHistoryRef.current.length > 0) {
+      const next = strokeRedoHistoryRef.current.pop();
+      if (next) {
+        strokeHistoryRef.current.push(next);
+        strokesRef.current = JSON.parse(JSON.stringify(next));
+      }
+    }
   }, []);
 
   // Canvas stroke batching (~80ms throttle to strictly stay below the 30 events/sec socket limit)
@@ -1726,17 +1927,35 @@ export function LiveRoom() {
   };
   
   const canvasPosition = (event: React.PointerEvent<HTMLCanvasElement>) => { 
-    const rect = event.currentTarget.getBoundingClientRect(); 
+    const c = canvas.current || event.currentTarget;
+    const rect = c.getBoundingClientRect(); 
     return { 
-      x: ((event.clientX - rect.left) / rect.width) * event.currentTarget.width, 
-      y: ((event.clientY - rect.top) / rect.height) * event.currentTarget.height 
+      x: ((event.clientX - rect.left) / (rect.width || 1)) * c.width, 
+      y: ((event.clientY - rect.top) / (rect.height || 1)) * c.height 
     }; 
   };
   
   const beginDraw = (event: React.PointerEvent<HTMLCanvasElement>) => { 
     const p = canvasPosition(event); 
     drawing.current = { active: true, x: p.x, y: p.y, startX: p.x, startY: p.y }; 
-    event.currentTarget.setPointerCapture(event.pointerId); 
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId); 
+    } catch {}
+
+    if (drawingTool === 'stroke_eraser') {
+      eraseStrokeAtPoint(p.x, p.y);
+      return;
+    }
+
+    if (drawingTool === 'pen' || drawingTool === 'highlighter') {
+      currentStrokeRef.current = {
+        id: `stroke-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        tool: drawingTool,
+        color: drawColor,
+        width: drawWidth,
+        points: [{ x: p.x, y: p.y }]
+      };
+    }
 
     const ctx = canvas.current?.getContext('2d');
     if (ctx && canvas.current) {
@@ -1748,12 +1967,23 @@ export function LiveRoom() {
     if (!drawing.current.active) return; 
     const p = canvasPosition(event); 
     const previous = drawing.current; 
+
+    if (drawingTool === 'stroke_eraser') {
+      eraseStrokeAtPoint(p.x, p.y);
+      drawing.current.x = p.x;
+      drawing.current.y = p.y;
+      return;
+    }
+
     const strokeColor = drawingTool === 'eraser' ? '#ffffff' : drawColor;
     const strokeWidth = drawWidth;
 
     if (drawingTool === 'pen' || drawingTool === 'highlighter' || drawingTool === 'eraser') {
       drawLine(p.x, p.y, previous.x, previous.y, strokeColor, strokeWidth, drawingTool); 
       queueStrokePoint({ x: p.x, y: p.y, prevX: previous.x, prevY: previous.y, color: strokeColor, width: strokeWidth, tool: drawingTool }); 
+      if (currentStrokeRef.current && (drawingTool === 'pen' || drawingTool === 'highlighter')) {
+        currentStrokeRef.current.points.push({ x: p.x, y: p.y });
+      }
       drawing.current.x = p.x;
       drawing.current.y = p.y;
     } else {
@@ -1788,6 +2018,8 @@ export function LiveRoom() {
         }
         ctx.stroke();
       }
+      drawing.current.x = p.x;
+      drawing.current.y = p.y;
     }
   };
 
@@ -1795,6 +2027,38 @@ export function LiveRoom() {
     if (drawing.current.active) {
       drawing.current.active = false;
       flushStrokeBuffer();
+
+      if (drawingTool === 'stroke_eraser') {
+        if (hasErasedStrokesRef.current) {
+          hasErasedStrokesRef.current = false;
+          commitStrokeState();
+          const dataUrl = canvas.current?.toDataURL();
+          if (dataUrl) {
+            emitRoomEvent({ type: 'canvas-image', dataUrl });
+          }
+        }
+        return;
+      }
+
+      if (currentStrokeRef.current && currentStrokeRef.current.points.length > 0) {
+        strokesRef.current.push(currentStrokeRef.current);
+        currentStrokeRef.current = null;
+        commitStrokeState();
+      } else if (['line', 'arrow', 'rect', 'circle'].includes(drawingTool)) {
+        const p = drawing.current;
+        strokesRef.current.push({
+          id: `shape-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+          tool: drawingTool as 'line' | 'arrow' | 'rect' | 'circle',
+          color: drawColor,
+          width: drawWidth,
+          startX: p.startX,
+          startY: p.startY,
+          endX: p.x,
+          endY: p.y
+        });
+        commitStrokeState();
+      }
+
       const dataUrl = canvas.current?.toDataURL();
       if (dataUrl) {
         emitRoomEvent({ type: 'canvas-image', dataUrl });
@@ -1914,7 +2178,14 @@ export function LiveRoom() {
     }
   };
 
-  const clearBoard = () => { canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height); emitRoomEvent({ type: 'canvas-clear' }); };
+  const clearBoard = () => {
+    strokesRef.current = [];
+    currentStrokeRef.current = null;
+    strokeHistoryRef.current = [[]];
+    strokeRedoHistoryRef.current = [];
+    canvas.current?.getContext('2d')?.clearRect(0, 0, canvas.current.width, canvas.current.height);
+    emitRoomEvent({ type: 'canvas-clear' });
+  };
 
   if (isKickedFromRoom) {
     return (
@@ -2095,7 +2366,7 @@ export function LiveRoom() {
   const isDevOrDemo = Boolean(demoMode || currentUser?.role === 'admin');
 
   return (
-    <div className="flex flex-col h-[calc(100dvh-5.5rem)] md:h-[calc(100dvh-8rem)] max-h-full w-full max-w-[1600px] mx-auto overflow-hidden rounded-2xl sm:rounded-3xl bg-background border border-border shadow-elevation-2 text-text p-2 sm:p-3 relative transition-all duration-300 select-none min-h-0">
+    <div className="flex flex-col h-[calc(100dvh-5.5rem)] md:h-[calc(100dvh-8rem)] max-h-full w-full max-w-[1600px] mx-auto overflow-hidden rounded-2xl sm:rounded-3xl bg-[#0F1020] border border-white/[0.07] shadow-2xl text-[#ECEBFA] p-2 sm:p-3 relative transition-all duration-200 select-none min-h-0">
       {/* Remote Audio Track Elements for all connected mesh peers */}
       {remoteParticipants.map(participant => (
         <RemoteAudioElement key={participant.id} stream={participant.stream} onUnlockAudio={unlockAudio} />
@@ -2104,69 +2375,69 @@ export function LiveRoom() {
       {autoplayBlocked && (
         <div 
           onClick={unlockAudio}
-          className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-surface-2 text-text px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 cursor-pointer animate-pulse border border-border"
+          className="absolute top-3 left-1/2 -translate-x-1/2 z-50 bg-[#171830] text-[#ECEBFA] px-4 py-2 rounded-xl shadow-xl font-medium text-xs flex items-center gap-2 cursor-pointer animate-pulse border border-white/[0.07]"
         >
-          <span className="material-symbols-outlined text-base text-accent">volume_up</span>
+          <span className="material-symbols-outlined text-base text-amber-400">volume_up</span>
           <span>Click anywhere to enable live cohort audio</span>
         </div>
       )}
 
       {isReconnecting && (
-        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-accent-tint text-accent-text px-4 py-2 rounded-xl shadow-elevation-3 font-extrabold text-xs flex items-center gap-2 border border-accent/20 animate-pulse">
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-50 bg-amber-500/15 text-amber-300 px-4 py-2 rounded-xl shadow-xl font-medium text-xs flex items-center gap-2 border border-amber-500/30 animate-pulse">
           <span className="material-symbols-outlined text-base animate-spin">sync</span>
           <span>Connection lost — reconnecting...</span>
         </div>
       )}
 
       {hostDisconnectNotice && (
-        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 text-xs font-bold text-amber-800 dark:text-amber-200 flex items-center justify-center gap-2 animate-pulse shrink-0 z-30" data-testid="host-disconnect-banner">
-          <span className="material-symbols-outlined text-sm text-amber-600">wifi_off</span>
+        <div className="w-full bg-amber-500/15 border-b border-amber-500/30 px-4 py-2 text-xs font-semibold text-amber-300 flex items-center justify-center gap-2 animate-pulse shrink-0 z-30" data-testid="host-disconnect-banner">
+          <span className="material-symbols-outlined text-sm text-amber-400">wifi_off</span>
           <span>{hostDisconnectNotice}</span>
         </div>
       )}
 
       <div className="relative flex h-full flex-col gap-2 min-h-0">
         {/* Top Header Bar */}
-        <header className="flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-xs shrink-0 text-text">
+        <header className="flex items-center justify-between gap-2 rounded-2xl border border-white/[0.07] bg-[#171830] px-3 py-2 shadow-xs shrink-0 text-[#ECEBFA]">
           <div className="flex items-center gap-2.5 min-w-0">
-            <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary shadow-xs shrink-0">
+            <span className="grid h-8 w-8 place-items-center rounded-xl bg-[#10B981] text-white shadow-xs shrink-0">
               <span className="material-symbols-outlined text-lg">groups</span>
             </span>
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-xs sm:text-sm font-black text-text truncate">
+                <h1 className="text-xs sm:text-sm font-semibold text-[#ECEBFA] truncate">
                   {roomId === 'practice' ? 'Practice Room (Device Check)' : (currentSession?.title || (batchCapacity > 1 ? `${batchCapacity}-Student Batch Studio` : 'Live Mentoring Studio'))}
                 </h1>
                 {roomId === 'practice' ? (
-                  <span className="px-2 py-0.5 bg-accent-tint text-accent-text border border-accent/30 rounded-full text-[10px] font-black uppercase shrink-0">
+                  <span className="px-2 py-0.5 bg-[#202244] text-[#A5A3C7] border border-white/[0.07] rounded-full text-[10px] font-medium uppercase tracking-wider shrink-0">
                     Practice Room
                   </span>
                 ) : (
-                  <span className="px-2 py-0.5 bg-primary-tint text-primary-text border border-primary/20 rounded-full text-[10px] font-black uppercase shrink-0">
+                  <span className="px-2 py-0.5 bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/25 rounded-full text-[10px] font-semibold uppercase tracking-wider shrink-0">
                     {batchCapacity > 1 ? `${batchCapacity}-Student Batch` : '1-on-1'}
                   </span>
                 )}
               </div>
               <div className="flex items-center gap-2 mt-0.5">
-                <p className="text-xs text-muted font-medium truncate">
-                  Room: <span className="text-text font-bold">{roomId.slice(0, 16)}</span> · <span className="text-primary font-bold">● {totalParticipantsCount} Live</span>
+                <p className="text-xs text-[#A5A3C7] font-normal truncate">
+                  Room: <span className="text-[#ECEBFA] font-medium">{roomId.slice(0, 16)}</span> · <span className="text-[#10B981] font-medium">● {totalParticipantsCount} Live</span>
                 </p>
               </div>
             </div>
           </div>
 
           {/* Center View Switcher Segmented Control */}
-          <div className="flex items-center bg-surface-2 p-1 rounded-xl border border-border" role="group" aria-label="Room view mode">
+          <div className="flex items-center bg-[#202244] p-1 rounded-xl border border-white/[0.07]" role="group" aria-label="Room view mode">
             <button
               onClick={() => {
                 if (isFullscreenWorkspace) toggleFullscreenMode(false);
                 setViewMode('studio');
               }}
               className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
                 viewMode === 'studio' && !isFullscreenWorkspace
-                  ? "bg-surface text-primary shadow-xs border border-border"
-                  : "text-muted hover:text-text"
+                  ? "bg-[#10B981] text-white shadow-xs"
+                  : "text-[#A5A3C7] hover:text-[#ECEBFA]"
               )}
               aria-label="Studio View"
               title="Studio View (Whiteboard + Video Strip)"
@@ -2181,13 +2452,13 @@ export function LiveRoom() {
                 setViewMode('gallery');
               }}
               className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
                 viewMode === 'gallery' && !isFullscreenWorkspace
-                  ? "bg-surface text-primary shadow-xs border border-border"
-                  : "text-muted hover:text-text"
+                  ? "bg-[#10B981] text-white shadow-xs"
+                  : "text-[#A5A3C7] hover:text-[#ECEBFA]"
               )}
               aria-label="Gallery View"
-              title="Gallery Grid View (2x2 All Cameras)"
+              title="Gallery Grid View (All Cameras)"
             >
               <span className="material-symbols-outlined text-[15px]">grid_view</span>
               <span className="hidden sm:inline">Gallery</span>
@@ -2196,10 +2467,10 @@ export function LiveRoom() {
             <button
               onClick={() => toggleFullscreenMode(!isFullscreenWorkspace)}
               className={clsx(
-                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                "flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
                 isFullscreenWorkspace
-                  ? "bg-surface text-primary shadow-xs border border-border"
-                  : "text-muted hover:text-text"
+                  ? "bg-[#10B981] text-white shadow-xs"
+                  : "text-[#A5A3C7] hover:text-[#ECEBFA]"
               )}
               aria-label={isFullscreenWorkspace ? "Exit Fullscreen" : "Fullscreen View"}
               title={isFullscreenWorkspace ? "Exit Fullscreen" : "Fullscreen Focus Mode"}
@@ -2217,8 +2488,8 @@ export function LiveRoom() {
                 <button
                   onClick={() => setShowDevOverflow(v => !v)}
                   className={clsx(
-                    "grid h-8 w-8 place-items-center rounded-xl border border-border transition-all focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
-                    showDevOverflow ? "bg-surface-2 text-primary" : "bg-surface text-muted hover:text-text hover:bg-surface-2"
+                    "grid h-8 w-8 place-items-center rounded-xl border border-white/[0.07] transition-all duration-200 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                    showDevOverflow ? "bg-[#202244] text-[#10B981]" : "bg-[#202244] text-[#A5A3C7] hover:text-[#ECEBFA]"
                   )}
                   title="Developer & Demo Controls"
                   aria-label="Developer and Demo controls"
@@ -2229,8 +2500,8 @@ export function LiveRoom() {
                 {showDevOverflow && (
                   <>
                     <div className="fixed inset-0 z-40" onClick={() => setShowDevOverflow(false)} />
-                    <div className="absolute right-0 top-10 z-50 w-64 rounded-2xl border border-border bg-surface p-2.5 text-text shadow-elevation-3 animate-in fade-in slide-in-from-top-2 duration-150 space-y-2">
-                      <div className="text-[11px] font-bold text-muted px-1 uppercase tracking-wider">
+                    <div className="absolute right-0 top-10 z-50 w-64 rounded-2xl border border-white/[0.07] bg-[#171830] p-2.5 text-[#ECEBFA] shadow-2xl animate-in fade-in slide-in-from-top-2 duration-150 space-y-2">
+                      <div className="text-[11px] font-semibold text-[#A5A3C7] px-1 uppercase tracking-wider">
                         Dev & Demo Controls
                       </div>
 
@@ -2238,12 +2509,12 @@ export function LiveRoom() {
                       <div 
                         title="WebRTC ICE Connection Status"
                         className={clsx(
-                          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-bold border shadow-2xs transition-all",
-                          iceDiagnostic === 'Direct P2P' && "bg-primary-tint text-primary-text border-primary/30",
-                          iceDiagnostic === 'TURNS Relay 443' && "bg-sky-500/10 text-sky-400 border-sky-500/30",
-                          iceDiagnostic === 'Connecting...' && "bg-accent-tint text-accent-text border-accent/30 animate-pulse",
-                          iceDiagnostic === 'Connection Failed' && "bg-danger/10 text-danger border-danger/30",
-                          iceDiagnostic === 'SIMULATED PLAYBACK (DEMO)' && "bg-accent-tint text-accent-text border-accent/30"
+                          "flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium border shadow-2xs transition-all",
+                          iceDiagnostic === 'Direct P2P' && "bg-[#10B981]/15 text-[#10B981] border-[#10B981]/30",
+                          iceDiagnostic === 'TURNS Relay 443' && "bg-sky-500/15 text-sky-400 border-sky-500/30",
+                          iceDiagnostic === 'Connecting...' && "bg-amber-500/15 text-amber-300 border-amber-500/30 animate-pulse",
+                          iceDiagnostic === 'Connection Failed' && "bg-red-500/15 text-red-400 border-red-500/30",
+                          iceDiagnostic === 'SIMULATED PLAYBACK (DEMO)' && "bg-amber-500/15 text-amber-300 border-amber-500/30"
                         )}
                       >
                         <span className="h-2 w-2 rounded-full shrink-0 bg-current animate-pulse" />
@@ -2257,7 +2528,7 @@ export function LiveRoom() {
                             addSimulatedBatchStudents(remoteParticipants.length === 0 ? 3 : 3 - remoteParticipants.length);
                             setShowDevOverflow(false);
                           }}
-                          className="w-full flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold bg-primary-tint text-primary-text border border-primary/20 hover:bg-primary-tint/80 transition-all cursor-pointer"
+                          className="w-full flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-semibold bg-[#10B981] text-white hover:bg-[#10B981]/90 transition-all cursor-pointer"
                           title="Simulate 3 students joining for testing"
                         >
                           <span className="material-symbols-outlined text-sm">group_add</span>
@@ -2269,7 +2540,7 @@ export function LiveRoom() {
                             clearSimulatedStudents();
                             setShowDevOverflow(false);
                           }}
-                          className="w-full flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-bold bg-surface-2 text-text hover:bg-surface-2/80 border border-border transition-all cursor-pointer"
+                          className="w-full flex items-center justify-center gap-1.5 rounded-xl px-2.5 py-1.5 text-xs font-medium bg-[#202244] text-[#ECEBFA] hover:bg-[#202244]/80 border border-white/[0.07] transition-all cursor-pointer"
                         >
                           <span className="material-symbols-outlined text-sm">close</span>
                           <span>Clear Sims</span>
@@ -2283,7 +2554,7 @@ export function LiveRoom() {
 
             <button
               onClick={handleCopyLink}
-              className="flex items-center gap-1 rounded-xl bg-surface-2 hover:bg-surface-2/80 text-text px-2.5 py-1.5 text-xs font-bold border border-border transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer"
+              className="flex items-center gap-1 rounded-xl bg-[#202244] hover:bg-[#202244]/80 text-[#ECEBFA] px-2.5 py-1.5 text-xs font-medium border border-white/[0.07] transition-all duration-200 active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer"
               aria-label="Invite link"
               title="Copy Room Invitation Link"
             >
@@ -2317,18 +2588,11 @@ export function LiveRoom() {
             onKickParticipant={(p) => setKickConfirmTarget({ id: p.id, name: p.name, peerId: p.id })}
           />
         ) : (
-          /* STUDIO VIEW: Compact Video Strip (~120-140px) + Main Workspace + Responsive Sidebar */
+          /* STUDIO VIEW: Compact Video Filmstrip (100-120px) + Main Workspace (~70%) + Responsive Sidebar */
           <section className="grid min-h-0 flex-1 gap-2 sm:gap-2.5 lg:grid-cols-[minmax(0,1fr)_320px] overflow-hidden min-w-0">
-            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden gap-2 sm:gap-2.5 transition-all duration-300">
-              {/* Compact Video Strip: ~120-140px high */}
-              <div className={clsx(
-                "grid gap-2 sm:gap-2.5 w-full shrink-0 h-32 sm:h-36 transition-all duration-300",
-                totalParticipantsCount === 1 ? 'grid-cols-1 sm:grid-cols-2' :
-                totalParticipantsCount === 2 ? 'grid-cols-2' :
-                totalParticipantsCount === 3 ? 'grid-cols-1 sm:grid-cols-3' :
-                totalParticipantsCount === 4 ? 'grid-cols-2 sm:grid-cols-4' :
-                'grid-cols-2 sm:grid-cols-3 md:grid-cols-6'
-              )}>
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden gap-2 sm:gap-2.5 transition-all duration-200">
+              {/* Compact Video Filmstrip: 100-120px high */}
+              <div className="flex items-center gap-2 overflow-x-auto custom-scrollbar shrink-0 w-full py-0.5 h-[112px]">
                 {/* Local Participant Card */}
                 <VideoTile 
                   stream={localStream} 
@@ -2339,11 +2603,11 @@ export function LiveRoom() {
                   raised={raisedHand} 
                   cameraOff={!cameraOn} 
                   micOff={!micOn}
-                  accent={isTeacher ? "bg-primary" : "bg-accent"}
+                  accent={isTeacher ? "bg-[#10B981]" : "bg-[#202244]"}
                   onSwitchCamera={cycleNextCamera}
                   hasMultipleCameras={videoDevices.length > 1}
                   isHardware={hardwareInfo.cam}
-                  className="h-full w-full"
+                  className="h-[104px] w-[160px] shrink-0"
                 />
 
                 {/* Remote Participants Cards (Max 3 Video Mesh Streams) */}
@@ -2357,11 +2621,11 @@ export function LiveRoom() {
                     waiting={false} 
                     raised={participant.handRaised} 
                     isSimulated={participant.isSimulated}
-                    accent={participant.role === 'teacher' ? "bg-primary" : "bg-accent"} 
+                    accent={participant.role === 'teacher' ? "bg-[#10B981]" : "bg-[#202244]"} 
                     isRemote
                     onUnlockAudio={unlockAudio}
                     onKick={isTeacher && participant.role !== 'teacher' ? () => setKickConfirmTarget({ id: participant.id, name: participant.name, peerId: participant.id }) : undefined}
-                    className="h-full w-full"
+                    className="h-[104px] w-[160px] shrink-0"
                   />
                 ))}
 
@@ -2369,57 +2633,41 @@ export function LiveRoom() {
                 {overflowAudioParticipants.map(participant => (
                   <div 
                     key={participant.id} 
-                    className="relative overflow-hidden rounded-2xl border border-border bg-surface-2 p-2.5 flex flex-col items-center justify-center text-center shadow-2xs h-full w-full select-none"
+                    className="relative overflow-hidden rounded-2xl border border-white/[0.07] bg-[#171830] p-2 flex flex-col items-center justify-center text-center shadow-xs h-[104px] w-[130px] shrink-0 select-none"
                     title="Audio-only mode: peer mesh capped at 4 video tiles to preserve bandwidth"
                   >
-                    <div className="h-9 w-9 rounded-xl bg-surface border border-border flex items-center justify-center text-text font-bold text-xs mb-1">
+                    <div className="h-8 w-8 rounded-full bg-[#202244] border border-white/[0.07] flex items-center justify-center text-[#ECEBFA] font-semibold text-xs mb-1">
                       {participant.name.slice(0, 1).toUpperCase()}
                     </div>
-                    <div className="text-xs font-bold text-text truncate max-w-[120px]">{participant.name}</div>
-                    <span className="text-[10px] text-accent-text font-bold mt-0.5 flex items-center gap-1 bg-accent-tint px-2 py-0.5 rounded-full border border-accent/20">
-                      <span className="material-symbols-outlined text-xs">volume_up</span> Audio-Only
+                    <div className="text-xs font-semibold text-[#ECEBFA] truncate max-w-[110px]">{participant.name}</div>
+                    <span className="text-[10px] text-[#A5A3C7] font-medium mt-0.5 flex items-center gap-1 bg-[#202244] px-1.5 py-0.5 rounded-full border border-white/[0.07]">
+                      <span className="material-symbols-outlined text-xs">volume_up</span> Audio
                     </span>
                   </div>
                 ))}
 
-                {/* Companion Placeholder Card when alone */}
+                {/* When alone: Never render an empty placeholder tile! Show subtle status note beside local tile */}
                 {remoteParticipants.length === 0 && (
-                  isDevOrDemo ? (
-                    <div 
-                      onClick={() => addSimulatedBatchStudents(3)}
-                      className="h-full w-full rounded-2xl border-2 border-dashed border-border bg-surface-2/60 hover:bg-surface-2 flex flex-col items-center justify-center p-2.5 text-center cursor-pointer transition-all group select-none shadow-2xs"
-                      title="Click to simulate 3 classmates joining"
-                      role="button"
-                      tabIndex={0}
-                      aria-label="Simulate 3 classmates joining"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-primary-tint text-primary-text group-hover:scale-105 flex items-center justify-center mb-1 transition-transform">
-                        <span className="material-symbols-outlined text-base">group_add</span>
-                      </div>
-                      <span className="text-xs font-bold text-text">Waiting for Classmates</span>
-                      <span className="text-[11px] text-primary font-bold mt-0.5 group-hover:underline">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[#171830] border border-white/[0.07] text-xs text-[#A5A3C7] shrink-0">
+                    <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse shrink-0" />
+                    <span>Students will appear here once connected</span>
+                    {isDevOrDemo && (
+                      <button
+                        type="button"
+                        onClick={() => addSimulatedBatchStudents(3)}
+                        className="ml-2 px-2 py-0.5 rounded-lg bg-[#202244] hover:bg-[#202244]/80 text-[#10B981] border border-white/[0.07] text-xs font-medium cursor-pointer transition-colors"
+                        title="Simulate 3 students joining for testing"
+                      >
                         + Click to Simulate 3 Students
-                      </span>
-                    </div>
-                  ) : (
-                    <div 
-                      className="h-full w-full rounded-2xl border border-dashed border-border bg-surface-2/40 flex flex-col items-center justify-center p-2.5 text-center select-none shadow-2xs"
-                    >
-                      <div className="w-8 h-8 rounded-full bg-surface-2 text-muted flex items-center justify-center mb-1">
-                        <span className="material-symbols-outlined text-base">schedule</span>
-                      </div>
-                      <span className="text-xs font-bold text-text">Waiting for Classmates</span>
-                      <span className="text-[11px] text-muted font-medium mt-0.5">
-                        Students will appear here once connected
-                      </span>
-                    </div>
-                  )
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
 
               {/* Main Workspace (Whiteboard / Notes / Code Pad) */}
               {workspace !== 'none' && (
-                <div className="min-h-0 min-w-0 flex-1 h-full w-full overflow-hidden transition-all duration-300">
+                <div className="min-h-0 min-w-0 flex-1 h-full w-full overflow-hidden transition-all duration-200">
                   <WorkspaceContent
                     workspace={workspace}
                     chooseWorkspace={chooseWorkspace}
@@ -2437,6 +2685,8 @@ export function LiveRoom() {
                     beginDraw={beginDraw}
                     continueDraw={continueDraw}
                     endDraw={endDraw}
+                    onUndo={handleWhiteboardUndo}
+                    onRedo={handleWhiteboardRedo}
                     notes={notes}
                     setNotes={setNotes}
                     emitRoomEvent={emitRoomEvent}
@@ -2464,21 +2714,23 @@ export function LiveRoom() {
             <aside 
               aria-label="Live room sidebar"
               className={clsx(
-                'min-h-0 min-w-0 shrink-0 overflow-hidden rounded-2xl border border-border bg-surface shadow-elevation-1 transition-all duration-300 flex-col text-text w-full lg:w-80 box-border',
+                'min-h-0 min-w-0 shrink-0 overflow-hidden rounded-2xl border border-white/[0.07] bg-[#171830] shadow-xl transition-all duration-200 flex-col text-[#ECEBFA] w-full lg:w-80 box-border',
                 chatOpen ? 'flex' : 'hidden lg:flex'
               )}
             >
-              {/* Tab Header */}
-              <div className="flex items-center border-b border-border bg-surface-2 p-1.5 shrink-0 gap-1.5 min-w-0 box-border" role="tablist">
+              {/* Tab Header with tooltips and badge */}
+              <div className="flex items-center border-b border-white/[0.07] bg-[#171830] p-1.5 shrink-0 gap-1 min-w-0 box-border" role="tablist">
                 <button
                   role="tab"
                   aria-selected={sidebarTab === 'chat'}
                   onClick={() => setSidebarTab('chat')}
+                  title="Live Cohort Chat"
+                  aria-label="Live Chat"
                   className={clsx(
-                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none",
                     sidebarTab === 'chat'
-                      ? "bg-surface text-primary shadow-xs border border-border"
-                      : "text-muted hover:text-text"
+                      ? "bg-[#202244] text-[#10B981] shadow-xs border border-white/[0.07]"
+                      : "text-[#A5A3C7] hover:text-[#ECEBFA]"
                   )}
                 >
                   <span className="material-symbols-outlined text-[15px] shrink-0">forum</span>
@@ -2488,17 +2740,19 @@ export function LiveRoom() {
                   role="tab"
                   aria-selected={sidebarTab === 'notes'}
                   onClick={() => setSidebarTab('notes')}
+                  title="Quick Session Notes"
+                  aria-label="Quick Notes"
                   className={clsx(
-                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none",
                     sidebarTab === 'notes'
-                      ? "bg-surface text-primary shadow-xs border border-border"
-                      : "text-muted hover:text-text"
+                      ? "bg-[#202244] text-[#10B981] shadow-xs border border-white/[0.07]"
+                      : "text-[#A5A3C7] hover:text-[#ECEBFA]"
                   )}
                 >
                   <span className="material-symbols-outlined text-[15px] shrink-0">edit_note</span>
                   <span className="truncate">Quick Notes</span>
                   {sessionNotesList.length > 0 && (
-                    <span className="px-1.5 py-0.5 rounded-full bg-primary-tint text-primary-text text-xs font-black shrink-0 leading-none">
+                    <span className="px-1.5 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/25 text-xs font-semibold shrink-0 leading-none">
                       {sessionNotesList.length}
                     </span>
                   )}
@@ -2507,18 +2761,28 @@ export function LiveRoom() {
                   role="tab"
                   aria-selected={sidebarTab === 'people'}
                   onClick={() => setSidebarTab('people')}
+                  title="Participants list"
+                  aria-label="People"
                   className={clsx(
-                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
+                    "flex-1 min-w-0 py-1.5 px-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none",
                     sidebarTab === 'people'
-                      ? "bg-surface text-primary shadow-xs border border-border"
-                      : "text-muted hover:text-text"
+                      ? "bg-[#202244] text-[#10B981] shadow-xs border border-white/[0.07]"
+                      : "text-[#A5A3C7] hover:text-[#ECEBFA]"
                   )}
                 >
                   <span className="material-symbols-outlined text-[15px] shrink-0">groups</span>
                   <span className="truncate">People</span>
-                  <span className="px-1.5 py-0.5 rounded-full bg-primary-tint text-primary-text text-xs font-black shrink-0 leading-none">
+                  <span className="px-1.5 py-0.5 rounded-full bg-[#202244] text-[#10B981] border border-white/[0.07] text-xs font-semibold shrink-0 leading-none">
                     {remoteParticipants.length + 1}
                   </span>
+                </button>
+                <button
+                  onClick={() => setChatOpen(false)}
+                  className="p-1 rounded-lg text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244] transition-colors cursor-pointer shrink-0"
+                  title="Collapse sidebar"
+                  aria-label="Collapse sidebar"
+                >
+                  <span className="material-symbols-outlined text-[17px]">chevron_right</span>
                 </button>
               </div>
 
@@ -2534,17 +2798,17 @@ export function LiveRoom() {
                   />
                 </div>
               ) : sidebarTab === 'notes' ? (
-                <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-surface p-3 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-3 box-border">
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-[#171830] p-3 overflow-y-auto overflow-x-hidden custom-scrollbar space-y-3 box-border text-[#ECEBFA]">
                   {/* Inline Add Note Section */}
-                  <div className="p-3 bg-surface-2 rounded-xl border border-border space-y-2 shrink-0 min-w-0 box-border">
+                  <div className="p-3 bg-[#202244] rounded-xl border border-white/[0.07] space-y-2 shrink-0 min-w-0 box-border">
                     <div className="flex items-center justify-between gap-1.5 min-w-0">
-                      <span className="text-xs font-bold text-text flex items-center gap-1 min-w-0 truncate">
-                        <span className="material-symbols-outlined text-sm text-primary shrink-0">add_circle</span>
+                      <span className="text-xs font-semibold text-[#ECEBFA] flex items-center gap-1 min-w-0 truncate">
+                        <span className="material-symbols-outlined text-sm text-[#10B981] shrink-0">add_circle</span>
                         <span className="truncate">Quick Inline Note</span>
                       </span>
                       <button
                         onClick={() => setIsSessionNotesPanelOpen(true)}
-                        className="text-xs font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer shrink-0 focus-visible:ring-1 focus-visible:ring-primary focus-visible:outline-none rounded"
+                        className="text-xs font-medium text-[#10B981] hover:underline flex items-center gap-0.5 cursor-pointer shrink-0 focus-visible:ring-1 focus-visible:ring-[#10B981] focus-visible:outline-none rounded"
                         title="Open full-page rich text editor & attachments"
                         aria-label="Open full-page rich text editor"
                       >
@@ -2557,19 +2821,19 @@ export function LiveRoom() {
                       value={inlineNoteTitle}
                       onChange={e => setInlineNoteTitle(e.target.value)}
                       placeholder="Note title (e.g. Key formula)..."
-                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden box-border"
+                      className="w-full bg-[#171830] text-[#ECEBFA] text-xs rounded-lg px-2.5 py-1.5 border border-white/[0.07] placeholder:text-[#A5A3C7] focus:border-[#10B981] focus:outline-hidden box-border"
                     />
                     <textarea
                       value={inlineNoteContent}
                       onChange={e => setInlineNoteContent(e.target.value)}
                       placeholder="Key takeaway, question, action item..."
                       rows={2}
-                      className="w-full bg-surface text-text text-xs rounded-lg px-2.5 py-1.5 border border-border focus:border-primary focus:outline-hidden resize-none box-border"
+                      className="w-full bg-[#171830] text-[#ECEBFA] text-xs rounded-lg px-2.5 py-1.5 border border-white/[0.07] placeholder:text-[#A5A3C7] focus:border-[#10B981] focus:outline-hidden resize-none box-border"
                     />
                     <button
                       disabled={isSavingInlineNote || (!inlineNoteTitle.trim() && !inlineNoteContent.trim())}
                       onClick={handleSaveInlineNote}
-                      className="w-full py-1.5 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary rounded-lg text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer box-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                      className="w-full py-1.5 bg-[#10B981] hover:bg-[#10B981]/90 disabled:opacity-40 text-white rounded-lg text-xs font-semibold transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer box-border focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none"
                     >
                       <span className="material-symbols-outlined text-sm">save</span>
                       <span>{isSavingInlineNote ? 'Saving...' : 'Save to Session'}</span>
@@ -2578,11 +2842,11 @@ export function LiveRoom() {
 
                   {/* Notes List for this session */}
                   <div className="space-y-2 min-w-0">
-                    <div className="flex items-center justify-between text-xs font-bold text-muted px-1 min-w-0">
+                    <div className="flex items-center justify-between text-xs font-medium text-[#A5A3C7] px-1 min-w-0">
                       <span className="truncate min-w-0 flex-1">Notes in this Lecture ({sessionNotesList.length})</span>
                       <button
                         onClick={loadSessionNotesList}
-                        className="hover:text-primary transition-colors cursor-pointer p-1 rounded-md shrink-0 flex items-center justify-center text-muted hover:bg-surface-2 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                        className="hover:text-[#ECEBFA] transition-colors cursor-pointer p-1 rounded-md shrink-0 flex items-center justify-center text-[#A5A3C7] hover:bg-[#202244] focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none"
                         title="Refresh session notes"
                         aria-label="Refresh session notes"
                       >
@@ -2591,14 +2855,14 @@ export function LiveRoom() {
                     </div>
 
                     {loadingSessionNotes ? (
-                      <div className="py-6 text-center text-xs text-muted font-bold animate-pulse">
+                      <div className="py-6 text-center text-xs text-[#A5A3C7] font-medium animate-pulse">
                         Loading session notes...
                       </div>
                     ) : sessionNotesList.length === 0 ? (
-                      <div className="p-4 text-center bg-surface-2/60 border border-dashed border-border rounded-xl space-y-1.5 min-w-0">
-                        <span className="material-symbols-outlined text-xl text-muted">description</span>
-                        <p className="text-xs font-bold text-text">No notes yet</p>
-                        <p className="text-xs text-muted leading-relaxed">
+                      <div className="p-4 text-center bg-[#202244]/50 border border-white/[0.07] rounded-xl space-y-1.5 min-w-0">
+                        <span className="material-symbols-outlined text-xl text-[#A5A3C7]">description</span>
+                        <p className="text-xs font-semibold text-[#ECEBFA]">No notes yet</p>
+                        <p className="text-xs text-[#A5A3C7] leading-relaxed">
                           Write quick notes in the sidebar or launch the full editor for markdown and rich attachments.
                         </p>
                       </div>
@@ -2611,23 +2875,23 @@ export function LiveRoom() {
                           <div
                             key={n.id}
                             onClick={() => setIsSessionNotesPanelOpen(true)}
-                            className="p-2.5 rounded-xl border border-border bg-surface-2 hover:border-primary/50 transition-all cursor-pointer space-y-1.5 shadow-2xs group min-w-0 box-border"
+                            className="p-2.5 rounded-xl border border-white/[0.07] bg-[#202244] hover:border-[#10B981]/50 transition-all cursor-pointer space-y-1.5 shadow-2xs group min-w-0 box-border"
                           >
                             <div className="flex items-center justify-between gap-2 min-w-0">
-                              <span className="text-xs font-bold text-text group-hover:text-primary truncate min-w-0 flex-1">
+                              <span className="text-xs font-semibold text-[#ECEBFA] group-hover:text-[#10B981] truncate min-w-0 flex-1">
                                 {n.title || 'Untitled Note'}
                               </span>
                               {isShared ? (
-                                <span className="px-2 py-0.5 rounded-md bg-accent-tint text-accent-text text-xs font-extrabold shrink-0 border border-accent/30">
+                                <span className="px-2 py-0.5 rounded-md bg-[#10B981]/15 text-[#10B981] text-xs font-semibold shrink-0 border border-[#10B981]/30">
                                   {isAuthor ? 'Shared' : 'Shared by Mentor'}
                                 </span>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-md bg-surface text-muted text-xs font-bold shrink-0 border border-border">
+                                <span className="px-2 py-0.5 rounded-md bg-[#171830] text-[#A5A3C7] text-xs font-medium shrink-0 border border-white/[0.07]">
                                   Private
                                 </span>
                               )}
                             </div>
-                            <p className="text-xs text-muted line-clamp-2 leading-relaxed">
+                            <p className="text-xs text-[#A5A3C7] line-clamp-2 leading-relaxed">
                               {preview || 'No content...'}
                             </p>
                           </div>
@@ -2637,37 +2901,37 @@ export function LiveRoom() {
                   </div>
                 </div>
               ) : (
-                <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-surface p-3 overflow-y-auto custom-scrollbar space-y-3 box-border">
-                  <div className="text-xs font-bold text-muted uppercase tracking-wider px-1">
+                <div className="flex-1 min-h-0 min-w-0 flex flex-col bg-[#171830] p-3 overflow-y-auto custom-scrollbar space-y-3 box-border text-[#ECEBFA]">
+                  <div className="text-xs font-semibold text-[#A5A3C7] uppercase tracking-wider px-1">
                     In this session ({remoteParticipants.length + 1})
                   </div>
                   
                   {/* You */}
-                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-surface-2 border border-border">
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-[#202244] border border-white/[0.07]">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-8 h-8 rounded-lg bg-primary text-on-primary flex items-center justify-center font-bold text-xs shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-[#10B981] text-white flex items-center justify-center font-semibold text-xs shrink-0">
                         {userName.slice(0, 1).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-xs font-bold text-text truncate">{userName} (You)</p>
-                        <p className="text-[10px] text-muted capitalize">{isTeacher ? 'Host / Instructor' : userRole}</p>
+                        <p className="text-xs font-semibold text-[#ECEBFA] truncate">{userName} (You)</p>
+                        <p className="text-[10px] text-[#A5A3C7] capitalize">{isTeacher ? 'Host / Instructor' : userRole}</p>
                       </div>
                     </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-700 dark:text-emerald-300">
+                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-[#10B981]/15 text-[#10B981] border border-[#10B981]/30">
                       Active
                     </span>
                   </div>
 
                   {/* Remote Participants */}
                   {remoteParticipants.map(p => (
-                    <div key={p.id} className="flex items-center justify-between p-2.5 rounded-xl bg-surface-2 border border-border">
+                    <div key={p.id} className="flex items-center justify-between p-2.5 rounded-xl bg-[#202244] border border-white/[0.07]">
                       <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-8 h-8 rounded-lg bg-surface border border-border flex items-center justify-center font-bold text-xs text-text shrink-0">
+                        <div className="w-8 h-8 rounded-lg bg-[#171830] border border-white/[0.07] flex items-center justify-center font-semibold text-xs text-[#ECEBFA] shrink-0">
                           {p.name.slice(0, 1).toUpperCase()}
                         </div>
                         <div className="min-w-0">
-                          <p className="text-xs font-bold text-text truncate">{p.name}</p>
-                          <p className="text-[10px] text-muted capitalize">{p.role}</p>
+                          <p className="text-xs font-semibold text-[#ECEBFA] truncate">{p.name}</p>
+                          <p className="text-[10px] text-[#A5A3C7] capitalize">{p.role}</p>
                         </div>
                       </div>
 
@@ -2676,7 +2940,7 @@ export function LiveRoom() {
                           type="button"
                           onClick={() => setKickConfirmTarget({ id: p.id, name: p.name, peerId: p.id })}
                           data-testid="remove-student-btn"
-                          className="px-2.5 py-1 rounded-lg bg-danger/10 hover:bg-danger text-danger hover:text-white text-xs font-bold transition-colors cursor-pointer shrink-0"
+                          className="px-2.5 py-1 rounded-lg bg-red-500/15 hover:bg-red-500 text-red-400 hover:text-white text-xs font-medium transition-colors cursor-pointer shrink-0 border border-red-500/30"
                           title="Remove student from class"
                         >
                           Remove
@@ -2687,15 +2951,15 @@ export function LiveRoom() {
 
                   {/* Removed Students Section (Host only) */}
                   {isTeacher && bannedStudents.length > 0 && (
-                    <div className="pt-2 space-y-2 border-t border-border">
-                      <div className="text-xs font-bold text-danger uppercase tracking-wider px-1">
+                    <div className="pt-2 space-y-2 border-t border-white/[0.07]">
+                      <div className="text-xs font-semibold text-red-400 uppercase tracking-wider px-1">
                         Removed Students ({bannedStudents.length})
                       </div>
                       {bannedStudents.map(s => (
-                        <div key={s.id} className="flex items-center justify-between p-2.5 rounded-xl bg-danger/5 border border-danger/20">
+                        <div key={s.id} className="flex items-center justify-between p-2.5 rounded-xl bg-red-500/10 border border-red-500/20">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="material-symbols-outlined text-danger text-sm shrink-0">person_off</span>
-                            <span className="text-xs font-medium text-text truncate">{s.name}</span>
+                            <span className="material-symbols-outlined text-red-400 text-sm shrink-0">person_off</span>
+                            <span className="text-xs font-medium text-[#ECEBFA] truncate">{s.name}</span>
                           </div>
                           <button
                             type="button"
@@ -2707,7 +2971,7 @@ export function LiveRoom() {
                               }));
                             }}
                             data-testid="allow-back-btn"
-                            className="px-2.5 py-1 rounded-lg bg-primary-tint hover:bg-primary text-primary-text hover:text-on-primary text-xs font-bold transition-colors cursor-pointer shrink-0"
+                            className="px-2.5 py-1 rounded-lg bg-[#10B981]/15 hover:bg-[#10B981] text-[#10B981] hover:text-white text-xs font-medium transition-colors cursor-pointer shrink-0 border border-[#10B981]/30"
                           >
                             Allow back
                           </button>
@@ -2721,32 +2985,50 @@ export function LiveRoom() {
           </section>
         )}
 
-        {/* Bottom Control Bar in Standard View */}
-        <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-border bg-surface px-3 py-2 shadow-xs sm:px-4 shrink-0 z-30 relative text-text">
-          <div className="hidden max-w-[260px] text-xs text-muted xl:flex items-center gap-1.5 font-medium truncate">
-            <span className="w-2 h-2 rounded-full bg-primary shrink-0" />
-            <span className="truncate">{notice}</span>
+        {/* Bottom Control Bar in Standard View (Floating Centered Dock + Small Status Dot + Separated Leave Button) */}
+        <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl border border-white/[0.07] bg-[#171830] px-3 py-2 shadow-xl sm:px-4 shrink-0 z-30 relative text-[#ECEBFA]">
+          {/* Left: Small connection status dot with tooltip */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div 
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#202244] border border-white/[0.07] text-xs text-[#A5A3C7] shadow-xs cursor-default shrink-0"
+              title={`ICE Status: ${iceDiagnostic} · WebRTC Active`}
+              aria-label={`Connection status: ${iceDiagnostic}`}
+            >
+              <span className={clsx(
+                "h-2 w-2 rounded-full shrink-0",
+                iceDiagnostic === 'Direct P2P' ? "bg-[#10B981] animate-pulse" :
+                iceDiagnostic === 'TURNS Relay 443' ? "bg-sky-400" :
+                iceDiagnostic === 'Connection Failed' ? "bg-red-500" : "bg-amber-400 animate-pulse"
+              )} />
+              <span className="hidden sm:inline font-medium text-[11px] text-[#ECEBFA]">
+                {iceDiagnostic === 'Direct P2P' ? 'Direct P2P' : iceDiagnostic}
+              </span>
+            </div>
+            <div className="hidden xl:flex text-xs text-[#A5A3C7] font-normal truncate max-w-[200px]">
+              <span className="truncate">{notice}</span>
+            </div>
           </div>
           
-          <div className="flex flex-1 items-center justify-center gap-2 sm:gap-2.5">
-            {/* Microphone Pill Control (Neutral off state, slash icon) */}
-            <div className="relative flex items-center bg-surface border border-border rounded-full shadow-xs hover:border-primary/40 transition duration-200">
+          {/* Center: Floating Centered Control Dock */}
+          <div className="flex items-center justify-center gap-1.5 sm:gap-2 bg-[#202244]/80 backdrop-blur-md border border-white/[0.07] shadow-xl rounded-full px-2.5 sm:px-3 py-1">
+            {/* Microphone Pill Control (Soft red state when muted) */}
+            <div className="relative flex items-center rounded-full">
               <button
                 onClick={toggleMicWithPermission}
                 title={micOn ? 'Mute microphone' : 'Unmute microphone'}
                 aria-label={micOn ? 'Mute microphone' : 'Unmute microphone'}
                 className={clsx(
-                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer',
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer',
                   !micOn
-                    ? 'bg-surface-2 text-text border border-border/70'
-                    : 'text-primary hover:bg-surface-2'
+                    ? 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'
+                    : 'bg-[#171830] text-[#10B981] border border-white/[0.07] hover:bg-[#171830]/80'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{micOn ? 'mic' : 'mic_off'}</span>
               </button>
               <button
                 onClick={() => setShowAudioMenu(v => !v)}
-                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-muted hover:text-text transition-colors border-l border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-r-full cursor-pointer"
+                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-[#A5A3C7] hover:text-[#ECEBFA] transition-colors border-l border-white/[0.07] focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none rounded-r-full cursor-pointer"
                 title="Select microphone device"
                 aria-label="Select microphone device"
               >
@@ -2756,13 +3038,13 @@ export function LiveRoom() {
               {showAudioMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowAudioMenu(false)} />
-                  <div className="absolute bottom-12 left-0 w-64 rounded-2xl border border-border bg-surface text-text p-2 shadow-elevation-3 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="text-xs font-bold text-muted px-2.5 py-1.5 border-b border-border uppercase tracking-wider flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-sm text-primary">mic</span> Select Microphone
+                  <div className="absolute bottom-12 left-0 w-64 rounded-2xl border border-white/[0.07] bg-[#171830] text-[#ECEBFA] p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="text-xs font-semibold text-[#A5A3C7] px-2.5 py-1.5 border-b border-white/[0.07] uppercase tracking-wider flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-sm text-[#10B981]">mic</span> Select Microphone
                     </div>
                     <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1.5 custom-scrollbar">
                       {audioDevices.length === 0 ? (
-                        <div className="text-xs text-muted p-2.5 italic">No physical microphones detected</div>
+                        <div className="text-xs text-[#A5A3C7] p-2.5 italic">No physical microphones detected</div>
                       ) : (
                         audioDevices.map(d => (
                           <button
@@ -2770,7 +3052,7 @@ export function LiveRoom() {
                             onClick={() => changeAudioDevice(d.deviceId)}
                             className={clsx(
                               "w-full text-left px-2.5 py-1.5 text-xs rounded-xl transition-colors flex items-center justify-between cursor-pointer",
-                              selectedAudioId === d.deviceId ? "bg-primary text-white font-bold" : "hover:bg-surface-2 text-text"
+                              selectedAudioId === d.deviceId ? "bg-[#10B981] text-white font-semibold" : "hover:bg-[#202244] text-[#ECEBFA]"
                             )}
                           >
                             <span className="truncate">{d.label || `Microphone ${d.deviceId.slice(0, 5)}`}</span>
@@ -2784,24 +3066,24 @@ export function LiveRoom() {
               )}
             </div>
 
-            {/* Camera Pill Control (Neutral off state, slash icon) */}
-            <div className="relative flex items-center bg-surface border border-border rounded-full shadow-xs hover:border-primary/40 transition duration-200">
+            {/* Camera Pill Control (Soft red state when muted) */}
+            <div className="relative flex items-center rounded-full">
               <button
                 onClick={toggleCameraWithPermission}
                 title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 aria-label={cameraOn ? 'Turn camera off' : 'Turn camera on'}
                 className={clsx(
-                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer',
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer',
                   !cameraOn
-                    ? 'bg-surface-2 text-text border border-border/70'
-                    : 'text-primary hover:bg-surface-2'
+                    ? 'bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25'
+                    : 'bg-[#171830] text-[#10B981] border border-white/[0.07] hover:bg-[#171830]/80'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{cameraOn ? 'videocam' : 'videocam_off'}</span>
               </button>
               <button
                 onClick={() => setShowVideoMenu(v => !v)}
-                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-muted hover:text-text transition-colors border-l border-border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none rounded-r-full"
+                className="h-10 pr-2 pl-0.5 flex items-center justify-center text-[#A5A3C7] hover:text-[#ECEBFA] transition-colors border-l border-white/[0.07] focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none rounded-r-full"
                 title="Select camera device"
                 aria-label="Select camera device"
               >
@@ -2811,9 +3093,9 @@ export function LiveRoom() {
               {showVideoMenu && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowVideoMenu(false)} />
-                  <div className="absolute bottom-12 left-0 w-64 rounded-2xl border border-border bg-surface text-text p-2 shadow-elevation-3 z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
-                    <div className="text-xs font-bold text-muted px-2.5 py-1.5 border-b border-border uppercase tracking-wider flex items-center justify-between">
-                      <span className="flex items-center gap-1.5"><span className="material-symbols-outlined text-sm text-primary">videocam</span> Select Camera</span>
+                  <div className="absolute bottom-12 left-0 w-64 rounded-2xl border border-white/[0.07] bg-[#171830] text-[#ECEBFA] p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-bottom-2 duration-200">
+                    <div className="text-xs font-semibold text-[#A5A3C7] px-2.5 py-1.5 border-b border-white/[0.07] uppercase tracking-wider flex items-center justify-between">
+                      <span className="flex items-center gap-1.5"><span className="material-symbols-outlined text-sm text-[#10B981]">videocam</span> Select Camera</span>
                       <button
                         onClick={async (e) => {
                           e.stopPropagation();
@@ -2823,7 +3105,7 @@ export function LiveRoom() {
                           } catch {}
                           await loadDevices();
                         }}
-                        className="text-xs font-bold text-primary hover:underline flex items-center gap-0.5 cursor-pointer"
+                        className="text-xs font-semibold text-[#10B981] hover:underline flex items-center gap-0.5 cursor-pointer"
                         title="Re-scan connected camera hardware"
                       >
                         <span className="material-symbols-outlined text-xs">sync</span> Rescan
@@ -2832,7 +3114,7 @@ export function LiveRoom() {
                     <div className="max-h-48 overflow-y-auto space-y-0.5 mt-1.5 custom-scrollbar">
                       {videoDevices.length === 0 ? (
                         <div className="p-2 space-y-1.5 text-center">
-                          <p className="text-xs text-muted italic font-medium">No physical camera detected or permission blocked.</p>
+                          <p className="text-xs text-[#A5A3C7] italic font-medium">No physical camera detected or permission blocked.</p>
                           <button
                             onClick={async () => {
                               try {
@@ -2840,7 +3122,7 @@ export function LiveRoom() {
                               } catch {}
                               await loadDevices();
                             }}
-                            className="w-full py-1.5 px-2 bg-primary hover:bg-primary-hover text-on-primary rounded-xl text-xs font-bold transition-all shadow-xs"
+                            className="w-full py-1.5 px-2 bg-[#10B981] hover:bg-[#10B981]/90 text-white rounded-xl text-xs font-semibold transition-all shadow-xs"
                           >
                             Grant Camera Access
                           </button>
@@ -2854,7 +3136,7 @@ export function LiveRoom() {
                               onClick={() => changeVideoDevice(d.deviceId)}
                               className={clsx(
                                 "w-full text-left px-2.5 py-1.5 text-xs rounded-xl transition-colors flex items-center justify-between",
-                                selectedVideoId === d.deviceId ? "bg-primary text-on-primary font-bold" : "hover:bg-surface-2 text-text"
+                                selectedVideoId === d.deviceId ? "bg-[#10B981] text-white font-semibold" : "hover:bg-[#202244] text-[#ECEBFA]"
                               )}
                             >
                               <div className="flex items-center gap-1.5 truncate">
@@ -2874,32 +3156,44 @@ export function LiveRoom() {
 
             {/* Hand Raise Control (Students Only) */}
             {!isTeacher && (
-              <Control
-                active={raisedHand}
-                icon="pan_tool"
-                label="Raise hand"
-                highlighted={raisedHand}
+              <button
                 onClick={toggleHand}
-              />
+                title={raisedHand ? 'Lower hand' : 'Raise hand'}
+                aria-label={raisedHand ? 'Lower hand' : 'Raise hand'}
+                className={clsx(
+                  'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 border cursor-pointer',
+                  raisedHand
+                    ? 'bg-[#10B981] border-[#10B981] text-white shadow-xs'
+                    : 'bg-[#171830] border-white/[0.07] text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244]'
+                )}
+              >
+                <span className="material-symbols-outlined text-[19px]">pan_tool</span>
+              </button>
             )}
 
             {/* Screen Share Control */}
-            <Control
-              active={sharing}
-              icon="present_to_all"
-              label="Share screen"
-              highlighted={sharing}
+            <button
               onClick={toggleShare}
-            />
+              title={sharing ? 'Stop sharing screen' : 'Share screen'}
+              aria-label={sharing ? 'Stop sharing screen' : 'Share screen'}
+              className={clsx(
+                'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 border cursor-pointer',
+                sharing
+                  ? 'bg-[#10B981] border-[#10B981] text-white shadow-xs'
+                  : 'bg-[#171830] border-white/[0.07] text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244]'
+              )}
+            >
+              <span className="material-symbols-outlined text-[19px]">present_to_all</span>
+            </button>
 
             {/* Chat Toggle Button */}
             <button
               onClick={() => setChatOpen(value => !value)}
               className={clsx(
-                "grid h-10 w-10 place-items-center rounded-full border transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none",
-                chatOpen ? "bg-primary text-on-primary border-primary" : "border-border bg-surface text-muted hover:bg-surface-2 hover:text-text"
+                "grid h-10 w-10 place-items-center rounded-full border transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                chatOpen ? "bg-[#10B981] text-white border-[#10B981]" : "border-white/[0.07] bg-[#171830] text-[#A5A3C7] hover:bg-[#202244] hover:text-[#ECEBFA]"
               )}
-              title="Toggle Live Chat"
+              title={chatOpen ? "Close Live Chat" : "Toggle Live Chat"}
               aria-label="Toggle live chat"
             >
               <span className="material-symbols-outlined text-[18px]">chat</span>
@@ -2909,7 +3203,7 @@ export function LiveRoom() {
             {currentSession && (
               <button
                 onClick={() => setIsSessionNotesPanelOpen(true)}
-                className="grid h-10 w-10 place-items-center rounded-full border border-border bg-surface text-muted hover:bg-surface-2 hover:text-primary transition hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none"
+                className="grid h-10 w-10 place-items-center rounded-full border border-white/[0.07] bg-[#171830] text-[#A5A3C7] hover:bg-[#202244] hover:text-[#ECEBFA] transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 shadow-xs focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer"
                 title="View & Add Session Notes"
                 aria-label="Open session notes editor"
               >
@@ -2918,37 +3212,71 @@ export function LiveRoom() {
             )}
           </div>
 
-          {/* Leave / End Call Button */}
-          <button
-            onClick={handleLeaveOrEndClick}
-            data-testid={isTeacher ? "end-session-btn" : "leave-room-btn"}
-            className="grid h-10 w-12 place-items-center rounded-full bg-danger text-white shadow-xs transition hover:-translate-y-0.5 hover:opacity-90 hover:scale-105 active:translate-y-0 active:scale-95 duration-200 focus-visible:ring-2 focus-visible:ring-danger focus-visible:outline-none cursor-pointer"
-            title={isTeacher ? "End session for everyone" : "Disconnect call & release devices"}
-            aria-label={isTeacher ? "End session" : "Leave call"}
-          >
-            <span className="material-symbols-outlined text-[20px]">call_end</span>
-          </button>
+          {/* Right: Leave / End Call Button Separated */}
+          <div className="flex items-center justify-end">
+            <button
+              onClick={handleLeaveOrEndClick}
+              data-testid={isTeacher ? "end-session-btn" : "leave-room-btn"}
+              className="flex items-center justify-center gap-1.5 h-10 px-3.5 sm:px-4 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-md transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 active:scale-95 focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:outline-none cursor-pointer text-xs font-semibold"
+              title={isTeacher ? "End session for everyone" : "Disconnect call & release devices"}
+              aria-label={isTeacher ? "End session" : "Leave call"}
+            >
+              <span className="material-symbols-outlined text-[19px]">call_end</span>
+              <span className="hidden sm:inline">{isTeacher ? "End Call" : "Leave"}</span>
+            </button>
+          </div>
         </footer>
+
+        {/* Responsive Mobile Bottom Sheet for Right Panel on Narrow Screens */}
+        {chatOpen && (
+          <div className="lg:hidden fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex flex-col justify-end animate-in fade-in duration-200">
+            <div className="fixed inset-0" onClick={() => setChatOpen(false)} />
+            <div className="relative w-full max-h-[82vh] bg-[#171830] rounded-t-3xl border-t border-white/[0.07] flex flex-col shadow-2xl z-10 overflow-hidden text-[#ECEBFA]">
+              <div className="flex items-center justify-between p-3 border-b border-white/[0.07]">
+                <div className="flex items-center gap-2">
+                  <span className="w-1.5 h-4 rounded-full bg-[#10B981]" />
+                  <h3 className="text-xs font-semibold text-[#ECEBFA]">Live Cohort Panel</h3>
+                </div>
+                <button
+                  onClick={() => setChatOpen(false)}
+                  className="p-1 rounded-lg text-[#A5A3C7] hover:text-[#ECEBFA] hover:bg-[#202244] transition-colors"
+                  aria-label="Close panel"
+                >
+                  <span className="material-symbols-outlined text-base">close</span>
+                </button>
+              </div>
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <RoomChat
+                  messages={messages}
+                  chatText={chatText}
+                  setChatText={setChatText}
+                  sendChat={sendChat}
+                  chatOpen={true}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* FULLSCREEN EXPLANATION WORKSPACE OVERLAY */}
       {isFullscreenWorkspace && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md flex flex-col p-2 sm:p-3 animate-in fade-in zoom-in-95 duration-200 overflow-hidden">
+        <div className="fixed inset-0 z-50 bg-[#0F1020]/95 backdrop-blur-md flex flex-col p-2 sm:p-3 animate-in fade-in zoom-in-95 duration-200 overflow-hidden text-[#ECEBFA]">
           {/* Fullscreen Top Navigation */}
-          <header className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-slate-950/90 border border-slate-800 px-4 py-2 text-slate-100 shadow-lg">
+          <header className="mb-2 flex items-center justify-between gap-2 rounded-2xl bg-[#171830] border border-white/[0.07] px-4 py-2 text-[#ECEBFA] shadow-xl">
             <div className="flex items-center gap-3">
-              <span className="grid h-8 w-8 place-items-center rounded-xl bg-primary text-on-primary">
+              <span className="grid h-8 w-8 place-items-center rounded-xl bg-[#10B981] text-white">
                 <span className="material-symbols-outlined text-[19px]">fit_screen</span>
               </span>
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold tracking-tight text-white">Focus mode</span>
-                  <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-2 py-0.5 text-[11px] font-semibold text-emerald-300">
+                  <span className="text-xs font-semibold tracking-tight text-[#ECEBFA]">Focus mode</span>
+                  <span className="rounded-full bg-[#10B981]/15 border border-[#10B981]/30 px-2 py-0.5 text-[11px] font-medium text-[#10B981]">
                     ● Live
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400 font-medium truncate max-w-xs sm:max-w-md">
-                  {roomId === 'practice' ? 'Practice Room' : (currentSession?.title || 'Live Session')} · Press <kbd className="bg-slate-800 px-1.5 py-0.5 rounded text-[11px] border border-slate-700 text-slate-200 font-mono">ESC</kbd> to exit
+                <p className="text-[11px] text-[#A5A3C7] font-normal truncate max-w-xs sm:max-w-md">
+                  {roomId === 'practice' ? 'Practice Room' : (currentSession?.title || 'Live Session')} · Press <kbd className="bg-[#202244] px-1.5 py-0.5 rounded text-[11px] border border-white/[0.07] text-[#ECEBFA] font-mono">ESC</kbd> to exit
                 </p>
               </div>
             </div>
@@ -2958,8 +3286,8 @@ export function LiveRoom() {
               <button
                 onClick={() => setShowPipVideos(v => !v)}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-                  showPipVideos ? "bg-slate-800 border-slate-700 text-primary" : "bg-transparent border-slate-800 text-slate-400 hover:bg-slate-800"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                  showPipVideos ? "bg-[#202244] border-white/[0.07] text-[#10B981]" : "bg-transparent border-white/[0.07] text-[#A5A3C7] hover:bg-[#202244]"
                 )}
                 title="Toggle Floating Video Feeds"
                 aria-label="Toggle floating video feeds"
@@ -2971,8 +3299,8 @@ export function LiveRoom() {
               <button
                 onClick={() => setShowFullscreenChat(v => !v)}
                 className={clsx(
-                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer",
-                  showFullscreenChat ? "bg-primary border-primary text-on-primary" : "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
+                  "flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all border active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer",
+                  showFullscreenChat ? "bg-[#10B981] border-[#10B981] text-white" : "bg-[#202244] border-white/[0.07] text-[#ECEBFA] hover:bg-[#202244]/80"
                 )}
                 title="Open Chat Drawer"
                 aria-label="Open chat drawer"
@@ -2983,7 +3311,7 @@ export function LiveRoom() {
 
               <button
                 onClick={() => toggleFullscreenMode(false)}
-                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold border border-slate-700 transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none cursor-pointer"
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#202244] hover:bg-[#202244]/80 text-[#ECEBFA] text-xs font-semibold border border-white/[0.07] transition-all active:scale-95 focus-visible:ring-2 focus-visible:ring-[#10B981] focus-visible:outline-none cursor-pointer"
                 title="Exit Fullscreen Mode"
                 aria-label="Exit Fullscreen Mode"
               >
@@ -2994,9 +3322,9 @@ export function LiveRoom() {
           </header>
 
           {/* Fullscreen Workspace Main Body */}
-          <div className="relative flex-1 min-h-0 rounded-2xl overflow-hidden border border-white/10 bg-slate-900 shadow-2xl flex">
+          <div className="relative flex-1 min-h-0 rounded-2xl overflow-hidden border border-white/[0.07] bg-[#171830] shadow-2xl flex">
             {/* Main Interactive Expanded View */}
-            <div className="flex-1 flex flex-col min-h-0 bg-surface text-on-surface">
+            <div className="flex-1 flex flex-col min-h-0 bg-[#171830] text-[#ECEBFA]">
               <WorkspaceContent
                 workspace={workspace}
                 chooseWorkspace={chooseWorkspace}
@@ -3014,6 +3342,8 @@ export function LiveRoom() {
                 beginDraw={beginDraw}
                 continueDraw={continueDraw}
                 endDraw={endDraw}
+                onUndo={handleWhiteboardUndo}
+                onRedo={handleWhiteboardRedo}
                 notes={notes}
                 setNotes={setNotes}
                 emitRoomEvent={emitRoomEvent}
@@ -3037,15 +3367,15 @@ export function LiveRoom() {
 
             {/* Fullscreen Floating Video PiP Box in Bottom Right (never covering top-right editor controls) */}
             {showPipVideos && (
-              <div data-testid="fullscreen-pip-box" className="absolute bottom-4 right-4 z-40 flex flex-col gap-2 p-2 bg-slate-950/95 border border-slate-700 rounded-2xl shadow-2xl backdrop-blur-md w-60 sm:w-64 max-w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-bottom-4 duration-300">
-                <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-300">
+              <div data-testid="fullscreen-pip-box" className="absolute bottom-4 right-4 z-40 flex flex-col gap-2 p-2 bg-[#171830]/95 border border-white/[0.07] rounded-2xl shadow-2xl backdrop-blur-md w-60 sm:w-64 max-w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-bottom-4 duration-300">
+                <div className="flex items-center justify-between px-1 text-[11px] font-semibold text-[#A5A3C7]">
                   <span className="flex items-center gap-1.5">
-                    <span className={clsx("h-2 w-2 rounded-full", totalParticipantsCount > 1 ? "bg-emerald-400 animate-pulse" : "bg-amber-400")} />
-                    <span>Video Feeds ({totalParticipantsCount})</span>
+                    <span className={clsx("h-2 w-2 rounded-full", totalParticipantsCount > 1 ? "bg-[#10B981] animate-pulse" : "bg-amber-400")} />
+                    <span className="text-[#ECEBFA]">Video Feeds ({totalParticipantsCount})</span>
                   </span>
                   <button 
                     onClick={() => setShowPipVideos(false)}
-                    className="text-slate-400 hover:text-white transition-colors cursor-pointer"
+                    className="text-[#A5A3C7] hover:text-[#ECEBFA] transition-colors cursor-pointer"
                     title="Minimize Video Box"
                     aria-label="Minimize video feeds"
                   >
@@ -3064,7 +3394,7 @@ export function LiveRoom() {
                     raised={raisedHand} 
                     cameraOff={!cameraOn} 
                     micOff={!micOn}
-                    accent={isTeacher ? "bg-primary" : "bg-accent"}
+                    accent={isTeacher ? "bg-[#10B981]" : "bg-[#202244]"}
                     onSwitchCamera={cycleNextCamera}
                     hasMultipleCameras={videoDevices.length > 1}
                     isHardware={hardwareInfo.cam}
@@ -3082,7 +3412,7 @@ export function LiveRoom() {
                       waiting={false} 
                       raised={p.handRaised} 
                       isSimulated={p.isSimulated}
-                      accent={p.role === 'teacher' ? "bg-primary" : "bg-accent"} 
+                      accent={p.role === 'teacher' ? "bg-[#10B981]" : "bg-[#202244]"} 
                       isRemote
                       onUnlockAudio={unlockAudio}
                       className="h-20 sm:h-24 w-full"
@@ -3091,14 +3421,14 @@ export function LiveRoom() {
                   {overflowAudioParticipants.map(p => (
                     <div 
                       key={p.id} 
-                      className="relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 p-1.5 flex flex-col items-center justify-center text-center shadow-sm h-20 sm:h-24 w-full"
+                      className="relative overflow-hidden rounded-xl border border-white/[0.07] bg-[#202244] p-1.5 flex flex-col items-center justify-center text-center shadow-xs h-20 sm:h-24 w-full"
                       title="Audio-only mode"
                     >
-                      <div className="h-7 w-7 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-white font-bold text-xs mb-0.5">
+                      <div className="h-7 w-7 rounded-full bg-[#171830] border border-white/[0.07] flex items-center justify-center text-[#ECEBFA] font-semibold text-xs mb-0.5">
                         {p.name.slice(0, 1).toUpperCase()}
                       </div>
-                      <div className="text-[10px] font-bold text-white truncate max-w-[80px]">{p.name}</div>
-                      <span className="text-[8px] text-amber-400 font-bold mt-0.5 flex items-center gap-0.5 bg-amber-400/10 px-1 py-0.5 rounded-full border border-amber-400/20">
+                      <div className="text-[10px] font-semibold text-[#ECEBFA] truncate max-w-[80px]">{p.name}</div>
+                      <span className="text-[8px] text-[#A5A3C7] font-medium mt-0.5 flex items-center gap-0.5 bg-[#171830] px-1 py-0.5 rounded-full border border-white/[0.07]">
                         <span className="material-symbols-outlined text-[9px]">volume_up</span> Audio
                       </span>
                     </div>
@@ -3121,14 +3451,14 @@ export function LiveRoom() {
           </div>
 
           {/* Fullscreen Docked Bottom Control Bar */}
-          <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-slate-950/90 border border-slate-800 px-4 py-2 text-slate-100 shadow-xl shrink-0 z-30">
-            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-400 font-medium">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <footer className="mt-2 flex items-center justify-between gap-2 rounded-2xl bg-[#171830]/90 border border-white/[0.07] px-4 py-2 text-[#ECEBFA] shadow-xl shrink-0 z-30">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-[#A5A3C7] font-medium">
+              <span className="w-2 h-2 rounded-full bg-[#10B981] animate-pulse" />
               <span>In Focus Mode</span>
             </div>
 
             <div className="flex flex-1 items-center justify-center gap-2 sm:gap-3">
-              {/* Microphone Toggle */}
+              {/* Microphone Toggle (Soft red state when muted) */}
               <button
                 onClick={toggleMicWithPermission}
                 title={micOn ? 'Mute microphone' : 'Unmute microphone'}
@@ -3136,14 +3466,14 @@ export function LiveRoom() {
                 className={clsx(
                   'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
                   !micOn
-                    ? 'bg-slate-800 border-slate-700 text-slate-300'
-                    : 'bg-slate-900 border-emerald-500/40 text-emerald-400 hover:bg-slate-800'
+                    ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
+                    : 'bg-[#202244] border-white/[0.07] text-[#10B981] hover:bg-[#202244]/80'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{micOn ? 'mic' : 'mic_off'}</span>
               </button>
 
-              {/* Camera Toggle */}
+              {/* Camera Toggle (Soft red state when off) */}
               <button
                 onClick={toggleCameraWithPermission}
                 title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
@@ -3151,8 +3481,8 @@ export function LiveRoom() {
                 className={clsx(
                   'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
                   !cameraOn
-                    ? 'bg-slate-800 border-slate-700 text-slate-300'
-                    : 'bg-slate-900 border-emerald-500/40 text-emerald-400 hover:bg-slate-800'
+                    ? 'bg-red-500/15 border-red-500/30 text-red-400 hover:bg-red-500/25'
+                    : 'bg-[#202244] border-white/[0.07] text-[#10B981] hover:bg-[#202244]/80'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">{cameraOn ? 'videocam' : 'videocam_off'}</span>
@@ -3167,8 +3497,8 @@ export function LiveRoom() {
                   className={clsx(
                     'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
                     raisedHand
-                      ? 'bg-amber-500 border-amber-400 text-slate-950 font-bold'
-                      : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                      ? 'bg-[#10B981] border-[#10B981] text-white font-semibold'
+                      : 'bg-[#202244] border-white/[0.07] text-[#A5A3C7] hover:text-[#ECEBFA]'
                   )}
                 >
                   <span className="material-symbols-outlined text-[19px]">pan_tool</span>
@@ -3183,8 +3513,8 @@ export function LiveRoom() {
                 className={clsx(
                   'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
                   sharing
-                    ? 'bg-primary border-primary text-white'
-                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                    ? 'bg-[#10B981] border-[#10B981] text-white'
+                    : 'bg-[#202244] border-white/[0.07] text-[#A5A3C7] hover:text-[#ECEBFA]'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">present_to_all</span>
@@ -3198,8 +3528,8 @@ export function LiveRoom() {
                 className={clsx(
                   'grid h-10 w-10 place-items-center rounded-full transition-all duration-200 active:scale-95 border cursor-pointer',
                   showFullscreenChat
-                    ? 'bg-primary border-primary text-white'
-                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:text-white'
+                    ? 'bg-[#10B981] border-[#10B981] text-white'
+                    : 'bg-[#202244] border-white/[0.07] text-[#A5A3C7] hover:text-[#ECEBFA]'
                 )}
               >
                 <span className="material-symbols-outlined text-[19px]">forum</span>
@@ -3210,7 +3540,7 @@ export function LiveRoom() {
             <button
               onClick={handleLeaveOrEndClick}
               data-testid={isTeacher ? "end-session-btn" : "leave-room-btn"}
-              className="grid h-10 px-4 place-items-center rounded-full bg-danger text-white font-bold text-xs shadow-xs transition hover:opacity-90 active:scale-95 cursor-pointer"
+              className="grid h-10 px-4 place-items-center rounded-full bg-red-600 hover:bg-red-500 text-white font-semibold text-xs shadow-xs transition hover:opacity-90 active:scale-95 cursor-pointer"
               title={isTeacher ? "End session for everyone" : "Leave session"}
               aria-label={isTeacher ? "End session" : "Leave call"}
             >
@@ -3652,6 +3982,8 @@ function WorkspaceContent({
   beginDraw,
   continueDraw,
   endDraw,
+  onUndo,
+  onRedo,
   notes,
   setNotes,
   emitRoomEvent,
@@ -3687,6 +4019,8 @@ function WorkspaceContent({
   beginDraw: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   continueDraw: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   endDraw: () => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
   notes: string;
   setNotes: (n: string) => void;
   emitRoomEvent: (e: RoomEvent) => void;
@@ -3707,19 +4041,19 @@ function WorkspaceContent({
   onUnlockAudio?: () => void;
 }) {
   return (
-    <div className={clsx("flex flex-col h-full w-full min-h-0 overflow-hidden", isFullscreen ? "bg-surface" : "flex-1 rounded-2xl border border-border bg-surface shadow-xs")}>
+    <div className={clsx("flex flex-col h-full w-full min-h-0 overflow-hidden", isFullscreen ? "bg-[#171830]" : "flex-1 rounded-2xl border border-white/[0.07] bg-[#171830] shadow-xs")}>
       {/* Workspace Subheader Navigation */}
-      <nav className="flex items-center justify-between gap-2 border-b border-border bg-surface-2 p-1.5 overflow-x-auto text-text">
+      <nav className="flex items-center justify-between gap-2 border-b border-white/[0.07] bg-[#202244]/60 p-1.5 overflow-x-auto text-[#ECEBFA]">
         <div className="flex items-center gap-1.5">
           {toolTabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => chooseWorkspace(tab.id)}
               className={clsx(
-                'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all duration-200 active:scale-95 focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
+                'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95 focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none',
                 workspace === tab.id
-                  ? 'bg-primary text-on-primary shadow-xs'
-                  : 'text-muted hover:bg-surface hover:text-text'
+                  ? 'bg-emerald-600 text-white shadow-xs font-semibold'
+                  : 'text-[#A5A3C7] hover:bg-[#202244] hover:text-[#ECEBFA]'
               )}
             >
               <span className="material-symbols-outlined text-[16px]">{tab.icon}</span>
@@ -3731,21 +4065,21 @@ function WorkspaceContent({
             <button
               onClick={() => chooseWorkspace('screenshare')}
               className={clsx(
-                'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition-all duration-200 active:scale-95 border focus-visible:ring-2 focus-visible:ring-primary focus-visible:outline-none',
+                'flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium transition-all duration-150 active:scale-95 border focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:outline-none',
                 workspace === 'screenshare'
-                  ? 'bg-primary text-on-primary border-primary shadow-xs animate-pulse'
-                  : 'bg-primary-tint text-primary-text border-primary/20 hover:bg-primary-tint/80'
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-xs animate-pulse font-semibold'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
               )}
             >
               <span className="material-symbols-outlined text-[16px]">screen_share</span>
-              <span>📺 Live Shared Screen View</span>
+              <span>Live Shared Screen</span>
             </button>
           )}
         </div>
       </nav>
 
       {/* Main Workspace Body */}
-      <div className="relative min-h-0 flex-1 bg-surface-2/20 overflow-hidden flex flex-col">
+      <div className="relative min-h-0 flex-1 bg-[#171830] overflow-hidden flex flex-col">
         {/* 1. Whiteboard Canvas */}
         {workspace === 'whiteboard' && (
           <WhiteboardCanvas
@@ -3762,6 +4096,8 @@ function WorkspaceContent({
             beginDraw={beginDraw}
             continueDraw={continueDraw}
             endDraw={endDraw}
+            onUndo={onUndo}
+            onRedo={onRedo}
           />
         )}
 
@@ -3792,11 +4128,11 @@ function WorkspaceContent({
 
         {/* 4. Live Shared Screen Viewport */}
         {workspace === 'screenshare' && (
-          <div className="relative h-full w-full bg-slate-950 flex flex-col items-center justify-center overflow-hidden">
-            <div className="absolute top-3 left-3 z-20 flex items-center gap-2.5 px-3.5 py-1.5 bg-slate-900/90 border border-white/10 rounded-xl text-white text-xs font-bold backdrop-blur-md shadow-lg">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="relative h-full w-full bg-[#0F1020] flex flex-col items-center justify-center overflow-hidden">
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-2.5 px-3 py-1.5 bg-[#171830]/90 border border-white/[0.07] rounded-xl text-[#ECEBFA] text-xs font-medium backdrop-blur-md shadow-lg">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               <span>{sharing ? 'You are sharing your screen' : `${sharerName || 'Teacher'} is sharing screen`}</span>
-              <span className="px-2 py-0.5 bg-primary/20 text-primary text-[10px] rounded uppercase font-extrabold">HD 1080p Stream</span>
+              <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 text-[10px] rounded uppercase font-semibold">HD Stream</span>
             </div>
 
             <StreamVideo
@@ -3804,34 +4140,11 @@ function WorkspaceContent({
               muted={sharing}
               isRemote={!sharing}
               onUnlockAudio={onUnlockAudio}
-              className="h-full w-full bg-slate-950 object-contain"
+              className="h-full w-full bg-[#0F1020] object-contain"
             />
           </div>
         )}
       </div>
     </div>
-  );
-}
-
-
-
-function Control({ active, icon, label, off, highlighted, onClick }: { active: boolean; icon: string; label: string; off?: boolean; highlighted?: boolean; onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      title={label}
-      className={clsx(
-        'grid h-10 w-10 place-items-center rounded-full border transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 active:translate-y-0 active:scale-95 shadow-elevation-1',
-        off
-          ? 'border-alert-rose/40 bg-alert-rose text-on-alert-rose shadow-elevation-1'
-          : highlighted
-          ? 'border-learning-amber bg-learning-amber-container text-on-learning-amber-container shadow-elevation-1 animate-pulse font-bold'
-          : active
-          ? 'border-primary bg-primary-container text-on-primary-container hover:bg-primary-container/80'
-          : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-      )}
-    >
-      <span className="material-symbols-outlined text-[19px]">{icon}</span>
-    </button>
   );
 }

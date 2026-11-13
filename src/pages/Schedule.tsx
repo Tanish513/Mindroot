@@ -738,19 +738,19 @@ export function Schedule() {
   const isCurrentHourVisible = currentHour >= 8 && currentHour <= 21;
 
   return (
-    <div className="max-w-[1280px] mx-auto w-full flex flex-col space-y-6 pb-12 select-none">
+    <div className="max-w-[1280px] mx-auto w-full flex flex-col space-y-3 sm:space-y-6 pb-4 sm:pb-12 select-none">
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-text">Schedule & Bookings</h1>
+          <h1 className="text-lg sm:text-2xl font-bold tracking-tight text-text">Schedule & Bookings</h1>
           <p className="text-xs sm:text-sm text-muted">Manage your peer learning sessions, time slots, and upcoming lectures.</p>
         </div>
         <div className="flex items-center gap-2.5">
-          <Button variant="outline" size="sm" onClick={loadData} className="flex items-center gap-1.5 cursor-pointer">
+          <Button variant="outline" size="sm" onClick={loadData} className="flex items-center gap-1.5 cursor-pointer min-h-[44px] sm:min-h-0">
             <span className="material-symbols-outlined text-[16px]">sync</span>
             <span>Sync</span>
           </Button>
-          <Button variant="primary" size="sm" onClick={() => handleOpenBookingModal()} className="flex items-center gap-1.5 shadow-xs cursor-pointer">
+          <Button variant="primary" size="sm" onClick={() => handleOpenBookingModal()} className="flex items-center gap-1.5 shadow-xs cursor-pointer min-h-[44px] sm:min-h-0">
             <span className="material-symbols-outlined text-[16px]">add</span>
             <span>New Booking</span>
           </Button>
@@ -861,7 +861,7 @@ export function Schedule() {
                   <button
                     type="button"
                     onClick={() => setShowViewDropdown(prev => !prev)}
-                    className="flex items-center gap-1 bg-surface-2 border border-border rounded-lg text-xs font-semibold text-text px-2.5 py-1 cursor-pointer hover:bg-surface"
+                    className="flex items-center gap-1 bg-surface-2 border border-border rounded-lg text-xs font-semibold text-text px-2.5 py-1 cursor-pointer hover:bg-surface min-h-[44px] sm:min-h-0"
                     aria-label="Calendar view mode"
                     data-testid="calendar-view-dropdown"
                   >
@@ -897,7 +897,7 @@ export function Schedule() {
                   size="sm"
                   onClick={handleToday}
                   data-testid="calendar-today-button"
-                  className="text-xs font-semibold px-2.5 py-1 h-auto cursor-pointer"
+                  className="text-xs font-semibold px-2.5 py-1 h-auto cursor-pointer min-h-[44px] sm:min-h-0 flex sm:inline-flex items-center"
                 >
                   Today
                 </Button>
@@ -908,7 +908,7 @@ export function Schedule() {
                     onClick={handlePrevDate}
                     aria-label={`Previous ${viewMode}`}
                     data-testid="calendar-prev-button"
-                    className="p-0.5 hover:text-text text-muted transition-colors rounded cursor-pointer"
+                    className="p-0.5 hover:text-text text-muted transition-colors rounded cursor-pointer min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex sm:inline-block items-center justify-center"
                   >
                     <span className="material-symbols-outlined text-[18px]">chevron_left</span>
                   </button>
@@ -922,7 +922,7 @@ export function Schedule() {
                     onClick={handleNextDate}
                     aria-label={`Next ${viewMode}`}
                     data-testid="calendar-next-button"
-                    className="p-0.5 hover:text-text text-muted transition-colors rounded cursor-pointer"
+                    className="p-0.5 hover:text-text text-muted transition-colors rounded cursor-pointer min-w-[44px] min-h-[44px] sm:min-w-0 sm:min-h-0 flex sm:inline-block items-center justify-center"
                   >
                     <span className="material-symbols-outlined text-[18px]">chevron_right</span>
                   </button>
@@ -1114,7 +1114,7 @@ export function Schedule() {
                               {item.date.getDate()}
                             </span>
                             {daySessions.length > 0 && (
-                              <span className="text-[10px] font-bold text-primary px-1 bg-primary/10 rounded-full">
+                              <span className="text-xs md:text-[10px] font-bold text-primary px-1 bg-primary/10 rounded-full">
                                 {daySessions.length}
                               </span>
                             )}
@@ -1137,7 +1137,7 @@ export function Schedule() {
                               );
                             })}
                             {daySessions.length > 3 && (
-                              <span className="text-[9px] font-bold text-muted">+{daySessions.length - 3}</span>
+                              <span className="text-xs md:text-[9px] font-bold text-muted">+{daySessions.length - 3}</span>
                             )}
                           </div>
                         </button>
@@ -1193,9 +1193,9 @@ export function Schedule() {
                       <div className="p-2 bg-surface-2/20 flex flex-col items-center justify-between text-muted text-xs font-semibold py-4 select-none">
                         <div className="flex flex-col items-center gap-1 text-center">
                           <span className="material-symbols-outlined text-base text-primary">view_column</span>
-                          <span className="text-[10px] uppercase font-bold tracking-wider">{tzAbbr}</span>
+                          <span className="text-xs md:text-[10px] uppercase font-bold tracking-wider">{tzAbbr}</span>
                         </div>
-                        <div className="text-[10px] text-muted/70 text-center leading-tight">
+                        <div className="text-xs md:text-[10px] text-muted/70 text-center leading-tight">
                           Agenda
                         </div>
                       </div>
@@ -1248,11 +1248,11 @@ export function Schedule() {
                                     <div className="flex items-center justify-between text-xs font-bold gap-1 mb-1">
                                       <span className="truncate">{sessionTime}</span>
                                       {isLive ? (
-                                        <span className="px-1.5 py-0.2 text-[9px] font-black uppercase rounded-full bg-red-600 text-white shrink-0">
+                                        <span className="px-1.5 py-0.2 text-xs md:text-[9px] font-black uppercase rounded-full bg-red-600 text-white shrink-0">
                                           LIVE
                                         </span>
                                       ) : (
-                                        <span className="text-[10px] font-medium text-muted shrink-0">
+                                        <span className="text-xs md:text-[10px] font-medium text-muted shrink-0">
                                           {s.durationMin || 60}m
                                         </span>
                                       )}
@@ -1260,7 +1260,7 @@ export function Schedule() {
                                     <div className="text-xs font-bold truncate text-text group-hover:text-primary transition-colors">
                                       {s.title}
                                     </div>
-                                    <div className="text-[11px] font-medium text-muted truncate mt-0.5 flex items-center gap-1">
+                                    <div className="text-xs md:text-[11px] md:leading-[17.6px] font-medium text-muted truncate mt-0.5 flex items-center gap-1">
                                       <span className="material-symbols-outlined text-[12px] shrink-0">
                                         {isTeacher ? 'school' : 'menu_book'}
                                       </span>
@@ -1287,7 +1287,7 @@ export function Schedule() {
                                       setBookingTime('10:00');
                                       setIsBookingOpen(true);
                                     }}
-                                    className="mt-2 text-xs font-bold text-primary hover:underline cursor-pointer flex items-center gap-0.5"
+                                    className="mt-2 text-xs font-bold text-primary hover:underline cursor-pointer flex items-center gap-0.5 min-h-[44px] sm:min-h-0"
                                   >
                                     <span className="material-symbols-outlined text-sm">add</span>
                                     Book
@@ -1308,7 +1308,7 @@ export function Schedule() {
                                   setBookingTime('14:00');
                                   setIsBookingOpen(true);
                                 }}
-                                className="w-full py-1 text-[11px] font-semibold text-muted hover:text-primary hover:bg-surface-2 rounded transition-colors flex items-center justify-center gap-1 cursor-pointer mt-2"
+                                className="w-full py-1 text-xs md:text-[11px] font-semibold text-muted hover:text-primary hover:bg-surface-2 rounded transition-colors flex items-center justify-center gap-1 cursor-pointer mt-2 min-h-[44px] sm:min-h-0"
                               >
                                 <span className="material-symbols-outlined text-[13px]">add</span>
                                 Add
@@ -1398,7 +1398,7 @@ export function Schedule() {
                       key={tab}
                       onClick={() => setActiveTab(tab)}
                       className={clsx(
-                        "flex-1 py-2.5 text-sm font-medium text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 border-b-2",
+                        "flex-1 h-11 min-h-[44px] md:h-auto md:min-h-0 py-2.5 text-sm font-medium text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 border-b-2",
                         isActive
                           ? "text-primary border-primary font-semibold"
                           : "text-muted hover:text-text border-transparent"
@@ -1437,7 +1437,7 @@ export function Schedule() {
                       variant="outline"
                       size="sm"
                       onClick={() => handleOpenBookingModal()}
-                      className="text-xs font-semibold px-3 py-1.5 cursor-pointer"
+                      className="text-xs font-semibold px-3 py-1.5 min-h-[44px] sm:min-h-0 inline-flex items-center justify-center cursor-pointer"
                     >
                       Book a session
                     </Button>
@@ -1586,7 +1586,7 @@ export function Schedule() {
                           {!isTeacher && !isPaidByMe && !isSwap && (
                             <button
                               onClick={() => handlePayForSession(session)}
-                              className="w-full py-1.5 px-3 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 mb-1 cursor-pointer"
+                              className="w-full py-1.5 px-3 bg-primary hover:bg-primary-hover text-on-primary rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 shadow-xs transition-all active:scale-95 mb-1 cursor-pointer min-h-[44px] sm:min-h-0"
                             >
                               <span className="material-symbols-outlined text-[15px]">payments</span>
                               Pay ₹{session.pricePerStudent || session.amount || session.teacher?.hourlyRate || 499} to Mentor via UPI

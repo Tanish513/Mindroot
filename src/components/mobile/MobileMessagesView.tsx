@@ -75,7 +75,7 @@ export function MobileMessagesView({
         {/* Header */}
         <div className="px-4 py-3 flex items-center justify-between border-b border-border bg-surface/95 backdrop-blur-md sticky top-0 z-30">
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-text">Messages</h1>
+            <h1 className="text-lg font-bold tracking-tight text-text">Messages</h1>
             <p className="text-xs text-muted">Direct chats with your peer mentors</p>
           </div>
           <span className="text-xs font-bold text-primary bg-primary-tint/30 px-2 py-0.5 rounded-full border border-primary/20">
@@ -94,7 +94,7 @@ export function MobileMessagesView({
               value={mobileSearch}
               onChange={e => setMobileSearch(e.target.value)}
               placeholder="Search conversations..."
-              className="w-full pl-9 pr-4 py-2 bg-surface border border-border rounded-xl text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
+              className="w-full pl-9 pr-4 py-2 bg-surface border border-border rounded-xl text-base font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20"
             />
           </div>
         </div>
@@ -127,7 +127,7 @@ export function MobileMessagesView({
                       <span className="text-xs font-bold text-text truncate">
                         {peer.name}
                       </span>
-                      <span className="text-[10px] text-muted">Active</span>
+                      <span className="text-xs text-muted">Active</span>
                     </div>
                     <p className="text-xs text-muted truncate mt-0.5">
                       {lastText}
@@ -151,7 +151,7 @@ export function MobileMessagesView({
           <button
             onClick={() => setActivePeerId('')}
             aria-label="Back to messages list"
-            className="w-8 h-8 rounded-full flex items-center justify-center text-text hover:bg-surface-2 active:scale-95 transition-all cursor-pointer"
+            className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-text hover:bg-surface-2 active:scale-95 transition-all cursor-pointer"
           >
             <span className="material-symbols-outlined text-xl">arrow_back</span>
           </button>
@@ -165,7 +165,7 @@ export function MobileMessagesView({
           </div>
           <div className="min-w-0">
             <h2 className="text-xs font-bold text-text truncate">{activePeer.name}</h2>
-            <div className="flex items-center gap-1 text-[10px] text-muted">
+            <div className="flex items-center gap-1 text-xs text-muted">
               <span className="w-1.5 h-1.5 rounded-full bg-primary" />
               <span>Online • {activePeer.role === 'teacher' ? 'Verified Mentor' : 'Study Peer'}</span>
             </div>
@@ -180,7 +180,7 @@ export function MobileMessagesView({
               onSend(offerText);
             }}
             title="Propose Study Exchange"
-            className="px-2 py-1 bg-primary-tint/30 text-primary border border-primary/20 rounded-lg text-[10px] font-bold flex items-center gap-1 active:scale-95 transition-all"
+            className="px-2.5 py-1.5 bg-primary-tint/30 text-primary border border-primary/20 rounded-lg text-xs font-bold flex items-center gap-1 active:scale-95 transition-all min-h-[44px]"
           >
             <span className="material-symbols-outlined text-xs">swap_horiz</span>
             <span>Swap</span>
@@ -192,18 +192,18 @@ export function MobileMessagesView({
       <div className="px-3 py-1.5 bg-surface-2/80 border-b border-border flex items-center justify-between shrink-0">
         <div className="flex items-center gap-1.5 min-w-0">
           <span className="w-2 h-2 rounded-full bg-primary animate-pulse shrink-0" />
-          <p className="text-[11px] font-medium text-text truncate">
+          <p className="text-xs font-medium text-text truncate">
             Peer Match active • <span className="text-muted">Direct UPI & Token Barter supported</span>
           </p>
         </div>
-        <span className="text-[10px] font-bold text-primary shrink-0">₹0 Fee</span>
+        <span className="text-xs font-bold text-primary shrink-0">₹0 Fee</span>
       </div>
 
       {/* Messages Stream */}
       <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3.5 pb-20 custom-scrollbar">
         {/* Day Divider */}
         <div className="flex items-center justify-center my-1">
-          <span className="bg-surface-2 border border-border px-2.5 py-0.5 rounded-full text-muted text-[10px] font-bold tracking-tight">
+          <span className="bg-surface-2 border border-border px-2.5 py-0.5 rounded-full text-muted text-xs font-bold tracking-tight">
             Today
           </span>
         </div>
@@ -218,7 +218,7 @@ export function MobileMessagesView({
               <span className="text-xs font-bold text-text">Study Exchange Proposal</span>
             </div>
             <span className={clsx(
-              "text-[10px] font-bold px-2 py-0.5 rounded-full",
+              "text-xs font-bold px-2 py-0.5 rounded-full",
               proposalAccepted ? "bg-primary-tint text-primary" : "bg-accent-tint text-accent"
             )}>
               {proposalAccepted ? 'Confirmed' : 'Pending'}
@@ -227,11 +227,11 @@ export function MobileMessagesView({
 
           <div className="bg-surface-2 rounded-xl p-2.5 my-2 space-y-1.5 text-xs">
             <div className="flex items-center justify-between">
-              <span className="text-muted text-[11px]">Topic</span>
+              <span className="text-muted text-xs">Topic</span>
               <span className="font-semibold text-text">Bipartite Graphs & DFS (45 min)</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted text-[11px]">Exchange Mode</span>
+              <span className="text-muted text-xs">Exchange Mode</span>
               <span className="font-bold text-primary">1 Skill Token (Zero Upfront)</span>
             </div>
           </div>
@@ -244,14 +244,14 @@ export function MobileMessagesView({
                   setProposalAccepted(true);
                   onSend("✅ I've accepted the study exchange proposal! Let's lock in the time slot.");
                 }}
-                className="flex-1 h-8 rounded-xl bg-primary text-on-primary text-xs font-bold hover:bg-primary-hover active:scale-95 transition-all flex items-center justify-center gap-1"
+                className="flex-1 min-h-[44px] rounded-xl bg-primary text-on-primary text-xs font-bold hover:bg-primary-hover active:scale-95 transition-all flex items-center justify-center gap-1"
               >
                 <span className="material-symbols-outlined text-sm">lock</span>
                 <span>Accept & Lock Slot</span>
               </button>
             </div>
           ) : (
-            <div className="text-[11px] text-primary font-bold text-center py-0.5 flex items-center justify-center gap-1">
+            <div className="text-xs text-primary font-bold text-center py-0.5 flex items-center justify-center gap-1">
               <span className="material-symbols-outlined text-sm">check_circle</span>
               <span>Session proposal locked</span>
             </div>
@@ -287,21 +287,21 @@ export function MobileMessagesView({
               >
                 <p>{msg.text}</p>
                 {isSending && (
-                  <span className="inline-flex items-center gap-1 text-[10px] text-on-primary/80 font-normal mt-0.5">
+                  <span className="inline-flex items-center gap-1 text-xs text-on-primary/80 font-normal mt-0.5">
                     <span className="material-symbols-outlined text-xs animate-spin">schedule</span> Sending...
                   </span>
                 )}
               </div>
 
               <div className="flex items-center gap-1 px-1">
-                <span className="text-[10px] text-muted">{time}</span>
+                <span className="text-xs text-muted">{time}</span>
                 {isSent && !isSending && !isFailed && (
                   <span className="material-symbols-outlined text-xs text-primary">done_all</span>
                 )}
               </div>
 
               {isFailed && (
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-danger px-1">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-danger px-1">
                   <span>Failed</span>
                   <button
                     onClick={() => onSend(msg.text, msg.id)}
@@ -329,7 +329,7 @@ export function MobileMessagesView({
               type="button"
               onClick={() => setIsPlayingAudio(prev => !prev)}
               aria-label="Play audio note"
-              className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center active:scale-95 transition-all"
+              className="min-w-[44px] min-h-[44px] rounded-full bg-primary/10 text-primary flex items-center justify-center active:scale-95 transition-all"
             >
               <span className="material-symbols-outlined text-lg">
                 {isPlayingAudio ? 'pause' : 'play_arrow'}
@@ -344,9 +344,9 @@ export function MobileMessagesView({
               <span className="w-1 h-4 bg-border rounded-full" />
               <span className="w-1 h-1.5 bg-border rounded-full" />
             </div>
-            <span className="text-[10px] text-muted font-mono tabular-nums">0:42</span>
+            <span className="text-xs text-muted font-mono tabular-nums">0:42</span>
           </div>
-          <span className="text-[10px] text-muted px-1">Voice note preview</span>
+          <span className="text-xs text-muted px-1">Voice note preview</span>
         </div>
 
         <div ref={messagesEndRef} />
@@ -369,7 +369,7 @@ export function MobileMessagesView({
               onSend(codeMsg);
             }}
             title="Attach Code"
-            className="w-9 h-9 rounded-full flex items-center justify-center text-muted hover:text-text hover:bg-surface-2 transition-colors shrink-0"
+            className="min-w-[44px] min-h-[44px] rounded-full flex items-center justify-center text-muted hover:text-text hover:bg-surface-2 transition-colors shrink-0"
           >
             <span className="material-symbols-outlined text-xl">code</span>
           </button>
@@ -381,7 +381,7 @@ export function MobileMessagesView({
               value={inputText}
               onChange={e => setInputText(e.target.value)}
               placeholder={`Message ${activePeer.name.split(' ')[0]}...`}
-              className="w-full h-10 bg-surface border border-border rounded-full pl-4 pr-10 text-xs font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-inner"
+              className="w-full h-11 bg-surface border border-border rounded-full pl-4 pr-10 text-base font-medium text-text placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/20 shadow-inner"
             />
           </div>
 
@@ -389,7 +389,7 @@ export function MobileMessagesView({
           <button
             type="submit"
             disabled={!inputText.trim()}
-            className="w-9 h-9 rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-primary-hover active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs shrink-0"
+            className="min-w-[44px] min-h-[44px] rounded-full bg-primary text-on-primary flex items-center justify-center hover:bg-primary-hover active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-xs shrink-0"
             aria-label="Send message"
           >
             <span className="material-symbols-outlined text-lg">arrow_upward</span>
